@@ -59,7 +59,7 @@ public partial class Chunk_Manager : Node
 		new int[] { 0, 2, 1, 0, 3, 2 }   // Bottom
 	};
 	
-	private Node Global;
+	private Global Global;
 	private Dictionary<Vector3I, Chunk> chunks = new();
 	private HashSet<Vector3I> activeChunks = new();
 	private HashSet<Vector3I> dirtyChunks = new();
@@ -106,13 +106,13 @@ public partial class Chunk_Manager : Node
 
 	public override void _Ready()
 	{
-		Global = GetNode("/root/Global");
+		Global = GetNode<Global>("/root/Global");
 		
 		// Register this as the CubeManager in Global
-		Global.Set("CubeManager", this);
+		Global.CubeManager = this;
 		
 		// Cache values for threads (avoid Godot API in threads)
-		surfaceLevel = (int)Global.Get("SURFACE_LEVEL");
+		surfaceLevel = Global.SurfaceLevel;
 		
 		noise = new FastNoiseLite();
 		noise.Seed = noiseSeed;
@@ -155,7 +155,7 @@ public partial class Chunk_Manager : Node
 
 	public void handle_chunks_art()
 	{
-		Vector3 pPos = (Vector3)Global.Call("get_player_pos");
+		Vector3 pPos = Global.GetPlayerPos();
 		Vector3I playerPos = ((Vector3I)pPos) / CHUNK_SIZE;
 		
 		// Only recalculate chunk offsets and activeSet if player moved to a new chunk

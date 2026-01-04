@@ -1,6 +1,6 @@
 [gd_scene load_steps=8 format=3 uid="uid://dmhm1ql7cw68i"]
 
-[ext_resource type="Script" uid="uid://dsvxw2so37x8h" path="res://Scripts/player_movement.gd" id="1_x5jwr"]
+[ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player.cs" id="1_x5jwr"]
 [ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/interactions.gd" id="2_0w0kd"]
 [ext_resource type="Texture2D" uid="uid://c47ikq7xvlx14" path="res://Sprites/crosshair.png" id="3_gqhvq"]
 [ext_resource type="Script" uid="uid://qnlmb3pmrthp" path="res://Scripts/DebugMenu.gd" id="5_jiiwr"]
@@ -11,16 +11,17 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_sbtoq"]
 size = Vector3(0.75, 1.9, 0.75)
 
-[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("camera", "collision_shape", "inventory")]
+[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "Inventory")]
 collision_mask = 3
 script = ExtResource("1_x5jwr")
-camera = NodePath("Camera3D")
-collision_shape = NodePath("CollisionShape3D")
-inventory = NodePath("Inventory")
-speed = 4.0
-sprint_mult = 4.0
-accel = 50.0
-jump_strength = 8.0
+Camera = NodePath("Camera3D")
+CollisionShape = NodePath("CollisionShape3D")
+Inventory = NodePath("Inventory")
+Speed = 4.0
+SprintMult = 4.0
+Accel = 50.0
+JumpStrength = 8.0
+Gravity = 27.0
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 follow_viewport_enabled = true

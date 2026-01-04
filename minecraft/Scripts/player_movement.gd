@@ -21,7 +21,9 @@ var spectator_mode: bool = false
 
 var forward_direction: Vector3 = Vector3.ZERO
 var right_direction: Vector3 = Vector3.ZERO
-var direction = Vector3.ZERO  # Movement direction
+var direction = Vector3.ZERO  # Movement direction 
+
+var Global: Node;
 
 func _ready():
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -36,11 +38,11 @@ func _unhandled_input(event):
 	if event is InputEventMouseMotion:
 		if !mouse_visible:
 			# Adjust yaw (horizontal rotation) and pitch (vertical rotation)
-			yaw -= event.relative.x * Global.sensitivity_x
-			pitch -= event.relative.y * Global.sensitivity_y
+			yaw -= event.relative.x * Global.SensitivityX
+			pitch -= event.relative.y * Global.SensitivityY
 			
 			# Clamp pitch to avoid flipping the camera
-			pitch = clamp(pitch, Global.min_pitch, Global.max_pitch)
+			pitch = clamp(pitch, Global.MinPitch, Global.MaxPitch)
 
 func _apply_movement_from_input(delta):
 	if Input.is_action_just_pressed("toggle_mouse"):
@@ -77,10 +79,10 @@ func _apply_movement_from_input(delta):
 		temp_speed *= sprint_mult
 		max *= sprint_mult
 		
-	var fricMult = Global.ground_friction
+	var fricMult = Global.GroundFriction
 	if !is_on_floor(): 
 		temp_speed /= 8
-		fricMult = Global.air_friction
+		fricMult = Global.AirFriction
 	
 	direction = direction.normalized() * temp_speed
 	

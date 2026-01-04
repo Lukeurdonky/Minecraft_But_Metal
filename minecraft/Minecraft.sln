@@ -1,6 +1,6 @@
 ﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2012
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Minecraft", "Minecraft.csproj", "{8B9C88C1-1705-4FE6-8305-2AD424E65725}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Minecraft", "Minecraft.csproj", "{D9DCE42C-92C9-48AD-8CE0-0323C37B8E00}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -9,11 +9,11 @@ Global
 	ExportRelease|Any CPU = ExportRelease|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{8B9C88C1-1705-4FE6-8305-2AD424E65725}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8B9C88C1-1705-4FE6-8305-2AD424E65725}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8B9C88C1-1705-4FE6-8305-2AD424E65725}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
-		{8B9C88C1-1705-4FE6-8305-2AD424E65725}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
-		{8B9C88C1-1705-4FE6-8305-2AD424E65725}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
-		{8B9C88C1-1705-4FE6-8305-2AD424E65725}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{D9DCE42C-92C9-48AD-8CE0-0323C37B8E00}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D9DCE42C-92C9-48AD-8CE0-0323C37B8E00}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D9DCE42C-92C9-48AD-8CE0-0323C37B8E00}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{D9DCE42C-92C9-48AD-8CE0-0323C37B8E00}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{D9DCE42C-92C9-48AD-8CE0-0323C37B8E00}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{D9DCE42C-92C9-48AD-8CE0-0323C37B8E00}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
 	EndGlobalSection
 EndGlobal

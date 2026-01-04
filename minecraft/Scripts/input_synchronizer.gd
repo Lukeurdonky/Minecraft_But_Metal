@@ -76,9 +76,9 @@ func _unhandled_input(event):
 		# Apply rotation
 		#if(Input.MOUSE_MODE_VISIBLE): 
 		# Adjust yaw (horizontal rotation) and pitch (vertical rotation)
-		yaw -= event.relative.x * Global.sensitivity_x
-		pitch -= event.relative.y * Global.sensitivity_y
+		yaw -= event.relative.x * Global.SensitivityX
+		pitch -= event.relative.y * Global.SensitivityY
 		#print(yaw)
 		# Clamp pitch to avoid flipping the camera
-		pitch = clamp(pitch, Global.min_pitch, Global.max_pitch)
+		pitch = clamp(pitch, Global.MinPitch, Global.MaxPitch)
 		#print(str(yaw) + " " + str(pitch))

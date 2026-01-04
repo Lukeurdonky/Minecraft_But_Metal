@@ -89,10 +89,10 @@ func _physics_process(delta):
 	if pd.is_sprinting: 
 		temp_speed *= sprint_mult
 		max *= sprint_mult 
-	var fricMult = Global.ground_friction
+	var fricMult = Global.GroundFriction
 	if !is_on_floor(): 
 		temp_speed /= 8
-		fricMult = Global.air_friction
+		fricMult = Global.AirFriction
 	
 	direction = direction.normalized() * temp_speed
 	

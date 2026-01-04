@@ -36,7 +36,7 @@ func add_player(id: int):
 	#var pos := Vector2.from_angle(randf() * 2 * PI)
 	#character.position = Vector3(pos.x * SPAWN_RANDOM * randf(), 0, pos.y * SPAWN_RANDOM * randf())
 	character.name = str(id)
-	character.position = Global.WORLD_SPAWN
+	character.position = Global.WorldSpawn
 	$Game/Players.add_child(character, true)
 	#print(Global.Player)
 	#Global.Player = character

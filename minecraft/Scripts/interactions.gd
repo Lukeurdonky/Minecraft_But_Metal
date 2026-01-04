@@ -25,7 +25,7 @@ func _ready() -> void:
 func _process(delta):
 	selection()
 	
-	if pd.is_sprinting:
+	if pd.IsSprinting:
 		fov = floor(lerp(fov, baseFOV + sprintFOVAdd+.0, .2))
 	else:
 		fov = floor(lerp(fov, baseFOV+.0, .2))
@@ -43,30 +43,30 @@ func _unhandled_input(event):
 					placeBlock()
 
 func breakBlock():
-	if(pd.selected_cube != 0 && pd.selected_cube != null):
-		var ori = pd.selected_cube_position
-		var block_type = pd.selected_cube
+	if(pd.SelectedCube != 0 && pd.SelectedCube != null):
+		var ori = pd.SelectedCubePosition
+		var block_type = pd.SelectedCube
 		var r = Block_Registry.GetBlockDropCount(block_type)
 		print(r)
 		#for i in range(Global.get_block_stat(block_type, "drop_count")):
 		#Global.Player.inventory.add_item(Global.get_block_stat(block_type, "drops"))
 		for i in range(r):
-			Global.Player.inventory.add_item(Block_Registry.GetBlockDropID(block_type))	
+			Global.Player.Inventory.add_item(Block_Registry.GetBlockDropID(block_type))	
 		Global.CubeManager.break_block(ori)
-		pd.selected_cube = null
+		pd.SelectedCube = null
 		#print("break")
 		#Global.selected_cube.destroy_cube()
 		
 func placeBlock():
-	var item = Global.Player.inventory.get_item(Global.Player.inventory.selected_slot)
-	if(pd.selected_cube != null && item != null):
-		var loc = pd.selected_cube_position + Vector3i(selected_normal)
+	var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
+	if(pd.SelectedCube != null && item != null):
+		var loc = pd.SelectedCubePosition + Vector3i(selected_normal)
 		if(can_place(loc)):
-			var p = Global.Item_Data[item]["block"]
+			var p = Global.GetItemStat(item, "block")
 			if(p == null): return
 			else: 
 				Global.CubeManager.place_block(loc, p)
-				pd.inventory.remove_item(Global.Player.inventory.selected_slot)
+				pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
 			#print(loc)
 			#Global.CubeManager.set_cube(1, loc)
 			#Global.CubeManager.get_cube(loc).node.update_adjacents()
@@ -128,9 +128,9 @@ func selection():
 		yeah.visible = false
 	
 	selected_normal = face_normal
-	pd.selected_cube_position = Vector3i((cur))
+	pd.SelectedCubePosition = Vector3i((cur))
 	#print(yeah.global_transform.origin)
-	pd.selected_cube = temp_cube
+	pd.SelectedCube = temp_cube
 	#print(current)
 	
 

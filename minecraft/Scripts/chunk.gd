@@ -44,21 +44,21 @@ class Cube:
 		var uvs = []
 		#return [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
 		#uvs.append_array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
-		var atlas_columns = Global.atlas_width / 3  # Number of 3/2 sections horizontally
-		var atlas_rows = Global.atlas_height / 2   # Number of 3/2 sections vertically
+		var atlas_columns = Global.AtlasWidth / 3  # Number of 3/2 sections horizontally
+		var atlas_rows = Global.AtlasHeight / 2   # Number of 3/2 sections vertically
 
 		# Calculate cube (3/2 section) offsets from cube_ndx
-		var x_cube_offset = Global.get_block_stat(self.type, "index") % atlas_columns
-		var y_cube_offset = Global.get_block_stat(self.type, "index") / atlas_columns
+		var x_cube_offset = Global.GetBlockStat(self.type, "index") % atlas_columns
+		var y_cube_offset = Global.GetBlockStat(self.type, "index") / atlas_columns
 		
 		var x_offset = (face_index % 3)
 		var y_offset = (face_index / 3)
 		#print(y_offset)
 		# Calculate the UV coordinates for each corner of the face
-		var u_start = (x_cube_offset*3 + x_offset + 0.0) / Global.atlas_width
-		var v_start = (y_cube_offset*2 + y_offset + 1.0) / Global.atlas_height
-		var u_end = (x_cube_offset*3 + x_offset + 1.0) / Global.atlas_width
-		var v_end = (y_cube_offset*2 + y_offset + 0.0) / Global.atlas_height
+		var u_start = (x_cube_offset*3 + x_offset + 0.0) / Global.AtlasWidth
+		var v_start = (y_cube_offset*2 + y_offset + 1.0) / Global.AtlasHeight
+		var u_end = (x_cube_offset*3 + x_offset + 1.0) / Global.AtlasWidth
+		var v_end = (y_cube_offset*2 + y_offset + 0.0) / Global.AtlasHeight
 		
 		#if(v_end > 1): print(v_end)
 		uvs.append(Vector2(u_start, v_start))
@@ -715,18 +715,18 @@ func create_chunk_data(pos: Vector3):
 					#c = Cube.new("stone", p)
 				#else: c = null
 				
-				var abyss = Global.abyss_strength(p.x, p.z, p.y)
-				var layer = Global.abyss_layer(p.y)
+				var abyss = Global.AbyssStrength(p.x, p.z, p.y)
+				var layer = Global.AbyssLayer(p.y)
 				
 				var surface_height = base_surface(p)
 				if p.y > surface_height:
 					chunk[Vector3(x,y,z)] = null
 					continue
 				
-				var cave_noise = noise.get_noise_3dv(p * Global.layer_noise_scale[layer])
+				var cave_noise = noise.get_noise_3dv(p * Global.LayerNoiseScale[layer])
 				var threshold = 0.6
 				threshold -= abyss * 0.8
-				threshold -= abs(p.y - Global.SURFACE_LEVEL) * 0.002
+				threshold -= abs(p.y - Global.SurfaceLevel) * 0.002
 				#print(threshold)
 				if cave_noise < threshold:
 					c = Cube.new("stone", p)
@@ -736,7 +736,7 @@ func create_chunk_data(pos: Vector3):
 	return chunk
 
 func base_surface(p: Vector3):
-	return noise.get_noise_2d(p.x, p.z) * 5.0 + Global.SURFACE_LEVEL
+	return noise.get_noise_2d(p.x, p.z) * 5.0 + Global.SurfaceLevel
 	
 func surface_ease(p: Vector3, surface: float, strength: float):
 	return clamp(strength - (p.y - surface), 0.0, 1.0)
