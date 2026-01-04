@@ -1,0 +1,100 @@
+[gd_scene load_steps=8 format=3 uid="uid://dmhm1ql7cw68i"]
+
+[ext_resource type="Script" uid="uid://dsvxw2so37x8h" path="res://Scripts/player_movement.gd" id="1_x5jwr"]
+[ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/interactions.gd" id="2_0w0kd"]
+[ext_resource type="Texture2D" uid="uid://c47ikq7xvlx14" path="res://Sprites/crosshair.png" id="3_gqhvq"]
+[ext_resource type="Script" uid="uid://qnlmb3pmrthp" path="res://Scripts/DebugMenu.gd" id="5_jiiwr"]
+[ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/inventory.gd" id="6_lgrlh"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_8ahl0"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_sbtoq"]
+size = Vector3(0.75, 1.9, 0.75)
+
+[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("camera", "collision_shape", "inventory")]
+collision_mask = 3
+script = ExtResource("1_x5jwr")
+camera = NodePath("Camera3D")
+collision_shape = NodePath("CollisionShape3D")
+inventory = NodePath("Inventory")
+speed = 4.0
+sprint_mult = 4.0
+accel = 50.0
+jump_strength = 8.0
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+follow_viewport_enabled = true
+
+[node name="Control Center" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+metadata/_edit_use_anchors_ = true
+
+[node name="Panel" type="Panel" parent="CanvasLayer/Control Center"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Sprite2D" type="Sprite2D" parent="CanvasLayer/Control Center/Panel"]
+modulate = Color(1, 1, 1, 0.498039)
+self_modulate = Color(1, 1, 1, 0.486275)
+position = Vector2(20, 20)
+texture = ExtResource("3_gqhvq")
+
+[node name="Control Debug" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+metadata/_edit_use_anchors_ = true
+
+[node name="Label" type="Label" parent="CanvasLayer/Control Debug" node_paths=PackedStringArray("Player")]
+layout_mode = 1
+offset_right = 468.0
+offset_bottom = 233.0
+text = "sfdafasfasfas"
+script = ExtResource("5_jiiwr")
+Player = NodePath("../../..")
+
+[node name="Inventory" type="Node3D" parent="."]
+script = ExtResource("6_lgrlh")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+visible = false
+mesh = SubResource("CapsuleMesh_8ahl0")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+shape = SubResource("BoxShape3D_sbtoq")
+
+[node name="Camera3D" type="Camera3D" parent="." node_paths=PackedStringArray("pd")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.600134, 0)
+current = true
+script = ExtResource("2_0w0kd")
+pd = NodePath("..")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="Camera3D"]
+visible = false
+light_color = Color(1, 0.294118, 1, 1)
+light_energy = 6.061
+spot_range = 230.474

@@ -1,0 +1,40 @@
+[gd_scene load_steps=7 format=3 uid="uid://dsq2766vhek4b"]
+
+[ext_resource type="Script" path="res://Scripts/cube.gd" id="1_7g458"]
+[ext_resource type="Material" uid="uid://byhn35gtunii7" path="res://Materials/grassMat.tres" id="3_gto4y"]
+[ext_resource type="PackedScene" uid="uid://dmhm1ql7cw68i" path="res://Assets/character.tscn" id="4_a37ci"]
+[ext_resource type="Script" path="res://Scripts/visibility.gd" id="4_di7se"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_lja70"]
+material = ExtResource("3_gto4y")
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_0khe6"]
+
+[node name="Game" type="Node3D"]
+script = ExtResource("1_7g458")
+
+[node name="Node3D" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 4.83326)
+visible = false
+
+[node name="VisibleOnScreenNotifier3D" type="VisibleOnScreenNotifier3D" parent="Node3D"]
+script = ExtResource("4_di7se")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Node3D/VisibleOnScreenNotifier3D"]
+mesh = SubResource("BoxMesh_lja70")
+skeleton = NodePath("../../..")
+
+[node name="RigidBody3D" type="RigidBody3D" parent="Node3D/VisibleOnScreenNotifier3D/MeshInstance3D"]
+freeze = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Node3D/VisibleOnScreenNotifier3D/MeshInstance3D/RigidBody3D"]
+shape = SubResource("BoxShape3D_0khe6")
+
+[node name="Character" parent="." instance=ExtResource("4_a37ci")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 10)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -0.5, 0.866025, 0, -0.866025, -0.5, 0, 0, 0)
+
+[connection signal="screen_entered" from="Node3D/VisibleOnScreenNotifier3D" to="Node3D/VisibleOnScreenNotifier3D" method="_on_screen_entered"]
+[connection signal="screen_exited" from="Node3D/VisibleOnScreenNotifier3D" to="Node3D/VisibleOnScreenNotifier3D" method="_on_screen_exited"]

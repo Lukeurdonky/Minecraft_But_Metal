@@ -1,0 +1,147 @@
+[gd_scene load_steps=11 format=3 uid="uid://du771gwxm45or"]
+
+[ext_resource type="Script" uid="uid://b1m8wa8rv87af" path="res://Scripts/multiplayer_movement.gd" id="1_a0ylp"]
+[ext_resource type="Script" uid="uid://v7ta4wvqmrl8" path="res://Scripts/input_synchronizer.gd" id="2_3ujvx"]
+[ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/interactions.gd" id="2_jla21"]
+[ext_resource type="Texture2D" uid="uid://c47ikq7xvlx14" path="res://Sprites/crosshair.png" id="3_1bt1g"]
+[ext_resource type="Script" uid="uid://qnlmb3pmrthp" path="res://Scripts/DebugMenu.gd" id="4_kt54p"]
+[ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/inventory.gd" id="5_qwiv8"]
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_riag0"]
+properties/0/path = NodePath(".:player_id")
+properties/0/spawn = true
+properties/0/replication_mode = 0
+properties/1/path = NodePath(".:position")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_ksdqt"]
+properties/0/path = NodePath("InputSynchronizer:directions")
+properties/0/spawn = false
+properties/0/replication_mode = 1
+properties/1/path = NodePath("InputSynchronizer:pitch")
+properties/1/spawn = false
+properties/1/replication_mode = 1
+properties/2/path = NodePath("InputSynchronizer:yaw")
+properties/2/spawn = false
+properties/2/replication_mode = 1
+properties/3/path = NodePath("InputSynchronizer:is_jumping")
+properties/3/spawn = false
+properties/3/replication_mode = 1
+properties/4/path = NodePath("InputSynchronizer:is_sprinting")
+properties/4/spawn = false
+properties/4/replication_mode = 1
+properties/5/path = NodePath("InputSynchronizer:spectator_mode")
+properties/5/spawn = false
+properties/5/replication_mode = 1
+properties/6/path = NodePath("InputSynchronizer:is_crouching")
+properties/6/spawn = true
+properties/6/replication_mode = 1
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_k8jnh"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_kk6n5"]
+size = Vector3(0.75, 1.9, 0.75)
+
+[node name="Multiplayer_Player" type="CharacterBody3D" node_paths=PackedStringArray("camera", "collision_shape", "inventory", "InputSynchronizer")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 25000, 10000, 25000)
+collision_layer = 2
+wall_min_slide_angle = 0.0
+floor_block_on_wall = false
+script = ExtResource("1_a0ylp")
+camera = NodePath("Camera3D2")
+collision_shape = NodePath("CollisionShape3D2")
+inventory = NodePath("Inventory2")
+isMultiplayer = true
+InputSynchronizer = NodePath("InputSynchronizer")
+speed = 4.0
+sprint_mult = 4.0
+accel = 50.0
+jump_strength = 8.0
+gravity = 27.0
+
+[node name="ServerSynchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_riag0")
+
+[node name="InputSynchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_ksdqt")
+script = ExtResource("2_3ujvx")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="."]
+visible = false
+mesh = SubResource("CapsuleMesh_k8jnh")
+
+[node name="CollisionShape3D2" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+shape = SubResource("BoxShape3D_kk6n5")
+
+[node name="Camera3D2" type="Camera3D" parent="." node_paths=PackedStringArray("pd")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.600134, 0)
+script = ExtResource("2_jla21")
+pd = NodePath("..")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="Camera3D2"]
+visible = false
+light_color = Color(1, 0.294118, 1, 1)
+light_energy = 6.061
+spot_range = 230.474
+
+[node name="CanvasLayer2" type="CanvasLayer" parent="."]
+visible = false
+follow_viewport_enabled = true
+
+[node name="Control Center" type="Control" parent="CanvasLayer2"]
+layout_mode = 3
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+metadata/_edit_use_anchors_ = true
+
+[node name="Panel" type="Panel" parent="CanvasLayer2/Control Center"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
+metadata/_edit_use_anchors_ = true
+
+[node name="Sprite2D" type="Sprite2D" parent="CanvasLayer2/Control Center/Panel"]
+modulate = Color(1, 1, 1, 0.498039)
+self_modulate = Color(1, 1, 1, 0.486275)
+position = Vector2(20, 20)
+texture = ExtResource("3_1bt1g")
+
+[node name="Control Debug" type="Control" parent="CanvasLayer2"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+metadata/_edit_use_anchors_ = true
+
+[node name="Label" type="Label" parent="CanvasLayer2/Control Debug" node_paths=PackedStringArray("Player")]
+layout_mode = 1
+offset_right = 468.0
+offset_bottom = 233.0
+text = "sfdafasfasfas"
+script = ExtResource("4_kt54p")
+Player = NodePath("../../..")
+metadata/_edit_use_anchors_ = true
+
+[node name="Inventory2" type="Node3D" parent="."]
+script = ExtResource("5_qwiv8")
