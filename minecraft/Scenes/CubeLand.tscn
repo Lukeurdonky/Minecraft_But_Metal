@@ -6,8 +6,9 @@
 
 [sub_resource type="Environment" id="Environment_akwl5"]
 fog_enabled = true
+fog_light_color = Color(0.90890723, 0.0006955856, 0.9139287, 1)
 fog_light_energy = 0.15
-fog_density = 0.005
+fog_density = 0.015
 
 [node name="GameHandler" type="Node3D"]
 script = ExtResource("1_l2ypv")

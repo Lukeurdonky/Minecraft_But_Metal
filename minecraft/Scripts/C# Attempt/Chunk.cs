@@ -10,7 +10,7 @@ public sealed class Chunk
 	public bool Loaded = false;
 	public bool Generated = false;
 	public MeshInstance3D MeshInstance;
-	public StaticBody3D CollisionShape;
+	// public StaticBody3D CollisionShape;
 
 	public Chunk(Vector3I position)
 	{

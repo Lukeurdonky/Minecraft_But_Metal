@@ -641,7 +641,7 @@ public partial class Chunk_Manager : Node
 					int index = voxel_index(x, y, z);
 					if (worldY <= height)
 					{
-						data[index] = 3; // Solid block
+						data[index] = 1; // Solid block
 					}
 					else
 					{
