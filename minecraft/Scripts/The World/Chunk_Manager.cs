@@ -22,43 +22,6 @@ public partial class Chunk_Manager : Node
 		new Vector3I(0, -1, 0)   // Bottom (Y-)
 	};
 	
-	private static readonly Vector3[][] FaceCubeVertices = new Vector3[][]
-	{
-		// Front (Z-)
-		new Vector3[] { new(0,0,0), new(1,0,0), new(1,1,0), new(0,1,0) },
-		// Back (Z+)
-		new Vector3[] { new(0,0,1), new(1,0,1), new(1,1,1), new(0,1,1) },
-		// Left (X-)
-		new Vector3[] { new(0,0,0), new(0,0,1), new(0,1,1), new(0,1,0) },
-		// Right (X+)
-		new Vector3[] { new(1,0,0), new(1,0,1), new(1,1,1), new(1,1,0) },
-		// Top (Y+)
-		new Vector3[] { new(0,1,0), new(1,1,0), new(1,1,1), new(0,1,1) },
-		// Bottom (Y-)
-		new Vector3[] { new(0,0,0), new(1,0,0), new(1,0,1), new(0,0,1) }
-	};
-	
-	private static readonly Vector3[] FaceNormals = new Vector3[]
-	{
-		new Vector3(0, 0, -1),  // Front
-		new Vector3(0, 0, 1),   // Back
-		new Vector3(-1, 0, 0),  // Left
-		new Vector3(1, 0, 0),   // Right
-		new Vector3(0, 1, 0),   // Top
-		new Vector3(0, -1, 0)   // Bottom
-	};
-	
-	// Index patterns per face (from Block_Registry)
-	private static readonly int[][] FaceIndices = new int[][]
-	{
-		new int[] { 0, 1, 2, 2, 3, 0 },  // Front
-		new int[] { 0, 2, 1, 0, 3, 2 },  // Back
-		new int[] { 0, 2, 1, 0, 3, 2 },  // Left
-		new int[] { 0, 1, 2, 2, 3, 0 },  // Right
-		new int[] { 0, 1, 2, 2, 3, 0 },  // Top
-		new int[] { 0, 2, 1, 0, 3, 2 }   // Bottom
-	};
-	
 	private Global Global;
 	private Dictionary<Vector3I, Chunk> chunks = new();
 	private HashSet<Vector3I> activeChunks = new();
@@ -196,20 +159,32 @@ public partial class Chunk_Manager : Node
 				if (shouldBeVisible && chunk.Generated && !chunk.Loaded)
 				{
 					// Check if all 6 neighbors are generated before loading.
-					bool allNeighborsGenerated = true;
+					bool allNeighborsExist = true;
 					for (int i = 0; i < 6; i++)
 					{
 						Vector3I neighborPos = chunkPos + FaceOffsets[i];
-						if (!chunks.ContainsKey(neighborPos) || !chunks[neighborPos].Generated)
+						if(!chunks.ContainsKey(neighborPos))
 						{
-							allNeighborsGenerated = false;
-							break; // No need to check further
+							allNeighborsExist = false;
+							break;
 						}
+
 					}
-					if (allNeighborsGenerated)
+					if (allNeighborsExist)
 					{
-						// Only add to loading queue if not already queued
-						if (!loadingQueue.Contains(chunkPos))
+						// Still check if they're actually generated
+						bool allGenerated = true;
+						for (int i = 0; i < 6; i++)
+						{
+							Vector3I neighborPos = chunkPos + FaceOffsets[i];
+							if(!chunks[neighborPos].Generated)
+							{
+								allGenerated = false;
+								break;
+							}
+						}
+						
+						if (allGenerated && !loadingQueue.Contains(chunkPos))
 						{
 							loadingQueue.Add(chunkPos);
 							// processedThisFrame++;
