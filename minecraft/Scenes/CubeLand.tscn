@@ -5,8 +5,9 @@
 [ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/texture_atlas.tres" id="3_a802x"]
 
 [sub_resource type="Environment" id="Environment_akwl5"]
+fog_enabled = true
 fog_light_energy = 0.15
-fog_density = 0.025
+fog_density = 0.005
 
 [node name="GameHandler" type="Node3D"]
 script = ExtResource("1_l2ypv")

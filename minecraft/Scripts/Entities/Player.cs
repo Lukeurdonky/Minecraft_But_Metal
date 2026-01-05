@@ -41,7 +41,7 @@ public partial class Player : Entity
     private Vector3 rightDirection = Vector3.Zero;
     private Vector3 direction = Vector3.Zero;  // Movement direction
 
-    private Global Global;
+    // private Global Global;
 
     public override void ImHere()
     {
@@ -136,7 +136,7 @@ public partial class Player : Entity
         }
         
         float fricMult = Global.GroundFriction;
-        if (!IsOnFloor())
+        if (!OnFloor())
         {
             tempSpeed /= 8;
             fricMult = Global.AirFriction;
@@ -163,7 +163,7 @@ public partial class Player : Entity
             Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
         }
         
-        if ((IsOnFloor() || SpectatorMode) && Input.IsActionPressed("jump"))
+        if ((OnFloor() || SpectatorMode) && Input.IsActionPressed("jump"))
         {
             Velocity = new Vector3(Velocity.X, JumpStrength, Velocity.Z);
         }
@@ -176,7 +176,7 @@ public partial class Player : Entity
             }
         }
         
-        MoveAndSlide();
+        // MoveAndSlide();
     }
 
     public void RotateCamera()

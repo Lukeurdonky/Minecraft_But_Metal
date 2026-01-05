@@ -22,6 +22,8 @@ SprintMult = 4.0
 Accel = 50.0
 JumpStrength = 8.0
 Gravity = 27.0
+offset = Vector2(0, -0.1)
+width = 0.9
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 follow_viewport_enabled = true
