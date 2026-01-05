@@ -1,17 +1,18 @@
 [gd_scene load_steps=5 format=3 uid="uid://dsq2766vhek4b"]
 
-[ext_resource type="Script" uid="uid://cdiksh4gbjy6j" path="res://Scripts/level.gd" id="1_l2ypv"]
-[ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/C# Attempt/Chunk_Manager.cs" id="2_tia5y"]
+[ext_resource type="Script" uid="uid://cdiksh4gbjy6j" path="res://Scripts/Handlers/level.gd" id="1_a802x"]
+[ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/The World/Chunk_Manager.cs" id="2_tia5y"]
 [ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/texture_atlas.tres" id="3_a802x"]
 
 [sub_resource type="Environment" id="Environment_akwl5"]
 fog_enabled = true
-fog_light_color = Color(0.90890723, 0.0006955856, 0.9139287, 1)
+fog_light_color = Color(0.32915837, 0.3291584, 0.3291584, 1)
 fog_light_energy = 0.15
 fog_density = 0.015
+fog_sky_affect = 0.0
 
 [node name="GameHandler" type="Node3D"]
-script = ExtResource("1_l2ypv")
+script = ExtResource("1_a802x")
 
 [node name="Game" type="Node3D" parent="."]
 script = ExtResource("2_tia5y")

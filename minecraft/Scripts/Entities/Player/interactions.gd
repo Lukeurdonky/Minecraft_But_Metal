@@ -62,7 +62,7 @@ func placeBlock():
 	if(pd.SelectedCube != null && item != null):
 		var loc = pd.SelectedCubePosition + Vector3i(selected_normal)
 		if(can_place(loc)):
-			var p = Global.GetItemStat(item, "block")
+			var p = Item_Registry.GetItemStat(item, "block")
 			if(p == null): return
 			else: 
 				Global.CubeManager.place_block(loc, p)

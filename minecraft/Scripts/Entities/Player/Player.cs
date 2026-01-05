@@ -163,7 +163,7 @@ public partial class Player : Entity
             Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
         }
         
-        if ((OnFloor() || SpectatorMode) && Input.IsActionPressed("jump"))
+        if ((OnFloor() || SpectatorMode) && Input.IsActionPressed("jump") && Velocity.Y <= 0)
         {
             Velocity = new Vector3(Velocity.X, JumpStrength, Velocity.Z);
         }

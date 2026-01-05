@@ -47,28 +47,6 @@ public partial class Global : Node
         public int DropCount { get; set; }
     }
 
-    public class ItemInfo
-    {
-        public int Block { get; set; }
-        public int MaxStack { get; set; }
-        public string Texture { get; set; }
-    }
-
-    public Dictionary<string, BlockInfo> BlockData { get; set; } = new Dictionary<string, BlockInfo>
-    {
-        { "grass", new BlockInfo { Index = 0, Hardness = 1, Drops = "grass", DropCount = 2 } },
-        { "dirt", new BlockInfo { Index = 1, Hardness = 2, Drops = "dirt", DropCount = 1 } },
-        { "stone", new BlockInfo { Index = 2, Hardness = 5, Drops = "stone", DropCount = 5 } },
-        { "silly", new BlockInfo { Index = 3, Hardness = 5, Drops = "stone", DropCount = 5 } }
-    };
-
-    public Dictionary<string, ItemInfo> ItemData { get; set; } = new Dictionary<string, ItemInfo>
-    {
-        { "grass", new ItemInfo { Block = 1, MaxStack = 64, Texture = "res://sprites/textures/grass.png" } },
-        { "dirt", new ItemInfo { Block = 2, MaxStack = 64, Texture = "res://sprites/textures/dirt.png" } },
-        { "stone", new ItemInfo { Block = 3, MaxStack = 64, Texture = "res://sprites/textures/stone.png" } }
-    };
-
     public Vector3 GetPlayerPos()
     {
         if (Player == null)
@@ -101,22 +79,6 @@ public partial class Global : Node
     //     }
     //     return default(Variant);  // Return null or a default value
     // }
-
-    public Variant GetItemStat(string itemType, string stat)
-    {
-        if (ItemData.ContainsKey(itemType))
-        {
-            var itemInfo = ItemData[itemType];
-            return stat switch
-            {
-                "block" => itemInfo.Block,
-                "max_stack" => itemInfo.MaxStack,
-                "texture" => itemInfo.Texture,
-                _ => default(Variant)
-            };
-        }
-        return default(Variant);  // Return null or a default value
-    }
 
     // --------------------- the abyss ---------------------------
 

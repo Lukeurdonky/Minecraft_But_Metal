@@ -18,7 +18,8 @@ config/icon="res://icon.svg"
 [autoload]
 
 Global="*res://Scripts/Handlers/Global.cs"
-Block_Registry="*res://Scripts/C# Attempt/Block_Registry.cs"
+Item_Registry="*res://Scripts/Datasets/Item_Registry.cs"
+Block_Registry="*res://Scripts/Datasets/Block_Registry.cs"
 
 [display]
 
