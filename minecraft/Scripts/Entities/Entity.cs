@@ -203,8 +203,8 @@ public partial class Entity : CharacterBody3D
 	public virtual bool OnFloor()
 	{
 		// Get entity's foot-level AABB (slightly below actual position to check for ground)
-        Aabb entityBox = GetAABB();
-        
+		Aabb entityBox = GetAABB();
+		
 		// Create a thin slice just below the entity's feet
 		Aabb footCheckBox = new Aabb(
 			new Vector3(entityBox.Position.X, entityBox.Position.Y - 0.1f, entityBox.Position.Z),
@@ -212,36 +212,36 @@ public partial class Entity : CharacterBody3D
 		);
 		
 		// Calculate the min and max block positions the entity's feet could be over
-        int minX = (int)Mathf.Floor(footCheckBox.Position.X);
-        int maxX = (int)Mathf.Floor(footCheckBox.End.X);
-        int minZ = (int)Mathf.Floor(footCheckBox.Position.Z);
-        int maxZ = (int)Mathf.Floor(footCheckBox.End.Z);
-        int checkY = (int)Mathf.Floor(footCheckBox.Position.Y);
-        
-        // Check all blocks the entity could be standing on
-        for(int x = minX; x <= maxX; x++)
-        {
-            for(int z = minZ; z <= maxZ; z++)
-            {
-                Vector3I blockPos = new Vector3I(x, checkY, z);
-                
-                int blockID = Global.CubeManager.get_block(blockPos);
-                if(blockID == 0) continue; // Air, skip
-                
-                // Create AABB for this block
-                Aabb blockBox = new Aabb(
-                    new Vector3(blockPos.X, blockPos.Y, blockPos.Z),
-                    new Vector3(1, 1, 1)
-                );
-                
-                // Check if foot box intersects with this block
-                if(footCheckBox.Intersects(blockBox))
-                {
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    }
+		int minX = (int)Mathf.Floor(footCheckBox.Position.X);
+		int maxX = (int)Mathf.Floor(footCheckBox.End.X);
+		int minZ = (int)Mathf.Floor(footCheckBox.Position.Z);
+		int maxZ = (int)Mathf.Floor(footCheckBox.End.Z);
+		int checkY = (int)Mathf.Floor(footCheckBox.Position.Y);
+		
+		// Check all blocks the entity could be standing on
+		for(int x = minX; x <= maxX; x++)
+		{
+			for(int z = minZ; z <= maxZ; z++)
+			{
+				Vector3I blockPos = new Vector3I(x, checkY, z);
+				
+				int blockID = Global.CubeManager.get_block(blockPos);
+				if(blockID == 0) continue; // Air, skip
+				
+				// Create AABB for this block
+				Aabb blockBox = new Aabb(
+					new Vector3(blockPos.X, blockPos.Y, blockPos.Z),
+					new Vector3(1, 1, 1)
+				);
+				
+				// Check if foot box intersects with this block
+				if(footCheckBox.Intersects(blockBox))
+				{
+					return true;
+				}
+			}
+		}
+		
+		return false;
+	}
 }

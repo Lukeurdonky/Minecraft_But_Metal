@@ -5,8 +5,8 @@ using System.Linq;
 
 public partial class Block_Registry : Node
 {
-	static readonly int atlas_width = 12;
-	static readonly int atlas_height = 8;
+	public static readonly int atlas_width = 12;
+	public static readonly int atlas_height = 8;
 	public static readonly Block_Definition[] Blocks;
 	public static readonly Block_Model[] Models;
 
@@ -29,7 +29,7 @@ public partial class Block_Registry : Node
 
 	}
 
-	private static Block_Model CreateBlockModel(string name, Block_Model.Type type, string datapath)
+	public static Block_Model CreateBlockModel(string name, Block_Model.Type type, string datapath)
 	{
 		Block_Model model = new Block_Model { name = name, type = type, datapath = datapath };
 		if(Block_Model.Type.Cube == type)
@@ -250,7 +250,7 @@ public partial class Block_Registry : Node
 		return modelDef;
 	}
 
-	private static Vector2[][] GenerateFaceUVs(int blockIndex, int atlasWidth, int atlasHeight)
+	public static Vector2[][] GenerateFaceUVs(int blockIndex, int atlasWidth, int atlasHeight)
 	{
 		// Debug.WriteLine("ssss");
 		int cols = atlasWidth / 3;

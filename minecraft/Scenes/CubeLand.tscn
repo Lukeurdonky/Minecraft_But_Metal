@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cdiksh4gbjy6j" path="res://Scripts/Handlers/level.gd" id="1_a802x"]
 [ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/The World/Chunk_Manager.cs" id="2_tia5y"]
-[ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/texture_atlas.tres" id="3_a802x"]
+[ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/block_texture_atlas.tres" id="3_a802x"]
 
 [sub_resource type="Environment" id="Environment_akwl5"]
 fog_enabled = true

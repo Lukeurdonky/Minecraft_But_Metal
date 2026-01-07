@@ -13,5 +13,11 @@ public sealed class Item_Definition
     public ItemType Type { get; set; }
     public int Block { get; set; }
     public int MaxStack { get; set; }
-    public string Texture { get; set; }
+    public int IconAtlasIndex { get; set; } // atlas for icons
+    // public string Icon { get; set; }
+    public Vector2 ModelAtlasIndex { get; set; } // atlas for models (blocks only)
+    public Block_Model EntityModel { get; set; }
+    public Block_Model HeldModel { get; set; }
+    // public string EntityTexture { get; set; }
+    
 }

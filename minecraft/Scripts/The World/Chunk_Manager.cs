@@ -48,7 +48,7 @@ public partial class Chunk_Manager : Node
 	private int noiseSeed = 42;
 	
 	private float timeElapsed = 0f;
-	private const float TIME_HANDLE = 0.05f;
+	private const float TIME_HANDLE = 0.033f;
 	
 	// Cached chunk offsets to avoid rebuilding every frame
 	private Vector3I lastPlayerChunkPos = new Vector3I(int.MaxValue, int.MaxValue, int.MaxValue);

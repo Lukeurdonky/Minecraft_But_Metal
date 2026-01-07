@@ -24,7 +24,8 @@ func _ready() -> void:
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
 	selection()
-	
+	if Input.is_action_pressed("drop_item"):
+		drop_item()
 	if pd.IsSprinting:
 		fov = floor(lerp(fov, baseFOV + sprintFOVAdd+.0, .2))
 	else:
@@ -62,7 +63,7 @@ func placeBlock():
 	if(pd.SelectedCube != null && item != null):
 		var loc = pd.SelectedCubePosition + Vector3i(selected_normal)
 		if(can_place(loc)):
-			var p = Item_Registry.GetItemStat(item, "block")
+			var p = Item_Registry.GetItemStat(item, "Block")
 			if(p == null): return
 			else: 
 				Global.CubeManager.place_block(loc, p)
@@ -132,34 +133,7 @@ func selection():
 	#print(yeah.global_transform.origin)
 	pd.SelectedCube = temp_cube
 	#print(current)
-	
 
-#func selection():
-	#var query = PhysicsRayQueryParameters3D.new()
-	#query.from = global_transform.origin# - global_transform.basis.z.normalized()
-	#query.to = global_transform.origin - global_transform.basis.z.normalized()*max_distance
-	##query.collision_layer = 1
-	#query.collision_mask = 1
-	#
-	## Cast the ray and check for any intersection
-	#var space_state: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
-	#var result = space_state.intersect_ray(query)
-#
-	#if result:
-		##if(Global.selected_cube != null): Global.selected_cube.data.mesh_instance.material_overlay = null
-		##print(floor(result.position))
-		#var cube_pos = floor(result.position - result.normal/2.0)
-		#yeah.global_transform.origin = floor(result.position - result.normal/2.0) + Vector3(.5,.5,.5)
-		#yeah.visible = true
-		#pd.selected_cube = Global.CubeManager.get_block(cube_pos)
-		#selected_normal = result.normal
-		##print(Global.selected_cube)
-		##Global.selected_cube.data.mesh_instance.material_overlay = shader_material
-		##print(Global.selected_cube.data.mesh_instance.material_overlay)
-	#else:
-		##if(Global.selected_cube != null): Global.selected_cube.data.mesh_instance.material_overlay = null
-		#pd.selected_cube = null
-		#yeah.visible = false
 		
 func can_place(local: Vector3):
 	var flag = false
@@ -188,3 +162,11 @@ func can_place(local: Vector3):
 	#if(results.size() > 0): flag = false
 	#if(local.x >= size.x || local.y >= size.y || local.z >= size.z || local.x < 0 || local.y < 0 || local.z < 0): flag = false
 	return flag
+	
+	
+func drop_item():
+	var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
+	if(item != null):
+		Item_Registry.SpawnItem(item, global_position, get_tree().root)
+		pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
+				
