@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://dmhm1ql7cw68i"]
+[gd_scene load_steps=9 format=3 uid="uid://dmhm1ql7cw68i"]
 
 [ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player/Player.cs" id="1_x5jwr"]
 [ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/Entities/Player/interactions.gd" id="2_0w0kd"]
@@ -12,9 +12,6 @@
 size = Vector3(0.75, 1.9, 0.75)
 
 [sub_resource type="BoxMesh" id="BoxMesh_x5jwr"]
-
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_x5jwr"]
-shading_mode = 0
 
 [node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "Inventory")]
 collision_mask = 0
@@ -131,4 +128,3 @@ transform = Transform3D(0.2437706, -0.03532862, 0.042752516, 0.042752516, 0.2424
 layers = 1015808
 mesh = SubResource("BoxMesh_x5jwr")
 skeleton = NodePath("../../../Camera3D")
-surface_material_override/0 = SubResource("StandardMaterial3D_x5jwr")

@@ -9,7 +9,8 @@ func _ready() -> void:
 	for i in range(max_slots):
 		items.append(Slot.new())
 
-func _process() -> void:
+func _process(delta) -> void:
+	pass
 	#render the held item using model data and the hand's mesh pointer
 
 class Slot:
