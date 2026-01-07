@@ -1,10 +1,10 @@
 [gd_scene load_steps=8 format=3 uid="uid://dmhm1ql7cw68i"]
 
-[ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player.cs" id="1_x5jwr"]
-[ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/interactions.gd" id="2_0w0kd"]
+[ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player/Player.cs" id="1_x5jwr"]
+[ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/Entities/Player/interactions.gd" id="2_0w0kd"]
 [ext_resource type="Texture2D" uid="uid://c47ikq7xvlx14" path="res://Sprites/crosshair.png" id="3_gqhvq"]
-[ext_resource type="Script" uid="uid://qnlmb3pmrthp" path="res://Scripts/DebugMenu.gd" id="5_jiiwr"]
-[ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/inventory.gd" id="6_lgrlh"]
+[ext_resource type="Script" uid="uid://qnlmb3pmrthp" path="res://Scripts/Handlers/DebugMenu.gd" id="5_jiiwr"]
+[ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/Entities/Player/inventory.gd" id="6_lgrlh"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_8ahl0"]
 
@@ -17,7 +17,7 @@ script = ExtResource("1_x5jwr")
 Camera = NodePath("Camera3D")
 CollisionShape = NodePath("CollisionShape3D")
 Inventory = NodePath("Inventory")
-Speed = 4.0
+Speed = 12.0
 SprintMult = 4.0
 Accel = 50.0
 JumpStrength = 8.0

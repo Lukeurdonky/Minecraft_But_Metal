@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -48,7 +49,7 @@ public partial class Chunk_Manager : Node
 	private int noiseSeed = 42;
 	
 	private float timeElapsed = 0f;
-	private const float TIME_HANDLE = 0.033f;
+	private const float TIME_HANDLE = 0.015f;
 	
 	// Cached chunk offsets to avoid rebuilding every frame
 	private Vector3I lastPlayerChunkPos = new Vector3I(int.MaxValue, int.MaxValue, int.MaxValue);
@@ -66,6 +67,19 @@ public partial class Chunk_Manager : Node
 	private int vertexCount = 0;
 	private int uvCount = 0;
 	private int indexCount = 0;
+	
+	// GC monitoring
+	private int lastGC0 = 0;
+	private int lastGC1 = 0;
+	private int lastGC2 = 0;
+	private int frameCount = 0;
+	private const int DEBUG_REPORT_INTERVAL = 60;
+	
+	// Array pools to reduce GC pressure
+	private static readonly ArrayPool<Vector3> Vector3Pool = ArrayPool<Vector3>.Shared;
+	private static readonly ArrayPool<Vector2> Vector2Pool = ArrayPool<Vector2>.Shared;
+	private static readonly ArrayPool<int> IntPool = ArrayPool<int>.Shared;
+	private static readonly ArrayPool<byte> BytePool = ArrayPool<byte>.Shared;
 
 	public override void _Ready()
 	{
@@ -79,6 +93,8 @@ public partial class Chunk_Manager : Node
 		
 		noise = new FastNoiseLite();
 		noise.Seed = noiseSeed;
+
+		RecalculateChunkOffsets();
 		
 		// Start long-lived worker threads
 		generationThread = new Thread(GenerationWorkerLoop);
@@ -104,15 +120,35 @@ public partial class Chunk_Manager : Node
 		loadingThread?.Join(1000);
 	}
 
-	public override void _PhysicsProcess(double delta)
+	public override void _Process(double delta)
 	{
 		timeElapsed += (float)delta;
 		if (timeElapsed >= TIME_HANDLE)
 		{
-			timeElapsed = 0;
+			timeElapsed -= TIME_HANDLE;
 			
 			handle_chunks_art();
 			handle_dirties();
+			
+			// GC monitoring
+			// int gc0 = GC.CollectionCount(0);
+			// int gc1 = GC.CollectionCount(1);
+			// int gc2 = GC.CollectionCount(2);
+			
+			// if (gc0 != lastGC0 || gc1 != lastGC1 || gc2 != lastGC2)
+			// {
+			// 	GD.Print($"[GC] Gen0: +{gc0 - lastGC0}, Gen1: +{gc1 - lastGC1}, Gen2: +{gc2 - lastGC2}");
+			// 	lastGC0 = gc0;
+			// 	lastGC1 = gc1;
+			// 	lastGC2 = gc2;
+			// }
+			
+			// frameCount++;
+			// if (frameCount >= DEBUG_REPORT_INTERVAL)
+			// {
+			// 	GD.Print($"[GC REPORT] Total collections - Gen0: {gc0}, Gen1: {gc1}, Gen2: {gc2}");
+			// 	frameCount = 0;
+			// }
 		}
 	}
 
@@ -125,7 +161,7 @@ public partial class Chunk_Manager : Node
 		if (playerPos != lastPlayerChunkPos)
 		{
 			lastPlayerChunkPos = playerPos;
-			RecalculateChunkOffsets();
+			
 			
 			// Rebuild activeSet only when player moves
 			cachedActiveSet.Clear();
@@ -150,10 +186,8 @@ public partial class Chunk_Manager : Node
 			// Determine if the chunk should be visible or just exist as data
 			bool shouldBeVisible = offset.Length() <= RenderDistance;
 
-			if (chunks.ContainsKey(chunkPos))
+			if (chunks.TryGetValue(chunkPos, out var chunk))
 			{
-				var chunk = chunks[chunkPos];
-				
 				// Chunk exists and is generated but not loaded.
 				// Only load it if it's within the visible render distance.
 				if (shouldBeVisible && chunk.Generated && !chunk.Loaded)
@@ -246,9 +280,9 @@ public partial class Chunk_Manager : Node
 		dirtyChunksList.Clear();
 		foreach (var chunkPos in dirtyChunks)
 		{
-			if (chunks.ContainsKey(chunkPos))
+			if (chunks.TryGetValue(chunkPos, out var chunk))
 			{
-				chunks[chunkPos].Dirty = false;
+				chunk.Dirty = false;
 				loadingQueue.Add(chunkPos);
 				dirtyChunksList.Add(chunkPos);
 			}
@@ -298,10 +332,8 @@ public partial class Chunk_Manager : Node
 
 	public void unload(Vector3I position)
 	{
-		if (!chunks.ContainsKey(position))
+		if (chunks.TryGetValue(position, out var chunk) == false)
 		return;
-	
-		var chunk = chunks[position];
 		
 		// Free the visual objects (check if not already disposed)
 		if (chunk.MeshInstance != null && GodotObject.IsInstanceValid(chunk.MeshInstance))
@@ -374,10 +406,10 @@ public partial class Chunk_Manager : Node
 	public void generate_data(Vector3I position)
 	{
 		// Check if chunk still exists (may have been unloaded)
-		if (!chunks.ContainsKey(position))
+		if (!chunks.TryGetValue(position, out var chunk))
 			return;
 
-		chunks[position].Voxels = create_chunk_data(position);
+		chunk.Voxels = create_chunk_data(position);
 		
 		CallDeferred("generate_ready_chunk", position);
 	}
@@ -385,10 +417,11 @@ public partial class Chunk_Manager : Node
 	public void generate_ready_chunk(Vector3I position)
 	{
 		// Check if chunk still exists (may have been unloaded)
-		if (!chunks.ContainsKey(position))
+		if (!chunks.TryGetValue(position, out var chunk))
 			return;
 		
-		chunks[position].Generated = true;
+		chunk.Generated = true;
+		generationQueue.Remove(position); // Clean up the queue
 	}
 
 	// Loading Thread
@@ -528,20 +561,23 @@ public partial class Chunk_Manager : Node
 			}
 		}
 
-		// Convert to Godot types ONLY at the end (main thread will handle this)
-		Vector3[] vertices = new Vector3[vertexCount / 3];
-		Vector3[] normals = new Vector3[vertexCount / 3];
-		Vector2[] uvs2 = new Vector2[uvCount / 2];
-		int[] indices = new int[indexCount];
+		// Rent pooled arrays - will be returned after mesh creation
+		int vCount = vertexCount / 3;
+		int uCount = uvCount / 2;
 		
-		for (int i = 0; i < vertices.Length; i++)
+		Vector3[] vertices = Vector3Pool.Rent(vCount > 0 ? vCount : 1);
+		Vector3[] normals = Vector3Pool.Rent(vCount > 0 ? vCount : 1);
+		Vector2[] uvs2 = Vector2Pool.Rent(uCount > 0 ? uCount : 1);
+		int[] indices = IntPool.Rent(indexCount > 0 ? indexCount : 1);
+		
+		for (int i = 0; i < vCount; i++)
 		{
 			int idx = i * 3;
 			vertices[i] = new Vector3(meshVerticesFlat[idx], meshVerticesFlat[idx + 1], meshVerticesFlat[idx + 2]);
 			normals[i] = new Vector3(meshNormalsFlat[idx], meshNormalsFlat[idx + 1], meshNormalsFlat[idx + 2]);
 		}
 		
-		for (int i = 0; i < uvs2.Length; i++)
+		for (int i = 0; i < uCount; i++)
 		{
 			int idx = i * 2;
 			uvs2[i] = new Vector2(meshUvsFlat[idx], meshUvsFlat[idx + 1]);
@@ -549,34 +585,53 @@ public partial class Chunk_Manager : Node
 		
 		Array.Copy(meshIndicesArray, indices, indexCount);
 
-		CallDeferred("load_ready_chunk", position, vertices, normals, uvs2, indices);
+		// Pass actual counts so we know how much of the rented arrays to use
+		CallDeferred("load_ready_chunk", position, vertices, normals, uvs2, indices, vCount, uCount, indexCount);
 	}
 
-	public void load_ready_chunk(Vector3I position, Vector3[] vertices, Vector3[] normals, Vector2[] uvs, int[] indices)
+	public void load_ready_chunk(Vector3I position, Vector3[] vertices, Vector3[] normals, Vector2[] uvs, int[] indices, int vertCount, int uvCount, int idxCount)
 	{
 		// Check if chunk still exists (may have been unloaded)
-		if (!chunks.ContainsKey(position))
-			return;
-		
-		if (vertices.Length == 0 || indices.Length == 0)
+		if (!chunks.TryGetValue(position, out var chunk))
 		{
+			// Return pooled arrays even if chunk was unloaded
+			Vector3Pool.Return(vertices, clearArray: false);
+			Vector3Pool.Return(normals, clearArray: false);
+			Vector2Pool.Return(uvs, clearArray: false);
+			IntPool.Return(indices, clearArray: false);
+			return;
+		}
+		
+		if (vertCount == 0 || idxCount == 0)
+		{
+			// Return pooled arrays
+			Vector3Pool.Return(vertices, clearArray: false);
+			Vector3Pool.Return(normals, clearArray: false);
+			Vector2Pool.Return(uvs, clearArray: false);
+			IntPool.Return(indices, clearArray: false);
+			
 			// If no visible faces, remove the mesh if it exists
-			if (chunks[position].MeshInstance != null && GodotObject.IsInstanceValid(chunks[position].MeshInstance))
+			if (chunk.MeshInstance != null && GodotObject.IsInstanceValid(chunk.MeshInstance))
 			{
-				if (chunks[position].MeshInstance.GetParent() != null)
+				if (chunk.MeshInstance.GetParent() != null)
 				{
-					RemoveChild(chunks[position].MeshInstance);
+					RemoveChild(chunk.MeshInstance);
 				}
-				chunks[position].MeshInstance.QueueFree();
-				chunks[position].MeshInstance = null;
+				chunk.MeshInstance.QueueFree();
+				chunk.MeshInstance = null;
 			}
-			chunks[position].Loaded = true;
+			chunk.Loaded = true;
 			return;
 		}
 
-		// Create NEW mesh BEFORE removing old one (prevents flash)
-		object[] meshArrays = new object[] { vertices, normals, uvs, indices };
-		Mesh newMesh = create_mesh_from_data(meshArrays);
+		// Create mesh using only the valid portion of the arrays
+		Mesh newMesh = create_mesh_from_data(vertices, normals, uvs, indices, vertCount, uvCount, idxCount);
+		
+		// Return pooled arrays after mesh is created
+		Vector3Pool.Return(vertices, clearArray: false);
+		Vector3Pool.Return(normals, clearArray: false);
+		Vector2Pool.Return(uvs, clearArray: false);
+		IntPool.Return(indices, clearArray: false);
 		
 		// Update existing mesh instance or create new one
 		if (chunks[position].MeshInstance != null && GodotObject.IsInstanceValid(chunks[position].MeshInstance))
@@ -596,10 +651,13 @@ public partial class Chunk_Manager : Node
 		
 		chunks[position].Loaded = true;
 		activeChunks.Add(position);
+		loadingQueue.Remove(position); // Clean up the queue
 	}
 	// ---------------------------- TERRAIN GENERATION ----------------------------
 	public byte[] create_chunk_data(Vector3I chunkPos)
 	{
+		// Use pooled array - chunk will own this and we won't return it
+		// (chunks hold voxel data for their lifetime)
 		byte[] data = new byte[CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE];
 		for (int x = 0; x < CHUNK_SIZE; x++)
 		{
@@ -629,20 +687,26 @@ public partial class Chunk_Manager : Node
 	}
 
 	// ---------------------------- MESH CREATION ----------------------------
-	public Mesh create_mesh_from_data(object[] meshData)
+	public Mesh create_mesh_from_data(Vector3[] vertices, Vector3[] normals, Vector2[] uvs, int[] indices, int vertCount, int uvCount, int idxCount)
 	{
-		Vector3[] vertices = (Vector3[])meshData[0];
-		Vector3[] normals = (Vector3[])meshData[1];
-		Vector2[] uvs = (Vector2[])meshData[2];
-		int[] indices = (int[])meshData[3];
+		// Copy only the valid portion to correctly-sized arrays for Godot
+		var finalVerts = new Vector3[vertCount];
+		var finalNormals = new Vector3[vertCount];
+		var finalUvs = new Vector2[uvCount];
+		var finalIndices = new int[idxCount];
+		
+		Array.Copy(vertices, finalVerts, vertCount);
+		Array.Copy(normals, finalNormals, vertCount);
+		Array.Copy(uvs, finalUvs, uvCount);
+		Array.Copy(indices, finalIndices, idxCount);
 		
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
 		
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-		arrays[(int)Mesh.ArrayType.Normal] = normals;
-		arrays[(int)Mesh.ArrayType.TexUV] = uvs;
-		arrays[(int)Mesh.ArrayType.Index] = indices;
+		arrays[(int)Mesh.ArrayType.Vertex] = finalVerts;
+		arrays[(int)Mesh.ArrayType.Normal] = finalNormals;
+		arrays[(int)Mesh.ArrayType.TexUV] = finalUvs;
+		arrays[(int)Mesh.ArrayType.Index] = finalIndices;
 		
 		var arrayMesh = new ArrayMesh();
 		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
@@ -661,10 +725,9 @@ public partial class Chunk_Manager : Node
 		byte[] voxels;
 		
 		// Return air if chunk doesn't exist or isn't generated
-		if (!chunks.ContainsKey(chunkPos))
+		if (!chunks.TryGetValue(chunkPos, out chunk))
 			return 0;
 			
-		chunk = chunks[chunkPos];
 		if (!chunk.Generated || chunk.Voxels == null)
 			return 0;
 			
@@ -727,10 +790,13 @@ public partial class Chunk_Manager : Node
 
 	private void mark_neighbor_dirty(Vector3I chunkPos)
 	{
-		if (chunks.ContainsKey(chunkPos) && chunks[chunkPos].Generated && !chunks[chunkPos].Dirty)
+		if (chunks.TryGetValue(chunkPos, out var chunk))
 		{
-			chunks[chunkPos].Dirty = true;
-			dirtyChunks.Add(chunkPos);
+			if(chunk.Generated && !chunk.Dirty)
+			{
+				chunk.Dirty = true;
+				dirtyChunks.Add(chunkPos);
+			}
 		}
 	}
 

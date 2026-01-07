@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 public partial class Entity : CharacterBody3D
 {
@@ -16,6 +17,11 @@ public partial class Entity : CharacterBody3D
 	public int CurrentHealth { get; set; }
 	public Global Global;
 
+	// Frame spike detection
+	private static readonly Stopwatch _frameTimer = new Stopwatch();
+	private const double SPIKE_THRESHOLD_MS = 16.67; // Anything over 60fps frame time
+	private static double _lastDelta = 0;
+
 	public override void _Ready()
 	{
 		Global = GetNode<Global>("/root/Global");
@@ -24,12 +30,35 @@ public partial class Entity : CharacterBody3D
 
 	public override void _PhysicsProcess(double delta)
 	{
-		// Entity logic here
+		// _frameTimer.Restart();
 		
+		// // Detect frame time spikes (jitter in delta)
+		// if (_lastDelta > 0)
+		// {
+		// 	double deltaMs = delta * 1000.0;
+		// 	double lastDeltaMs = _lastDelta * 1000.0;
+		// 	double jitter = Math.Abs(deltaMs - lastDeltaMs);
+			
+		// 	// Log if frame time varies significantly (>2ms jitter)
+		// 	if (jitter > 2.0)
+		// 	{
+		// 		GD.Print($"[JITTER] Delta: {deltaMs:F2}ms, LastDelta: {lastDeltaMs:F2}ms, Jitter: {jitter:F2}ms");
+		// 	}
+		// }
+		// _lastDelta = delta;
+		
+		// Entity logic here
 		ApplyMovementFromInput(delta);
 		
 		HandleWorldCollisions(Velocity * (float)delta);
 		MoveAndSlide();
+		
+		// _frameTimer.Stop();
+		// double elapsedMs = _frameTimer.Elapsed.TotalMilliseconds;
+		// if (elapsedMs > SPIKE_THRESHOLD_MS)
+		// {
+		// 	GD.Print($"[SLOW FRAME] {GetType().Name} physics took {elapsedMs:F2}ms (>{SPIKE_THRESHOLD_MS}ms)");
+		// }
 	}
 
 	public virtual void TakeDamage(int amount)

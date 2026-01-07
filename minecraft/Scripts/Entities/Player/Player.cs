@@ -53,6 +53,11 @@ public partial class Player : Entity
             Camera.Current = true;
     }
 
+    public override void _Process(double delta)
+    {
+        RotateCamera();  // Smooth camera updates every frame
+    }
+
     public override void _UnhandledInput(InputEvent @event)
     {
         if (@event is InputEventMouseMotion mouseMotion)
@@ -77,12 +82,13 @@ public partial class Player : Entity
 
     public override void ApplyMovementFromInput(double delta)
     {
-        RotateCamera();
+        // RotateCamera();
         ApplyMovement(delta);
     }
 
     private void ApplyMovement(double delta)
     {
+        bool IsOnFloor = OnFloor();
         if (Input.IsActionJustPressed("toggle_mouse"))
         {
             ToggleMouseVisibility();
@@ -136,7 +142,7 @@ public partial class Player : Entity
         }
         
         float fricMult = Global.GroundFriction;
-        if (!OnFloor())
+        if (!IsOnFloor)
         {
             tempSpeed /= 8;
             fricMult = Global.AirFriction;
@@ -163,7 +169,7 @@ public partial class Player : Entity
             Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
         }
         
-        if ((OnFloor() || SpectatorMode) && Input.IsActionPressed("jump") && Velocity.Y <= 0)
+        if ((IsOnFloor || SpectatorMode) && Input.IsActionPressed("jump") && Velocity.Y <= 0)
         {
             Velocity = new Vector3(Velocity.X, JumpStrength, Velocity.Z);
         }

@@ -1,4 +1,4 @@
-extends "res://Scripts/Cube_Behaviors/CubeMechanics.gd"
+extends "res://Scripts/Washed Code/CubeMechanics.gd"
 
 
 func update_cube():

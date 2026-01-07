@@ -5,6 +5,7 @@ extends Camera3D
 var baseFOV = 75
 var sprintFOVAdd = 15
 var max_distance = 5
+@export var throw_strength = 4
 #@export var collision_mask: int = 0xFFFFFFFF
 var shader_material
 var selected_normal
@@ -167,6 +168,8 @@ func can_place(local: Vector3):
 func drop_item():
 	var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
 	if(item != null):
-		Item_Registry.SpawnItem(item, global_position, get_tree().root)
+		var drop = Item_Registry.SpawnItem(item, global_position, get_tree().root)
+		drop.global_rotation.y = rotation.y;
+		drop.velocity = -global_transform.basis.z.normalized()*throw_strength;
 		pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
 				

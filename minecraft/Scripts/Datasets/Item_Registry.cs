@@ -105,10 +105,10 @@ public partial class Item_Registry : Node
 		model.Vertices = new Vector3[]
 		{
 			// Front face (Z-)
-			new Vector3(-.5f, -.5f, .5f),      // Bottom-left
-			new Vector3(.5f, -.5f, .5f),      // Bottom-right
-			new Vector3(.5f, .5f, .5f),      // Top-right
-			new Vector3(-.5f, .5f, .5f),      // Top-left
+			new Vector3(0, 0, .5f),      // Bottom-left
+			new Vector3(1, 0, .5f),      // Bottom-right
+			new Vector3(1, 1, .5f),      // Top-right
+			new Vector3(0, 1, .5f),      // Top-left
 			
 			// // Back face (Z+)
 			// new Vector3(0, 0, 0.5f + halfThickness),      // Bottom-left
@@ -193,17 +193,27 @@ public partial class Item_Registry : Node
 			{
 				arrays[(int)Mesh.ArrayType.TexUV] = GenerateItemUVs(itemInfo.IconAtlasIndex, atlas_width, atlas_height);
 				material.AlbedoTexture = ResourceLoader.Load<Texture2D>("res://Sprites/Textures/item_texture_atlas.png");
+				itemEntity.Scale = new Vector3(0.5f, 0.5f, 0.5f);
+				itemEntity.width = 0.5f;
+				itemEntity.height = 0.5f;
 			}
 			else 
 			{
 				arrays[(int)Mesh.ArrayType.TexUV] = Block_Registry.GenerateFaceUVs((int)itemInfo.ModelAtlasIndex.X, Block_Registry.atlas_width, Block_Registry.atlas_height).SelectMany(v => v).ToArray();
 				material.AlbedoTexture = ResourceLoader.Load<Texture2D>("res://Sprites/Textures/block_texture_atlas.png");
+				itemEntity.Scale = new Vector3(0.25f, 0.25f, 0.25f);
+				itemEntity.width = 0.25f;
+				itemEntity.height = 0.25f;
+				
 			}
 			arrays[(int)Mesh.ArrayType.Index] = entityModel.Indices;
 			
 			arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 			itemEntity.meshInstance.Mesh = arrayMesh;
 			itemEntity.meshInstance.MaterialOverride = material;
+			itemEntity.meshInstance.Position -= new Vector3(.5f, .5f, 0.5f);
+			itemEntity.maxStack = itemInfo.MaxStack;
+			
 
 			// Additional setup based on itemInfo can be done here
 			parent.AddChild(itemEntity);
