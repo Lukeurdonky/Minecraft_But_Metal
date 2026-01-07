@@ -168,8 +168,9 @@ func can_place(local: Vector3):
 func drop_item():
 	var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
 	if(item != null):
-		var drop = Item_Registry.SpawnItem(item, global_position, get_tree().root)
-		drop.global_rotation.y = rotation.y;
-		drop.velocity = -global_transform.basis.z.normalized()*throw_strength;
+		var dir = -global_transform.basis.z.normalized()
+		var drop = Item_Registry.SpawnItem(item, global_position + dir/4, get_tree().root)
+		drop.global_rotation.y = rotation.y+PI/4;
+		drop.velocity = dir*throw_strength;
 		pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
 				

@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://dmhm1ql7cw68i"]
+[gd_scene load_steps=10 format=3 uid="uid://dmhm1ql7cw68i"]
 
 [ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player/Player.cs" id="1_x5jwr"]
 [ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/Entities/Player/interactions.gd" id="2_0w0kd"]
@@ -11,13 +11,18 @@
 [sub_resource type="BoxShape3D" id="BoxShape3D_sbtoq"]
 size = Vector3(0.75, 1.9, 0.75)
 
+[sub_resource type="BoxMesh" id="BoxMesh_x5jwr"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_x5jwr"]
+shading_mode = 0
+
 [node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "Inventory")]
-collision_mask = 3
+collision_mask = 0
 script = ExtResource("1_x5jwr")
 Camera = NodePath("Camera3D")
 CollisionShape = NodePath("CollisionShape3D")
 Inventory = NodePath("Inventory")
-Speed = 12.0
+Speed = 4.0
 SprintMult = 4.0
 Accel = 50.0
 JumpStrength = 8.0
@@ -92,6 +97,7 @@ shape = SubResource("BoxShape3D_sbtoq")
 
 [node name="Camera3D" type="Camera3D" parent="." node_paths=PackedStringArray("pd")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.600134, 0)
+cull_mask = 32767
 current = true
 script = ExtResource("2_0w0kd")
 pd = NodePath("..")
@@ -101,3 +107,28 @@ visible = false
 light_color = Color(1, 0.294118, 1, 1)
 light_energy = 6.061
 spot_range = 230.474
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="."]
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
+transparent_bg = true
+canvas_cull_mask = 4294934528
+size = Vector2i(1440, 810)
+render_target_update_mode = 4
+
+[node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.600134, 0)
+cull_mask = 1015808
+projection = 1
+current = true
+near = 0.01
+far = 22.8
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(0.2437706, -0.03532862, 0.042752516, 0.042752516, 0.24246156, -0.043412045, -0.03532862, 0.04964143, 0.24246156, 0.53727657, 0.30608845, -0.9145086)
+layers = 1015808
+mesh = SubResource("BoxMesh_x5jwr")
+skeleton = NodePath("../../../Camera3D")
+surface_material_override/0 = SubResource("StandardMaterial3D_x5jwr")

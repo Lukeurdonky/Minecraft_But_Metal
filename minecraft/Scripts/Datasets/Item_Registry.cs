@@ -185,12 +185,13 @@ public partial class Item_Registry : Node
 			arrays[(int)Mesh.ArrayType.Normal] = entityModel.Normals;
 
 			var material = new StandardMaterial3D();
-			material.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			
 			material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
 			material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
 
 			if(itemInfo.Block == -1) 
 			{
+				material.CullMode = BaseMaterial3D.CullModeEnum.Disabled;  // Only render both faces
 				arrays[(int)Mesh.ArrayType.TexUV] = GenerateItemUVs(itemInfo.IconAtlasIndex, atlas_width, atlas_height);
 				material.AlbedoTexture = ResourceLoader.Load<Texture2D>("res://Sprites/Textures/item_texture_atlas.png");
 				itemEntity.Scale = new Vector3(0.5f, 0.5f, 0.5f);
@@ -199,6 +200,7 @@ public partial class Item_Registry : Node
 			}
 			else 
 			{
+				material.CullMode = BaseMaterial3D.CullModeEnum.Back;  // Only render front faces
 				arrays[(int)Mesh.ArrayType.TexUV] = Block_Registry.GenerateFaceUVs((int)itemInfo.ModelAtlasIndex.X, Block_Registry.atlas_width, Block_Registry.atlas_height).SelectMany(v => v).ToArray();
 				material.AlbedoTexture = ResourceLoader.Load<Texture2D>("res://Sprites/Textures/block_texture_atlas.png");
 				itemEntity.Scale = new Vector3(0.25f, 0.25f, 0.25f);

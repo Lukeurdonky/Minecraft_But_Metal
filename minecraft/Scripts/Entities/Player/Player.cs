@@ -12,6 +12,8 @@ public partial class Player : Entity
     
     [Export]
     public Node3D Inventory { get; set; }
+    [Export]
+    public MeshInstance3D HandMesh { get; set; }
     
     [Export]
     public float Speed { get; set; } = 5.0f;  // Movement speed
@@ -27,6 +29,8 @@ public partial class Player : Entity
     
     [Export]
     public float Gravity { get; set; } = 9.8f;
+    [Export]
+    public float PickUpRange { get; set; } = 4.0f;
 
     private float pitch = 0.0f;
     private float yaw = 0.0f;
@@ -43,6 +47,8 @@ public partial class Player : Entity
 
     // private Global Global;
 
+    private Area3D pickupArea;
+
     public override void ImHere()
     {
         base.ImHere();
@@ -51,6 +57,23 @@ public partial class Player : Entity
         Global.Player = this;
         if (Camera != null)
             Camera.Current = true;
+        
+        // Create pickup detection area programmatically
+        pickupArea = new Area3D();
+        pickupArea.Name = "PickupArea";
+        pickupArea.CollisionLayer = 0;  // Area doesn't need to be on a layer
+        pickupArea.CollisionMask = 4;   // Detect layer 3 (items)
+        pickupArea.Monitoring = true;
+        
+        var shape = new CollisionShape3D();
+        shape.Shape = new SphereShape3D { Radius = PickUpRange };
+        pickupArea.AddChild(shape);
+        
+        AddChild(pickupArea);
+        
+        // Connect signals
+        pickupArea.BodyEntered += OnPickupAreaEntered;
+        pickupArea.BodyExited += OnPickupAreaExited;
     }
 
     public override void _Process(double delta)
@@ -239,6 +262,24 @@ public partial class Player : Entity
         if (CurrentHealth <= 0)
         {
             Die();
+        }
+    }
+
+    // Area3D signal handlers for item pickup
+    private void OnPickupAreaEntered(Node3D body)
+    {
+        if (body is Item item) 
+        {
+            item.Detected = true;
+            GD.Print($"Item detected: {item.name}");  // Debug
+        }
+    }
+
+    private void OnPickupAreaExited(Node3D body)
+    {
+        if (body is Item item) 
+        {
+            item.Detected = false;
         }
     }
 

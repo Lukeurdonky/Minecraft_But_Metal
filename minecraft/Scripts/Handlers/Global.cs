@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 public partial class Global : Node
 {
-    public Node3D Player { get; set; }
+    public Player Player { get; set; }
     
     [Export]
     public float SensitivityX { get; set; } = 0.3f;
@@ -38,14 +38,6 @@ public partial class Global : Node
     public int AtlasWidth { get; set; } = 12;
     public int AtlasHeight { get; set; } = 8;
     private Vector3 _prevPos = Vector3.Zero;
-
-    public class BlockInfo
-    {
-        public int Index { get; set; }
-        public int Hardness { get; set; }
-        public string Drops { get; set; }
-        public int DropCount { get; set; }
-    }
 
     public Vector3 GetPlayerPos()
     {
