@@ -9,6 +9,7 @@ var max_distance = 5
 #@export var collision_mask: int = 0xFFFFFFFF
 var shader_material
 var selected_normal
+var prev_selected_item
 
 var box: PackedScene = preload("res://Assets/cube.tscn")
 var yeah
@@ -27,12 +28,20 @@ func _process(delta):
 	selection()
 	if Input.is_action_pressed("drop_item"):
 		drop_item()
+	var itm = pd.Inventory.get_item(pd.Inventory.selected_slot)
+	if itm != prev_selected_item:
+		#update the hand sprite to whatever item it is
+		if itm == null: itm = ""
+		update_hand_mesh(itm)
+		
+		pass
 	if pd.IsSprinting:
 		fov = floor(lerp(fov, baseFOV + sprintFOVAdd+.0, .2))
 	else:
 		fov = floor(lerp(fov, baseFOV+.0, .2))
 		
-	
+	prev_selected_item = pd.Inventory.get_item(pd.Inventory.selected_slot)
+	pass
 
 
 func _unhandled_input(event):
@@ -63,7 +72,7 @@ func placeBlock():
 	var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
 	if(pd.SelectedCube != null && item != null):
 		var loc = pd.SelectedCubePosition + Vector3i(selected_normal)
-		if(can_place(loc)):
+		if(can_place(loc) && Item_Registry.IsPlaceable(item)):
 			var p = Item_Registry.GetItemStat(item, "Block")
 			if(p == null): return
 			else: 
@@ -174,3 +183,10 @@ func drop_item():
 		drop.velocity = dir*throw_strength;
 		pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
 				
+
+func update_hand_mesh(item: String):
+	if(item == ""):
+		pd.HandMesh.mesh = null
+	else:
+		Item_Registry.ChangeMesh(pd.HandMesh, item);
+	pass

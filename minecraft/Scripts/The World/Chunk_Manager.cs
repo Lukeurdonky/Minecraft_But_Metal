@@ -674,7 +674,9 @@ public partial class Chunk_Manager : Node
 					int index = voxel_index(x, y, z);
 					if (worldY <= height)
 					{
-						data[index] = 1; // Solid block
+						byte blockType = (byte)Random.Shared.Next(1, 4); // 1, 2, or 3
+						data[index] = blockType;
+
 					}
 					else
 					{

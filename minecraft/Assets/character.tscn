@@ -1,9 +1,10 @@
-[gd_scene load_steps=9 format=3 uid="uid://dmhm1ql7cw68i"]
+[gd_scene load_steps=10 format=3 uid="uid://dmhm1ql7cw68i"]
 
 [ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player/Player.cs" id="1_x5jwr"]
 [ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/Entities/Player/interactions.gd" id="2_0w0kd"]
 [ext_resource type="Texture2D" uid="uid://c47ikq7xvlx14" path="res://Sprites/crosshair.png" id="3_gqhvq"]
 [ext_resource type="Script" uid="uid://qnlmb3pmrthp" path="res://Scripts/Handlers/DebugMenu.gd" id="5_jiiwr"]
+[ext_resource type="Material" uid="uid://76hqot3in3tq" path="res://Materials/new_standard_material_3d.tres" id="6_iwsel"]
 [ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/Entities/Player/inventory.gd" id="6_lgrlh"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_8ahl0"]
@@ -13,12 +14,13 @@ size = Vector3(0.75, 1.9, 0.75)
 
 [sub_resource type="BoxMesh" id="BoxMesh_x5jwr"]
 
-[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "Inventory")]
+[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "Inventory", "HandMesh")]
 collision_mask = 0
 script = ExtResource("1_x5jwr")
 Camera = NodePath("Camera3D")
 CollisionShape = NodePath("CollisionShape3D")
 Inventory = NodePath("Inventory")
+HandMesh = NodePath("SubViewportContainer/SubViewport/MeshInstance3D")
 Speed = 4.0
 SprintMult = 4.0
 Accel = 50.0
@@ -106,11 +108,12 @@ light_energy = 6.061
 spot_range = 230.474
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="."]
-offset_right = 40.0
-offset_bottom = 40.0
+offset_right = 1440.0
+offset_bottom = 810.0
 
 [node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
 transparent_bg = true
+handle_input_locally = false
 canvas_cull_mask = 4294934528
 size = Vector2i(1440, 810)
 render_target_update_mode = 4
@@ -118,13 +121,19 @@ render_target_update_mode = 4
 [node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.600134, 0)
 cull_mask = 1015808
-projection = 1
 current = true
 near = 0.01
 far = 22.8
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="SubViewportContainer/SubViewport"]
-transform = Transform3D(0.2437706, -0.03532862, 0.042752516, 0.042752516, 0.24246156, -0.043412045, -0.03532862, 0.04964143, 0.24246156, 0.53727657, 0.30608845, -0.9145086)
-layers = 1015808
+transform = Transform3D(0.24246156, -0.042752516, 0.17364818, 0.043412045, 0.24620193, 0, -0.042752516, 0.0075384225, 0.9848077, 0.5, 0.2, -0.6)
+layers = 32768
 mesh = SubResource("BoxMesh_x5jwr")
 skeleton = NodePath("../../../Camera3D")
+surface_material_override/0 = ExtResource("6_iwsel")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 5.587935e-09, 0, -5.587935e-09, 1, -1.4901159e-08, 0, 1.4901159e-08, 1, 0, 0.6, 0)
+layers = 1015808
+spot_range = 230.474
+spot_angle = 180.0

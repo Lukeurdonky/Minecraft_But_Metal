@@ -93,10 +93,10 @@ public partial class Entity : CharacterBody3D
 		CheckWorldCollisions(moveBy);
 	}
 
-	public virtual void CheckWorldCollisions(Vector3 moveBy)
+	public virtual bool CheckWorldCollisions(Vector3 moveBy)
 	{
 		Aabb entityBox = GetAABB();
-		
+		bool didCollide = false;
 		// Check X axis separately
 		if (moveBy.X != 0)
 		{
@@ -104,6 +104,7 @@ public partial class Entity : CharacterBody3D
 			futureBox.Position += new Vector3(moveBy.X, 0, 0);
 			if (CheckAxisCollision(futureBox))
 			{
+				didCollide = true;
 				Velocity = new Vector3(0, Velocity.Y, Velocity.Z);
 				moveBy.X = 0;
 			}
@@ -122,6 +123,7 @@ public partial class Entity : CharacterBody3D
 			{
 				Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
 				moveBy.Y = 0;
+				didCollide = true;
 			}
 			else
 			{
@@ -138,12 +140,14 @@ public partial class Entity : CharacterBody3D
 			{
 				Velocity = new Vector3(Velocity.X, Velocity.Y, 0);
 				moveBy.Z = 0;
+				didCollide = true;
 			}
 			else
 			{
 				entityBox.Position += new Vector3(0, 0, moveBy.Z);  // Apply successful Z movement
 			}
 		}
+		return didCollide;
 	}
 
 	private bool CheckAxisCollision(Aabb futureBox, bool isYAxis = false)

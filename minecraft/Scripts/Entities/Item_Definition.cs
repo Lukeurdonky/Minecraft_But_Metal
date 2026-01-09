@@ -20,4 +20,6 @@ public sealed class Item_Definition
     public Block_Model HeldModel { get; set; }
     // public string EntityTexture { get; set; }
     
+    public IItemBehavior Behavior;
 }
+

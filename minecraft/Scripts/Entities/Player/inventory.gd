@@ -3,15 +3,13 @@ extends Node3D
 @export var max_slots: int = 36
 @export var hotbar_size: int = 9
 var selected_slot = 0 
+var prev_selected_item
 var items: Array = []
 
 func _ready() -> void:
 	for i in range(max_slots):
 		items.append(Slot.new())
 
-func _process(delta) -> void:
-	pass
-	#render the held item using model data and the hand's mesh pointer
 
 class Slot:
 	var amount

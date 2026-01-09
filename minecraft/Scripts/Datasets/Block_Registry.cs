@@ -22,11 +22,10 @@ public partial class Block_Registry : Node
 		
 		Blocks = new Block_Definition[256];
 		Blocks[0] = null; // Air
-		Blocks[1] = new Block_Definition { Id = 1, Name = "Grass", Hardness = 1f, DropId = "wooden_sword", DropCount = 2, faceUVs = GenerateFaceUVs(0, atlas_width, atlas_height), Model = GetModel("Cube") }; // grass
+		Blocks[1] = new Block_Definition { Id = 1, Name = "Grass", Hardness = 1f, DropId = "grass", DropCount = 1, faceUVs = GenerateFaceUVs(0, atlas_width, atlas_height), Model = GetModel("Cube") }; // grass
 		Blocks[2] = new Block_Definition { Id = 2, Name = "Dirt", Hardness = 2f, DropId = "dirt", DropCount = 1, faceUVs = GenerateFaceUVs(1, atlas_width, atlas_height), Model = GetModel("Cube") }; // dirt
 		Blocks[3] = new Block_Definition { Id = 3, Name = "Stone", Hardness = 5f, DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(2, atlas_width, atlas_height), Model = GetModel("Cube") }; // stone
-	
-
+		
 	}
 
 	public static Block_Model CreateBlockModel(string name, Block_Model.Type type, string datapath)

@@ -13,7 +13,7 @@ public partial class Item : Entity
     [Export]
     public float Gravity { get; set; } = 9.8f;
     public float pickupDelay = 1f;  // Can't pickup immediately after spawn
-    public float pursueSpeed = 12f;
+    public float pursueSpeed = 16f;
     public float pickupDistance = 0.5f;
     private float age = 0f;
 
