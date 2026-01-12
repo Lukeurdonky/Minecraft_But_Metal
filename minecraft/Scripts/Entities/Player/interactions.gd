@@ -52,6 +52,12 @@ func _unhandled_input(event):
 					breakBlock()
 				MOUSE_BUTTON_RIGHT:
 					placeBlock()
+		if event.is_released():
+			match event.button_index:
+				MOUSE_BUTTON_LEFT:
+					breakBlock()
+				MOUSE_BUTTON_RIGHT:
+					placeBlock()
 
 func breakBlock():
 	if(pd.SelectedCube != 0 && pd.SelectedCube != null):

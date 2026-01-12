@@ -8,7 +8,7 @@ script = ExtResource("1_gf1g3")
 [node name="Level" type="Node" parent="."]
 
 [node name="LevelSpawner" type="MultiplayerSpawner" parent="."]
-_spawnable_scenes = PackedStringArray("res://Scenes/CubeLand.tscn")
+_spawnable_scenes = PackedStringArray("uid://dsq2766vhek4b")
 spawn_path = NodePath("../Level")
 spawn_limit = 1
 
