@@ -51,10 +51,10 @@ func get_empty_slot(item: String): #find a completely empty slot
 	return flag
 	
 func get_stack_slot(item: String): #find a slot that can stack the item
-	var max = Item_Registry.GetItemStat(item, "MaxStack")
+	var maxStack = Item_Registry.GetItemStat(item, "MaxStack")
 	var flag = null
 	for i in range(max_slots):
-		if(items[i].item == item && items[i].amount < max): 
+		if(items[i].item == item && items[i].amount < maxStack): 
 			flag = items[i]
 			break
 	return flag

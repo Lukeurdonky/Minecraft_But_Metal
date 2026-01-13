@@ -1,7 +1,16 @@
 using Godot;
-public class ConsumableBehavior : IItemBehavior
+public partial class ConsumableBehavior : IItemBehavior
 {
-	public void OnUse(Item item, Player player) { }
-	public void OnRelease(Item item, Player player) { }
-	public void OnHit(Item item, Node target) { }
+	public override void OnUse(string itemName, Player player)
+	{
+		
+	}
+	public override void OnRelease(string itemName, Player player)
+	{
+		
+	}
+	public override void OnHit(string itemName, Node target)
+	{
+		
+	}
 }

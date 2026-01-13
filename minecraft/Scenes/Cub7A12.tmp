@@ -1,0 +1,16 @@
+[gd_scene load_steps=4 format=3 uid="uid://dsq2766vhek4b"]
+
+[ext_resource type="Script" path="res://Scripts/chunk.gd" id="1_grwop"]
+[ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/texture_atlas.tres" id="2_0ek5j"]
+[ext_resource type="PackedScene" uid="uid://dmhm1ql7cw68i" path="res://Assets/character.tscn" id="4_a37ci"]
+
+[node name="Game" type="Node3D"]
+script = ExtResource("1_grwop")
+mat = ExtResource("2_0ek5j")
+render_distance = 6
+
+[node name="Character" parent="." instance=ExtResource("4_a37ci")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 86, 10)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -0.5, 0.866025, 0, -0.866025, -0.5, 0, 0, 0)

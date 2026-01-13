@@ -10,6 +10,7 @@ var max_distance = 5
 var shader_material
 var selected_normal
 var prev_selected_item
+var delta_time = 0.0
 
 var box: PackedScene = preload("res://Assets/cube.tscn")
 var yeah
@@ -25,9 +26,18 @@ func _ready() -> void:
 	
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
+	delta_time = delta
 	selection()
 	if Input.is_action_pressed("drop_item"):
 		drop_item()
+		
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		leftHandler(false)
+		# breakBlock()
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		rightHandler(false)
+		# placeBlock()
+	
 	var itm = pd.Inventory.get_item(pd.Inventory.selected_slot)
 	if itm != prev_selected_item:
 		#update the hand sprite to whatever item it is
@@ -46,48 +56,56 @@ func _process(delta):
 
 func _unhandled_input(event):
 	if event is InputEventMouseButton:
-		if event.pressed:  # True when the button is pressed down
-			match event.button_index:
-				MOUSE_BUTTON_LEFT:
-					breakBlock()
-				MOUSE_BUTTON_RIGHT:
-					placeBlock()
+		#if event.pressed:  # True when the button is pressed down
+			#match event.button_index:
+				#MOUSE_BUTTON_LEFT:
+					#breakBlock()
+				#MOUSE_BUTTON_RIGHT:
+					#placeBlock()
+		#if event.is_:
+			#match event.button_index:
+				#MOUSE_BUTTON_LEFT:
+					#breakBlock()
+				#MOUSE_BUTTON_RIGHT:
+					#placeBlock()
 		if event.is_released():
 			match event.button_index:
 				MOUSE_BUTTON_LEFT:
-					breakBlock()
+					# breakBlock()
+					leftHandler(true)
 				MOUSE_BUTTON_RIGHT:
-					placeBlock()
+					rightHandler(true)
+					# placeBlock()
 
-func breakBlock():
-	if(pd.SelectedCube != 0 && pd.SelectedCube != null):
-		var ori = pd.SelectedCubePosition
-		var block_type = pd.SelectedCube
-		var r = Block_Registry.GetBlockDropCount(block_type)
-		print(r)
-		#for i in range(Global.get_block_stat(block_type, "drop_count")):
-		#Global.Player.inventory.add_item(Global.get_block_stat(block_type, "drops"))
-		for i in range(r):
-			Global.Player.Inventory.add_item(Block_Registry.GetBlockDropID(block_type))	
-		Global.CubeManager.break_block(ori)
-		pd.SelectedCube = null
-		#print("break")
-		#Global.selected_cube.destroy_cube()
+# func breakBlock():
+# 	if(pd.SelectedCube != 0 && pd.SelectedCube != null):
+# 		var ori = pd.SelectedCubePosition
+# 		var block_type = pd.SelectedCube
+# 		var r = Block_Registry.GetBlockDropCount(block_type)
+# 		print(r)
+# 		#for i in range(Global.get_block_stat(block_type, "drop_count")):
+# 		#Global.Player.inventory.add_item(Global.get_block_stat(block_type, "drops"))
+# 		for i in range(r):
+# 			Global.Player.Inventory.add_item(Block_Registry.GetBlockDropID(block_type))	
+# 		Global.CubeManager.break_block(ori)
+# 		pd.SelectedCube = null
+# 		#print("break")
+# 		#Global.selected_cube.destroy_cube()
 		
-func placeBlock():
-	var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
-	if(pd.SelectedCube != null && item != null):
-		var loc = pd.SelectedCubePosition + Vector3i(selected_normal)
-		if(can_place(loc) && Item_Registry.IsPlaceable(item)):
-			var p = Item_Registry.GetItemStat(item, "Block")
-			if(p == null): return
-			else: 
-				Global.CubeManager.place_block(loc, p)
-				pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
-			#print(loc)
-			#Global.CubeManager.set_cube(1, loc)
-			#Global.CubeManager.get_cube(loc).node.update_adjacents()
-			#Global.selected_cube
+# func placeBlock():
+# 	var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
+# 	if(pd.SelectedCube != null && item != null):
+# 		var loc = pd.SelectedCubePosition + Vector3i(selected_normal)
+# 		if(can_place(loc) && Item_Registry.IsPlaceable(item)):
+# 			var p = Item_Registry.GetItemStat(item, "Block")
+# 			if(p == null): return
+# 			else: 
+# 				Global.CubeManager.place_block(loc, p)
+# 				pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
+# 			#print(loc)
+# 			#Global.CubeManager.set_cube(1, loc)
+# 			#Global.CubeManager.get_cube(loc).node.update_adjacents()
+# 			#Global.selected_cube
 
 func selection():
 	var my_origin = global_transform.origin
@@ -150,10 +168,85 @@ func selection():
 	pd.SelectedCube = temp_cube
 	#print(current)
 
+func leftHandler(released: bool):
+	var result = entityBlocking()
+
+	var item_name = pd.Inventory.get_item(pd.Inventory.selected_slot)
+	if item_name == null:
+		item_name = "hand"
+	
+	var behavior = Item_Registry.GetItemBehavior(item_name)
+	
+	if !released:
+		if result["blocking"]:
+			# Entity is blocking - use item on entity instead
+			print("hit entity")
+			behavior.OnHit(item_name, result["entity"])
+			
+		else:
+			if pd.SelectedCube != 0 && pd.SelectedCube != null:
+				behavior.BreakBlock(item_name, pd, delta_time)
+	else:
+		behavior.OnRelease(item_name, pd)
+	pass
+
+func rightHandler(released: bool):
+	var result = entityBlocking()
+	var item_name = pd.Inventory.get_item(pd.Inventory.selected_slot)
+	if item_name == null:
+		return
+	
+	var behavior = Item_Registry.GetItemBehavior(item_name)
+	
+	if !released:
+		if result["blocking"]:
+			# Entity is blocking - use item on entity instead
+			if Item_Registry.IsPlaceable(item_name):
+				behavior.UseOnEntity(result["entity"], pd, item_name)
+			else:
+				behavior.OnUse(item_name, pd)
+		else:
+			# No entity blocking - place the block
+			if Item_Registry.IsPlaceable(item_name):
+				if pd.SelectedCube != 0 && pd.SelectedCube != null:
+					var loc = pd.SelectedCubePosition + Vector3i(selected_normal)
+					var block_type = Item_Registry.GetItemStat(item_name, "Block")
+					if can_place(loc) and block_type != null:
+						behavior.Place(block_type, pd, loc)
+			else:
+				# Item is not placeable - use normally
+				behavior.OnUse(item_name, pd)
+	else:
+		behavior.OnRelease(item_name, pd)
+	pass
+	
+func entityBlocking() -> Dictionary:
+	var result = {"blocking": false, "entity": null}
+	
+	
+	var my_origin = global_transform.origin
+	var target_pos = Vector3(pd.SelectedCubePosition) + Vector3(0.5, 0.5, 0.5)
+	var block_distance = my_origin.distance_to(target_pos)
+	
+	var space_state = get_world_3d().direct_space_state
+	var query = PhysicsRayQueryParameters3D.create(my_origin, target_pos)
+	query.collision_mask = 2  # Adjust mask to match your entity collision layer
+	query.collide_with_bodies = true
+	query.collide_with_areas = false
+	
+	var ray_result = space_state.intersect_ray(query)
+	
+	if ray_result and ray_result.collider is CharacterBody3D:
+		var entity_distance = my_origin.distance_to(ray_result.position)
+		if entity_distance < block_distance:
+			result["blocking"] = true
+			result["entity"] = ray_result.collider
+	
+	return result
 		
 func can_place(local: Vector3):
 	var flag = false
-	if(Global.CubeManager.get_block(local) == 0): 
+	if(Global.CubeManager.get_block(local) == 0 && pd.SelectedCube != 0): 
 		flag = true;
 		
 	#var space_state: PhysicsDirectSpaceState3D = get_world_3d().direct_space_state

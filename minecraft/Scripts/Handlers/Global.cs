@@ -4,6 +4,8 @@ using System.Collections.Generic;
 
 public partial class Global : Node
 {
+    public static Global Instance { get; private set; }
+    
     public Player Player { get; set; }
     
     [Export]
@@ -38,6 +40,11 @@ public partial class Global : Node
     public int AtlasWidth { get; set; } = 12;
     public int AtlasHeight { get; set; } = 8;
     private Vector3 _prevPos = Vector3.Zero;
+
+    public override void _Ready()
+    {
+        Instance = this;
+    }
 
     public Vector3 GetPlayerPos()
     {

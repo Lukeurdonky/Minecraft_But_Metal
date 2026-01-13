@@ -1,0 +1,79 @@
+[gd_scene load_steps=10 format=3 uid="uid://du771gwxm45or"]
+
+[ext_resource type="Script" path="res://Scripts/PlayerData.gd" id="1_vwk5j"]
+[ext_resource type="Script" path="res://Scripts/multiplayer_movement.gd" id="2_khomk"]
+[ext_resource type="Script" path="res://Scripts/interactions.gd" id="3_6wirq"]
+[ext_resource type="Script" path="res://Scripts/input_synchronizer.gd" id="4_1f516"]
+[ext_resource type="Script" path="res://Scripts/inventory.gd" id="6_h0t86"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_8ahl0"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_sbtoq"]
+size = Vector3(0.75, 1.9, 0.75)
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_cri71"]
+properties/0/path = NodePath("CharacterBody3D:pitch")
+properties/0/spawn = true
+properties/0/replication_mode = 1
+properties/1/path = NodePath("CharacterBody3D:yaw")
+properties/1/spawn = true
+properties/1/replication_mode = 1
+properties/2/path = NodePath("CharacterBody3D:position")
+properties/2/spawn = true
+properties/2/replication_mode = 1
+properties/3/path = NodePath(".:player_id")
+properties/3/spawn = true
+properties/3/replication_mode = 1
+
+[sub_resource type="SceneReplicationConfig" id="SceneReplicationConfig_6m2jo"]
+
+[node name="multiplayer_character" type="Node3D" node_paths=PackedStringArray("camera", "character_body", "collision_shape", "inventory", "InputSynchronizer")]
+script = ExtResource("1_vwk5j")
+camera = NodePath("CharacterBody3D/Camera3D")
+character_body = NodePath("CharacterBody3D")
+collision_shape = NodePath("CharacterBody3D/CollisionShape3D")
+inventory = NodePath("Inventory")
+isMultiplayer = true
+InputSynchronizer = NodePath("InputSynchronizer")
+player_id = null
+
+[node name="CharacterBody3D" type="CharacterBody3D" parent="." node_paths=PackedStringArray("pd")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1500, 9985, 1500)
+collision_layer = 2
+wall_min_slide_angle = 0.0
+floor_block_on_wall = false
+script = ExtResource("2_khomk")
+pd = NodePath("..")
+speed = 4.0
+sprint_mult = 4.0
+accel = 50.0
+jump_strength = 8.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="CharacterBody3D"]
+mesh = SubResource("CapsuleMesh_8ahl0")
+skeleton = NodePath("../..")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="CharacterBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+shape = SubResource("BoxShape3D_sbtoq")
+
+[node name="Camera3D" type="Camera3D" parent="CharacterBody3D" node_paths=PackedStringArray("pd")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.600134, 0)
+script = ExtResource("3_6wirq")
+pd = NodePath("../..")
+
+[node name="SpotLight3D" type="SpotLight3D" parent="CharacterBody3D/Camera3D"]
+light_color = Color(1, 0.294118, 1, 1)
+light_energy = 6.061
+spot_range = 230.474
+
+[node name="Inventory" type="Node3D" parent="."]
+script = ExtResource("6_h0t86")
+
+[node name="PlayerSynchronizer" type="MultiplayerSynchronizer" parent="."]
+replication_config = SubResource("SceneReplicationConfig_cri71")
+
+[node name="InputSynchronizer" type="MultiplayerSynchronizer" parent="."]
+unique_name_in_owner = true
+replication_config = SubResource("SceneReplicationConfig_6m2jo")
+script = ExtResource("4_1f516")

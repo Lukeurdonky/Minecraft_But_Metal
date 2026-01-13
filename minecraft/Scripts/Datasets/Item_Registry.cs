@@ -13,13 +13,18 @@ public partial class Item_Registry : Node
 	{
 		ItemData = new Dictionary<string, Item_Definition>
 		{
-			{ "grass", CreateItem(Item_Definition.ItemType.Placeable, 1, 64, 0, new Vector2(0, 5), null) },
-			{ "dirt", CreateItem(Item_Definition.ItemType.Placeable, 2, 64, 1, new Vector2(6, 11), null) },
-			{ "stone", CreateItem(Item_Definition.ItemType.Placeable, 3, 64, 2, new Vector2(12, 17), null) },
+			{ "hand", CreateItem(Item_Definition.ItemType.Tool, -1, 1, 0, null, new ToolBehavior(1.0f, -1)) },
+			
+			{ "grass", CreateItem(Item_Definition.ItemType.Placeable, 1, 64, 0, new Vector2(0, 5), new PlaceableBehavior()) },
+			{ "dirt", CreateItem(Item_Definition.ItemType.Placeable, 2, 64, 1, new Vector2(6, 11), new PlaceableBehavior()) },
+			{ "stone", CreateItem(Item_Definition.ItemType.Placeable, 3, 64, 2, new Vector2(12, 17), new PlaceableBehavior()) },
 
-			{ "apple", CreateItem(Item_Definition.ItemType.Consumable, -1, 16, 12, null, null) },
-			{ "wooden_sword", CreateItem(Item_Definition.ItemType.Tool, -1, 1, 24, null, null) },
-			{ "wooden_bow", CreateItem(Item_Definition.ItemType.Tool, -1, 1, 25, null, null) }
+			{ "apple", CreateItem(Item_Definition.ItemType.Consumable, -1, 16, 12, null, new ConsumableBehavior()) },
+
+			{ "wooden_sword", CreateItem(Item_Definition.ItemType.Tool, -1, 1, 24, null, new ToolBehavior(1.0f, 100)) },
+			{ "wooden_pickaxe", CreateItem(Item_Definition.ItemType.Tool, -1, 1, 25, null, new ToolBehavior(2.0f, 100)) },
+			{ "wooden_bow", CreateItem(Item_Definition.ItemType.Tool, -1, 1, 26, null, new ToolBehavior(1.0f, 100)) } //remember to change to actual bow behavior
+			
 		};
 	}
 	
@@ -36,27 +41,34 @@ public partial class Item_Registry : Node
 			// Models are generated lazily when first needed, not during static initialization
 			EntityModel = null,
 			HeldModel = null,
-			Behavior = behavior ?? new NoOpBehavior()
+			Behavior = behavior //?? new NoOpBehavior()
 		};
 	}
 
 	public Variant GetItemStat(string itemType, string stat)
 	{
-		if (Item_Registry.ItemData.TryGetValue(itemType, out var itemInfo))
+		if (ItemData.TryGetValue(itemType, out var itemInfo))
 		{
 			return stat switch
 			{
 				"Block" => itemInfo.Block,
 				"MaxStack" => itemInfo.MaxStack,
 				"IconAtlasIndex" => itemInfo.IconAtlasIndex,
-				"Type"	=> (int)itemInfo.Type,	
+				"Type"	=> (int)itemInfo.Type,
 				_ => default(Variant)
 			};
 		}
 		return default(Variant);  // Return null or a default value
 	}
+	
+	public IItemBehavior GetItemBehavior(string itemType)
+	{
+		if (ItemData.TryGetValue(itemType, out var itemInfo))
+			return itemInfo.Behavior;
+		return GetItemBehavior("hand"); // default to hand behavior
+	}
 
-	public static bool IsPlaceable(string itemType)
+	public bool IsPlaceable(string itemType)
 	{
 		if (ItemData.TryGetValue(itemType, out var itemInfo))
 		{
