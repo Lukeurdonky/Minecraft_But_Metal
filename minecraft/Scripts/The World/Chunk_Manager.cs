@@ -33,7 +33,7 @@ public partial class Chunk_Manager : Node
 	[Export] public int RenderDistance = 5;
 	[Export] public Texture2D DamageTexture;
 
-	[Export] public float DamageOverlayNormalOffset = 0.01f;
+	[Export] public float DamageOverlayNormalOffset = 0.0025f;
 	[Export] public float DamageOverlayScale = 1.0f;
 	[Export] public bool DebugDamageUseSolidMaterial = false;
 	[Export] public bool DebugDamageNoDepthTest = false;
@@ -226,7 +226,7 @@ public partial class Chunk_Manager : Node
 			activeChunks.Remove(chunkPos);
 			generationQueue.Remove(chunkPos);
 			loadingQueue.Remove(chunkPos);
-			chunks.Remove(chunkPos);
+			// chunks.Remove(chunkPos);
 		}
 	}
 

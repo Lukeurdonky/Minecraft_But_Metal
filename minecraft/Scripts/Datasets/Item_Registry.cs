@@ -13,7 +13,7 @@ public partial class Item_Registry : Node
 	{
 		ItemData = new Dictionary<string, Item_Definition>
 		{
-			{ "hand", CreateItem(Item_Definition.ItemType.Tool, -1, 1, 0, null, new ToolBehavior(1.0f, -1)) },
+			{ "hand", CreateItem(Item_Definition.ItemType.Tool, -1, 1, 0, null, new ToolBehavior(5.0f, -1)) },
 			
 			{ "grass", CreateItem(Item_Definition.ItemType.Placeable, 1, 64, 0, new Vector2(0, 5), new PlaceableBehavior()) },
 			{ "dirt", CreateItem(Item_Definition.ItemType.Placeable, 2, 64, 1, new Vector2(6, 11), new PlaceableBehavior()) },
