@@ -20,9 +20,9 @@ public partial class Global : Node
     [Export]
     public float MinPitch { get; set; } = -90.0f; // Limit the camera's up/down rotation
 
-    public Vector3I WorldSpawn { get; set; } = new Vector3I(10000, 10005, 10000);
-    public const int SurfaceLevel = 10000;
-    public static readonly Vector2 AbyssCenter = new Vector2(25000, 25000); // x,z center
+    public Vector3I WorldSpawn { get; set; } = new Vector3I(0, 5, 0);
+    public const int SurfaceLevel = 0;
+    public static readonly Vector2 AbyssCenter = new Vector2(0, 0); // x,z center
     public const float AbyssRadius = 120;
     
     public static readonly Dictionary<int, float> LayerNoiseScale = new Dictionary<int, float>

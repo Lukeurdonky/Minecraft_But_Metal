@@ -558,7 +558,9 @@ public partial class Chunk_Manager : Node
 					float height = noise.GetNoise2D(worldX, worldZ) * 10 + surfaceLevel;
 
 					int index = voxel_index(x, y, z);
-					if (worldY <= height)
+					float abyssStrength = Global.AbyssStrength(worldX, worldZ, worldY);
+
+					if (worldY <= height && abyssStrength < 0.5f)
 					{
 						byte blockType = (byte)Random.Shared.Next(1, 4);
 						data[index] = blockType;
