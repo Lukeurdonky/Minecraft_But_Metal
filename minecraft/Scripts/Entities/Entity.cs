@@ -7,6 +7,8 @@ public partial class Entity : CharacterBody3D
 {
 	[Export]
 	public int MaxHealth = 100;
+	[Export]
+	public float MaxFallSpeed = 50f;
 
 	[Export]
 	public Vector2 offset = Vector2.Zero;
@@ -79,7 +81,7 @@ public partial class Entity : CharacterBody3D
 	public virtual void ApplyMovementFromInput(double delta)
 	{
 		// Placeholder for movement logic
-
+		Velocity = new Vector3(Velocity.X, Mathf.Clamp(Velocity.Y, -MaxFallSpeed, Mathf.Inf), Velocity.Z);
 	}
 
 	public virtual void ImHere()

@@ -16,4 +16,6 @@ public sealed class Chunk
 	{
 		Position = position;
 	}
+
+	public bool IsFullySolid { get; set; } = false;
 }

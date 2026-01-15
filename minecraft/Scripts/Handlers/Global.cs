@@ -20,7 +20,7 @@ public partial class Global : Node
     [Export]
     public float MinPitch { get; set; } = -90.0f; // Limit the camera's up/down rotation
 
-    public Vector3I WorldSpawn { get; set; } = new Vector3I(0, 5, 0);
+    public Vector3I WorldSpawn { get; set; } = new Vector3I(0, 5, 70);
     public const int SurfaceLevel = 0;
     public static readonly Vector2 AbyssCenter = new Vector2(0, 0); // x,z center
     public const float AbyssRadius = 120;
@@ -106,8 +106,8 @@ public partial class Global : Node
         var t = (SurfaceLevel - y) * 0.02f;
 
         return new Vector2(
-            AbyssCenter.X + Mathf.Sin(t) * 40.0f,
-            AbyssCenter.Y + Mathf.Cos(t * 0.7f) * 25.0f
+            AbyssCenter.X + Mathf.Sin(2.0f * t) * 120.0f,
+            AbyssCenter.Y + Mathf.Cos(1.6f * t) * 80.0f
         );
     }
 }

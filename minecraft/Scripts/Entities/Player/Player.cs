@@ -204,6 +204,8 @@ public partial class Player : Entity
 				Velocity = new Vector3(Velocity.X, -JumpStrength, Velocity.Z);
 			}
 		}
+		//limit fall speed
+		Velocity = new Vector3(Velocity.X, Mathf.Clamp(Velocity.Y, -MaxFallSpeed, Mathf.Inf), Velocity.Z);
 		
 		// MoveAndSlide();
 	}

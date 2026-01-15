@@ -155,7 +155,7 @@ public partial class Chunk_Manager : Node
 			{
 				cachedActiveSet.Add(playerPos + offset);
 			}
-					// Clear and reprioritize queues with new closest-first order
+			// Clear and reprioritize queues with new closest-first order
 			lock (generationLock)
 			{
 				generationWorkQueue.Clear();
@@ -253,9 +253,7 @@ public partial class Chunk_Manager : Node
 		{
 			unload(chunkPos);
 			activeChunks.Remove(chunkPos);
-			generationQueue.Remove(chunkPos);
 			loadingQueue.Remove(chunkPos);
-			// chunks.Remove(chunkPos);
 		}
 	}
 
@@ -383,7 +381,10 @@ public partial class Chunk_Manager : Node
 			}
 			//skip loading chunk if it is outside of the loading range of the player
 			if((chunk_to_world(position)-Global.GetPlayerPos()).Length() > (RenderDistance + 1) * CHUNK_SIZE)
+			{
+				loadingQueue.Remove(position);
 				continue;
+			}	
 			load_calculate(position);
 		}
 	}
@@ -394,6 +395,18 @@ public partial class Chunk_Manager : Node
 			return;
 
 		chunk.Voxels = create_chunk_data(position);
+
+		bool isFullySolid = true;
+		for (int i = 0; i < chunk.Voxels.Length; i++)
+		{
+			if (chunk.Voxels[i] == 0)
+			{
+				isFullySolid = false;
+				break;
+			}
+		}
+		chunk.IsFullySolid = isFullySolid;
+
 		CallDeferred("generate_ready_chunk", position);
 	}
 
@@ -408,8 +421,14 @@ public partial class Chunk_Manager : Node
 
 	public void load_calculate(Vector3I position)
 	{
-		if (!chunks.ContainsKey(position))
+		if (!chunks.ContainsKey(position) || generationQueue.Contains(position))
 			return;
+
+		if (chunks[position].IsFullySolid && adjacent_chunks_solid(position))
+		{
+			CallDeferred("load_ready_chunk", position, Array.Empty<Vector3>(), Array.Empty<Vector3>(), Array.Empty<Vector2>(), Array.Empty<int>(), 0, 0, 0);
+			return;
+		}
 
 		vertexCount = 0;
 		uvCount = 0;
@@ -708,6 +727,7 @@ public partial class Chunk_Manager : Node
 		if (localPos.Y < 0) localPos.Y += CHUNK_SIZE;
 		if (localPos.Z < 0) localPos.Z += CHUNK_SIZE;
 
+		if (blockId == 0) chunks[chunkPos].IsFullySolid = false;
 		chunks[chunkPos].Voxels[voxel_index(localPos)] = (byte)blockId;
 
 		if (localPos.X == 0) mark_neighbor_dirty(chunkPos + new Vector3I(-1, 0, 0));
@@ -1060,5 +1080,16 @@ public partial class Chunk_Manager : Node
 	public int voxel_index(Vector3I index)
 	{
 		return index.X + (index.Z * CHUNK_SIZE) + (index.Y * CHUNK_SIZE * CHUNK_SIZE);
+	}
+
+	private bool adjacent_chunks_solid(Vector3I chunkPos)
+	{
+		for (int i = 0; i < 6; i++)
+		{
+			Vector3I neighborPos = chunkPos + FaceOffsets[i];
+			if (!chunks.TryGetValue(neighborPos, out var neighbor) || !neighbor.IsFullySolid)
+				return false;
+		}
+		return true;
 	}
 }
