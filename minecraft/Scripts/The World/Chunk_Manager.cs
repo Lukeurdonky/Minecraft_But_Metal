@@ -155,6 +155,30 @@ public partial class Chunk_Manager : Node
 			{
 				cachedActiveSet.Add(playerPos + offset);
 			}
+					// Clear and reprioritize queues with new closest-first order
+			lock (generationLock)
+			{
+				generationWorkQueue.Clear();
+				foreach (var offset in cachedChunkOffsets)
+				{
+					var chunkPos = playerPos + offset;
+					if (generationQueue.Contains(chunkPos))
+						generationWorkQueue.Enqueue(chunkPos);
+				}
+				Monitor.Pulse(generationLock);
+			}
+
+			lock (loadingLock)
+			{
+				loadingWorkQueue.Clear();
+				foreach (var offset in cachedChunkOffsets)
+				{
+					var chunkPos = playerPos + offset;
+					if (loadingQueue.Contains(chunkPos))
+						loadingWorkQueue.Enqueue(chunkPos);
+				}
+				Monitor.Pulse(loadingLock);
+			}
 		}
 
 		foreach (var offset in cachedChunkOffsets)
