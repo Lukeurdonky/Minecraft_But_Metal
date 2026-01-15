@@ -73,6 +73,19 @@ public partial class Entity : CharacterBody3D
 		}
 	}
 
+	public virtual void TakeDamage(int amount, Vector3 knockbackVector)
+    {
+        CurrentHealth -= amount;
+
+		if (CurrentHealth <= 0)
+		{
+			Die();
+		}
+
+		// Apply knockback
+		Velocity += knockbackVector;
+    }
+
 	public virtual void Die()
 	{
 		QueueFree();
