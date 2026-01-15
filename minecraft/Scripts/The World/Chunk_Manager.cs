@@ -31,6 +31,12 @@ public partial class Chunk_Manager : Node
 
 	[Export] public Material Mat;
 	[Export] public int RenderDistance = 5;
+	public enum RenderMode
+	{
+		Cylinder,
+		Sphere
+	}
+	[Export] public RenderMode RenderModeType = RenderMode.Sphere;
 	[Export] public Texture2D DamageTexture;
 
 	[Export] public float DamageOverlayNormalOffset = 0.0025f;
@@ -49,7 +55,6 @@ public partial class Chunk_Manager : Node
 	private Dictionary<int, List<Vector3I>> damagePositionsByBlock = new();
 
 	private const int MAX_DAMAGED_BLOCKS = 500;
-	private const int DAMAGE_OVERLAY_VERSION = 1;
 	private Material damageOverlayMaterial;
 
 	private class BlockHealth
@@ -265,21 +270,45 @@ public partial class Chunk_Manager : Node
 		cachedChunkOffsets.Clear();
 		int generationDistance = RenderDistance + 1;
 
-		for (int x = -generationDistance; x <= generationDistance; x++)
+		switch(RenderModeType)
 		{
-			for (int y = -generationDistance; y <= generationDistance; y++)
-			{
-				for (int z = -generationDistance; z <= generationDistance; z++)
+			case RenderMode.Cylinder: //renders in a cylinder from bottom to top
+				for (int y = -generationDistance; y <= generationDistance; y++)
 				{
-					var offset = new Vector3I(x, y, z);
-					if (offset.Length() > generationDistance)
-						continue;
-					cachedChunkOffsets.Add(offset);
+					for (int x = -generationDistance; x <= generationDistance; x++)
+					{
+						for (int z = -generationDistance; z <= generationDistance; z++)
+						{
+							var offset = new Vector3I(x, y, z);
+							var tempOffset = new Vector3I(x, 0, z);
+							if (tempOffset.Length() > generationDistance)
+								continue;
+							cachedChunkOffsets.Add(offset);
+						}
+					}
 				}
-			}
-		}
 
-		cachedChunkOffsets.Sort((a, b) => a.LengthSquared().CompareTo(b.LengthSquared()));
+				cachedChunkOffsets.RemoveAll(offset => (offset.X * offset.X + offset.Z * offset.Z) > (generationDistance * generationDistance));
+				break;
+			case RenderMode.Sphere: //renders in a sphere sorted by closest to furthest
+				for (int x = -generationDistance; x <= generationDistance; x++)
+				{
+					for (int y = -generationDistance; y <= generationDistance; y++)
+					{
+						for (int z = -generationDistance; z <= generationDistance; z++)
+						{
+							var offset = new Vector3I(x, y, z);
+							if (offset.Length() > generationDistance)
+								continue;
+							cachedChunkOffsets.Add(offset);
+						}
+					}
+				}
+				// already filtered by length above
+				cachedChunkOffsets.Sort((a, b) => a.LengthSquared().CompareTo(b.LengthSquared()));
+				break;
+		}
+		
 	}
 
 	public void unload(Vector3I position)
@@ -328,6 +357,9 @@ public partial class Chunk_Manager : Node
 				if (!threadsRunning) break;
 				position = loadingWorkQueue.Dequeue();
 			}
+			//skip loading chunk if it is outside of the loading range of the player
+			if((chunk_to_world(position)-Global.GetPlayerPos()).Length() > (RenderDistance + 1) * CHUNK_SIZE)
+				continue;
 			load_calculate(position);
 		}
 	}
@@ -974,6 +1006,15 @@ public partial class Chunk_Manager : Node
 			Mathf.FloorToInt((float)worldPos.X / CHUNK_SIZE),
 			Mathf.FloorToInt((float)worldPos.Y / CHUNK_SIZE),
 			Mathf.FloorToInt((float)worldPos.Z / CHUNK_SIZE)
+		);
+	}
+
+	public Vector3I chunk_to_world(Vector3I chunkPos)
+	{
+		return new Vector3I(
+			chunkPos.X * CHUNK_SIZE,
+			chunkPos.Y * CHUNK_SIZE,
+			chunkPos.Z * CHUNK_SIZE
 		);
 	}
 
