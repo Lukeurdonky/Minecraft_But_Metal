@@ -74,8 +74,8 @@ public partial class Entity : CharacterBody3D
 	}
 
 	public virtual void TakeDamage(int amount, Vector3 knockbackVector)
-    {
-        CurrentHealth -= amount;
+	{
+		CurrentHealth -= amount;
 
 		if (CurrentHealth <= 0)
 		{
@@ -84,7 +84,7 @@ public partial class Entity : CharacterBody3D
 
 		// Apply knockback
 		Velocity += knockbackVector;
-    }
+	}
 
 	public virtual void Die()
 	{
