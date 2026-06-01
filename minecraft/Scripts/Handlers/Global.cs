@@ -25,14 +25,14 @@ public partial class Global : Node
 	public static readonly Vector2 AbyssCenter = new Vector2(0, 0); // x,z center
 	public const float AbyssRadius = 120;
 	
-	public static readonly Dictionary<int, float> LayerNoiseScale = new Dictionary<int, float>
-	{
-		{ 0, 0.02f },
-		{ 1, 0.04f },
-		{ 2, 0.07f },
-		{ 3, 0.1f },
-		{ 4, 0.16f }
-	};
+	// public static readonly Dictionary<int, float> LayerNoiseScale = new Dictionary<int, float>
+	// {
+	// 	{ 0, 0.02f },
+	// 	{ 1, 0.04f },
+	// 	{ 2, 0.07f },
+	// 	{ 3, 0.1f },
+	// 	{ 4, 0.16f }
+	// };
 
 	public float AirFriction { get; set; } = 0.91f;
 	public float GroundFriction { get; set; } = 0.5f;
@@ -40,6 +40,7 @@ public partial class Global : Node
 	public int AtlasWidth { get; set; } = 12;
 	public int AtlasHeight { get; set; } = 8;
 	private Vector3 _prevPos = Vector3.Zero;
+	public Node3D[] Portals;
 
 	public override void _Ready()
 	{

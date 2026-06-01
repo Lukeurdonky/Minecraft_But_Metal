@@ -23,6 +23,7 @@ public partial class Chunk_Manager : Node
 	};
 
 	private Global Global;
+	public World_Generator WorldGen = new World_Generator(12345);
 	private Dictionary<Vector3I, Chunk> chunks = new();
 	private HashSet<Vector3I> activeChunks = new();
 	private HashSet<Vector3I> dirtyChunks = new();
