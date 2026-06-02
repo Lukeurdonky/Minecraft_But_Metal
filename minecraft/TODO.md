@@ -4,11 +4,7 @@
 
 ## Immediate / In Progress
 
-- [ ] Create `Assets/GrappleHook.tscn` scene and assign to Player node's `GrappleHookScene` export
-  - Root: `Node3D` (name: GrappleHook, script: GrappleHook.cs)
-  - Child: `MeshInstance3D` (name: Mesh)
-  - Child: `Area3D` (name: HitArea, Collision Layer: 0, Mask: Layer 2)
-    - Child: `CollisionShape3D` (SphereShape3D, radius 0.2)
+- [x] Create `Assets/GrappleHook.tscn` and assign to Player node's `GrappleHookScene` export
 
 ---
 
