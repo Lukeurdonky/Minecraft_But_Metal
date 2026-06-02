@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -27,8 +28,8 @@ public partial class Chunk_Manager : Node
 	private Dictionary<Vector3I, Chunk> chunks = new();
 	private HashSet<Vector3I> activeChunks = new();
 	private HashSet<Vector3I> dirtyChunks = new();
-	private HashSet<Vector3I> generationQueue = new();
-	private HashSet<Vector3I> loadingQueue = new();
+	private ConcurrentDictionary<Vector3I, byte> generationQueue = new();
+	private ConcurrentDictionary<Vector3I, byte> loadingQueue = new();
 
 	[Export] public Material Mat;
 	[Export] public int RenderDistance = 5;
@@ -69,6 +70,10 @@ public partial class Chunk_Manager : Node
 	private Thread loadingThread;
 	private volatile bool threadsRunning = true;
 
+	// Synchronization locks for cross-thread shared state
+	private readonly object queueLock = new object();
+	private readonly object damageLock = new object();
+
 	private readonly Queue<Vector3I> generationWorkQueue = new Queue<Vector3I>();
 	private readonly Queue<Vector3I> loadingWorkQueue = new Queue<Vector3I>();
 	private readonly object generationLock = new object();
@@ -99,6 +104,21 @@ public partial class Chunk_Manager : Node
 	private static readonly ArrayPool<Vector2> Vector2Pool = ArrayPool<Vector2>.Shared;
 	private static readonly ArrayPool<int> IntPool = ArrayPool<int>.Shared;
 	private static readonly ArrayPool<byte> BytePool = ArrayPool<byte>.Shared;
+
+	public class MeshBuffers
+	{
+		public Vector3[] Vertices;
+		public Vector3[] Normals;
+		public Vector2[] UVs;
+		public int[] Indices;
+		public bool VerticesFromPool;
+		public bool NormalsFromPool;
+		public bool UVsFromPool;
+		public bool IndicesFromPool;
+	}
+
+	// pending buffers passed from worker threads to main thread, keyed by chunk position
+	private ConcurrentDictionary<Vector3I, MeshBuffers> pendingBuffers = new ConcurrentDictionary<Vector3I, MeshBuffers>();
 
 	public override void _Ready()
 	{
@@ -156,6 +176,17 @@ public partial class Chunk_Manager : Node
 			{
 				cachedActiveSet.Add(playerPos + offset);
 			}
+			// Remove stale queue entries outside the new active set to avoid backlog
+			foreach (var kp in generationQueue.Keys.ToList())
+			{
+				if (!cachedActiveSet.Contains(kp))
+					generationQueue.TryRemove(kp, out _);
+			}
+			foreach (var kp in loadingQueue.Keys.ToList())
+			{
+				if (!cachedActiveSet.Contains(kp))
+					loadingQueue.TryRemove(kp, out _);
+			}
 			// Clear and reprioritize queues with new closest-first order
 			lock (generationLock)
 			{
@@ -163,7 +194,7 @@ public partial class Chunk_Manager : Node
 				foreach (var offset in cachedChunkOffsets)
 				{
 					var chunkPos = playerPos + offset;
-					if (generationQueue.Contains(chunkPos))
+					if (generationQueue.ContainsKey(chunkPos))
 						generationWorkQueue.Enqueue(chunkPos);
 				}
 				Monitor.Pulse(generationLock);
@@ -175,7 +206,7 @@ public partial class Chunk_Manager : Node
 				foreach (var offset in cachedChunkOffsets)
 				{
 					var chunkPos = playerPos + offset;
-					if (loadingQueue.Contains(chunkPos))
+					if (loadingQueue.ContainsKey(chunkPos))
 						loadingWorkQueue.Enqueue(chunkPos);
 				}
 				Monitor.Pulse(loadingLock);
@@ -189,6 +220,17 @@ public partial class Chunk_Manager : Node
 
 			if (chunks.TryGetValue(chunkPos, out var chunk))
 			{
+				// If the chunk exists but hasn't been generated yet, ensure it's queued
+				if (!chunk.Generated && !generationQueue.ContainsKey(chunkPos))
+				{
+					generationQueue[chunkPos] = 1;
+					lock (generationLock)
+					{
+						generationWorkQueue.Enqueue(chunkPos);
+						Monitor.Pulse(generationLock);
+					}
+				}
+
 				if (shouldBeVisible && chunk.Generated && !chunk.Loaded)
 				{
 					bool allNeighborsExist = true;
@@ -215,9 +257,9 @@ public partial class Chunk_Manager : Node
 							}
 						}
 
-						if (allGenerated && !loadingQueue.Contains(chunkPos))
+						if (allGenerated && !loadingQueue.ContainsKey(chunkPos))
 						{
-							loadingQueue.Add(chunkPos);
+							loadingQueue[chunkPos] = 1;
 							lock (loadingLock)
 							{
 								loadingWorkQueue.Enqueue(chunkPos);
@@ -229,11 +271,10 @@ public partial class Chunk_Manager : Node
 			}
 			else
 			{
-				if (!generationQueue.Contains(chunkPos))
+				if (!generationQueue.ContainsKey(chunkPos))
 				{
-					generationQueue.Add(chunkPos);
+					generationQueue[chunkPos] = 1;
 					chunks[chunkPos] = new Chunk(chunkPos);
-
 					lock (generationLock)
 					{
 						generationWorkQueue.Enqueue(chunkPos);
@@ -253,8 +294,11 @@ public partial class Chunk_Manager : Node
 		foreach (var chunkPos in chunksToUnload)
 		{
 			unload(chunkPos);
-			activeChunks.Remove(chunkPos);
-			loadingQueue.Remove(chunkPos);
+			lock (queueLock)
+			{
+				activeChunks.Remove(chunkPos);
+				loadingQueue.TryRemove(chunkPos, out _);
+			}
 		}
 	}
 
@@ -266,12 +310,12 @@ public partial class Chunk_Manager : Node
 		dirtyChunksList.Clear();
 		foreach (var chunkPos in dirtyChunks)
 		{
-			if (chunks.TryGetValue(chunkPos, out var chunk))
-			{
-				chunk.Dirty = false;
-				loadingQueue.Add(chunkPos);
-				dirtyChunksList.Add(chunkPos);
-			}
+				if (chunks.TryGetValue(chunkPos, out var chunk))
+				{
+					chunk.Dirty = false;
+					loadingQueue[chunkPos] = 1;
+					dirtyChunksList.Add(chunkPos);
+				}
 		}
 		dirtyChunks.Clear();
 
@@ -339,7 +383,9 @@ public partial class Chunk_Manager : Node
 		if (!chunks.TryGetValue(position, out var chunk))
 			return;
 
+		// Clear damage in this chunk and free any pending buffers
 		ClearDamageInChunk(position);
+		pendingBuffers.TryRemove(position, out _);
 
 		if (chunk.MeshInstance != null && GodotObject.IsInstanceValid(chunk.MeshInstance))
 		{
@@ -348,6 +394,9 @@ public partial class Chunk_Manager : Node
 			chunk.MeshInstance.QueueFree();
 		}
 
+		// Keep the chunk entry in memory but release voxel buffers and mark
+		// it as not generated so it will be regenerated when needed.
+		// Keep voxel buffers in memory so edits persist in `chunks`.
 		chunk.MeshInstance = null;
 		chunk.Loaded = false;
 	}
@@ -383,9 +432,9 @@ public partial class Chunk_Manager : Node
 			//skip loading chunk if it is outside of the loading range of the player
 			if((chunk_to_world(position)-Global.GetPlayerPos()).Length() > (RenderDistance + 1) * CHUNK_SIZE)
 			{
-				loadingQueue.Remove(position);
+				loadingQueue.TryRemove(position, out _);
 				continue;
-			}	
+			}
 			load_calculate(position);
 		}
 	}
@@ -395,6 +444,7 @@ public partial class Chunk_Manager : Node
 		if (!chunks.TryGetValue(position, out var chunk))
 			return;
 
+		// Generate voxels using one RNG per-chunk (move Random creation out of inner loops)
 		chunk.Voxels = create_chunk_data(position);
 
 		bool isFullySolid = true;
@@ -417,19 +467,22 @@ public partial class Chunk_Manager : Node
 			return;
 
 		chunk.Generated = true;
-		generationQueue.Remove(position);
+		generationQueue.TryRemove(position, out _);
 	}
 
 	public void load_calculate(Vector3I position)
 	{
-		if (!chunks.ContainsKey(position) || generationQueue.Contains(position))
+		if (!chunks.ContainsKey(position) || generationQueue.ContainsKey(position))
 			return;
 
-		if (chunks[position].IsFullySolid && adjacent_chunks_solid(position))
-		{
-			CallDeferred("load_ready_chunk", position, Array.Empty<Vector3>(), Array.Empty<Vector3>(), Array.Empty<Vector2>(), Array.Empty<int>(), 0, 0, 0);
-			return;
-		}
+		var chunk = chunks[position];
+
+		if (chunk.IsFullySolid && adjacent_chunks_solid(position))
+			{
+				// No geometry to upload; defer a load_ready_chunk with zero counts
+				CallDeferred("load_ready_chunk", position, 0, 0, 0);
+				return;
+			}
 
 		vertexCount = 0;
 		uvCount = 0;
@@ -440,7 +493,28 @@ public partial class Chunk_Manager : Node
 		if (meshUvsFlat.Length < 4096 * 2) meshUvsFlat = new float[4096 * 2];
 		if (meshIndicesArray.Length < 6144) meshIndicesArray = new int[6144];
 
-		byte[] voxels = chunks[position].Voxels;
+		// Snapshot voxel data to avoid races with main-thread mutations
+		byte[] voxels = null;
+		if (chunk.Voxels != null)
+		{
+			voxels = new byte[CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE];
+			Array.Copy(chunk.Voxels, voxels, voxels.Length);
+		}
+		if (voxels == null)
+		{
+			// Voxel data was freed (unloaded); request regeneration and skip loading
+			if (!generationQueue.ContainsKey(position))
+			{
+				generationQueue[position] = 1;
+				lock (generationLock)
+				{
+					generationWorkQueue.Enqueue(position);
+					Monitor.Pulse(generationLock);
+				}
+			}
+			loadingQueue.TryRemove(position, out _);
+			return;
+		}
 		int chunkX = position.X * CHUNK_SIZE;
 		int chunkY = position.Y * CHUNK_SIZE;
 		int chunkZ = position.Z * CHUNK_SIZE;
@@ -541,47 +615,100 @@ public partial class Chunk_Manager : Node
 		int vCount = vertexCount / 3;
 		int uCount = uvCount / 2;
 
-		Vector3[] vertices = Vector3Pool.Rent(vCount > 0 ? vCount : 1);
-		Vector3[] normals = Vector3Pool.Rent(vCount > 0 ? vCount : 1);
-		Vector2[] uvs2 = Vector2Pool.Rent(uCount > 0 ? uCount : 1);
-		int[] indices = IntPool.Rent(indexCount > 0 ? indexCount : 1);
+		// Rent typed arrays from ArrayPool where possible to reduce allocations
+		var buffers = new MeshBuffers();
+
+		Vector3[] rentedVerts = ArrayPool<Vector3>.Shared.Rent(vCount);
+		Vector3[] rentedNormals = ArrayPool<Vector3>.Shared.Rent(vCount);
+		Vector2[] rentedUVs = ArrayPool<Vector2>.Shared.Rent(uCount);
+		int[] rentedIndices = ArrayPool<int>.Shared.Rent(indexCount);
 
 		for (int i = 0; i < vCount; i++)
 		{
 			int idx = i * 3;
-			vertices[i] = new Vector3(meshVerticesFlat[idx], meshVerticesFlat[idx + 1], meshVerticesFlat[idx + 2]);
-			normals[i] = new Vector3(meshNormalsFlat[idx], meshNormalsFlat[idx + 1], meshNormalsFlat[idx + 2]);
+			rentedVerts[i] = new Vector3(meshVerticesFlat[idx], meshVerticesFlat[idx + 1], meshVerticesFlat[idx + 2]);
+			rentedNormals[i] = new Vector3(meshNormalsFlat[idx], meshNormalsFlat[idx + 1], meshNormalsFlat[idx + 2]);
 		}
 
 		for (int i = 0; i < uCount; i++)
 		{
 			int idx = i * 2;
-			uvs2[i] = new Vector2(meshUvsFlat[idx], meshUvsFlat[idx + 1]);
+			rentedUVs[i] = new Vector2(meshUvsFlat[idx], meshUvsFlat[idx + 1]);
 		}
 
-		Array.Copy(meshIndicesArray, indices, indexCount);
+		for (int i = 0; i < indexCount; i++)
+			rentedIndices[i] = meshIndicesArray[i];
 
-		CallDeferred("load_ready_chunk", position, vertices, normals, uvs2, indices, vCount, uCount, indexCount);
+		// If the rented arrays are exactly the requested size, mark them as from-pool and pass directly.
+		// Otherwise create exact-sized arrays and copy the used portion, returning rented arrays.
+		if (rentedVerts.Length == vCount)
+		{
+			buffers.Vertices = rentedVerts;
+			buffers.VerticesFromPool = true;
+		}
+		else
+		{
+			buffers.Vertices = new Vector3[vCount];
+			Array.Copy(rentedVerts, buffers.Vertices, vCount);
+			ArrayPool<Vector3>.Shared.Return(rentedVerts, clearArray: true);
+			buffers.VerticesFromPool = false;
+		}
+
+		if (rentedNormals.Length == vCount)
+		{
+			buffers.Normals = rentedNormals;
+			buffers.NormalsFromPool = true;
+		}
+		else
+		{
+			buffers.Normals = new Vector3[vCount];
+			Array.Copy(rentedNormals, buffers.Normals, vCount);
+			ArrayPool<Vector3>.Shared.Return(rentedNormals, clearArray: true);
+			buffers.NormalsFromPool = false;
+		}
+
+		if (rentedUVs.Length == uCount)
+		{
+			buffers.UVs = rentedUVs;
+			buffers.UVsFromPool = true;
+		}
+		else
+		{
+			buffers.UVs = new Vector2[uCount];
+			Array.Copy(rentedUVs, buffers.UVs, uCount);
+			ArrayPool<Vector2>.Shared.Return(rentedUVs, clearArray: true);
+			buffers.UVsFromPool = false;
+		}
+
+		if (rentedIndices.Length == indexCount)
+		{
+			buffers.Indices = rentedIndices;
+			buffers.IndicesFromPool = true;
+		}
+		else
+		{
+			buffers.Indices = new int[indexCount];
+			Array.Copy(rentedIndices, buffers.Indices, indexCount);
+			ArrayPool<int>.Shared.Return(rentedIndices, clearArray: true);
+			buffers.IndicesFromPool = false;
+		}
+
+		// Store buffers for main thread and defer chunk load processing by position + counts
+		pendingBuffers[position] = buffers;
+		CallDeferred("load_ready_chunk", position, vCount, uCount, indexCount);
 	}
 
-	public void load_ready_chunk(Vector3I position, Vector3[] vertices, Vector3[] normals, Vector2[] uvs, int[] indices, int vertCount, int uvCount, int idxCount)
+	public void load_ready_chunk(Vector3I position, int vertCount, int uvCount, int idxCount)
 	{
 		if (!chunks.TryGetValue(position, out var chunk))
 		{
-			Vector3Pool.Return(vertices, false);
-			Vector3Pool.Return(normals, false);
-			Vector2Pool.Return(uvs, false);
-			IntPool.Return(indices, false);
+			// ensure buffers are freed if present
+			if (pendingBuffers.TryRemove(position, out var _)) { }
 			return;
 		}
 
 		if (vertCount == 0 || idxCount == 0)
-		{
-			Vector3Pool.Return(vertices, false);
-			Vector3Pool.Return(normals, false);
-			Vector2Pool.Return(uvs, false);
-			IntPool.Return(indices, false);
-
+			{
 			if (chunk.MeshInstance != null && GodotObject.IsInstanceValid(chunk.MeshInstance))
 			{
 				if (chunk.MeshInstance.GetParent() != null)
@@ -590,15 +717,18 @@ public partial class Chunk_Manager : Node
 				chunk.MeshInstance = null;
 			}
 			chunk.Loaded = true;
+				loadingQueue.TryRemove(position, out _);
+				lock (queueLock) { activeChunks.Add(position); }
 			return;
 		}
 
-		Mesh newMesh = create_mesh_from_data(vertices, normals, uvs, indices, vertCount, uvCount, idxCount);
+		if (!pendingBuffers.TryRemove(position, out var buffers))
+		{
+			// no buffers available; nothing to do
+			return;
+		}
 
-		Vector3Pool.Return(vertices, false);
-		Vector3Pool.Return(normals, false);
-		Vector2Pool.Return(uvs, false);
-		IntPool.Return(indices, false);
+		Mesh newMesh = create_mesh_from_data(buffers.Vertices, buffers.Normals, buffers.UVs, buffers.Indices, vertCount, uvCount, idxCount);
 
 		if (chunk.MeshInstance != null && GodotObject.IsInstanceValid(chunk.MeshInstance))
 		{
@@ -614,13 +744,34 @@ public partial class Chunk_Manager : Node
 		}
 
 		chunk.Loaded = true;
-		activeChunks.Add(position);
-		loadingQueue.Remove(position);
+		loadingQueue.TryRemove(position, out _);
+		lock (queueLock)
+		{
+			activeChunks.Add(position);
+		}
+
+		// Return rented buffers to pools when applicable
+		if (buffers != null)
+		{
+			if (buffers.VerticesFromPool && buffers.Vertices != null)
+				ArrayPool<Vector3>.Shared.Return(buffers.Vertices, clearArray: true);
+			if (buffers.NormalsFromPool && buffers.Normals != null)
+				ArrayPool<Vector3>.Shared.Return(buffers.Normals, clearArray: true);
+			if (buffers.UVsFromPool && buffers.UVs != null)
+				ArrayPool<Vector2>.Shared.Return(buffers.UVs, clearArray: true);
+			if (buffers.IndicesFromPool && buffers.Indices != null)
+				ArrayPool<int>.Shared.Return(buffers.Indices, clearArray: true);
+		}
 	}
 
 	public byte[] create_chunk_data(Vector3I chunkPos)
 	{
 		byte[] data = new byte[CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE];
+
+		// Create one deterministic RNG per chunk for efficiency
+		int seed = noiseSeed ^ (chunkPos.X * 73856093) ^ (chunkPos.Y * 19349663) ^ (chunkPos.Z * 83492791);
+		var rng = new Random(seed);
+
 		for (int x = 0; x < CHUNK_SIZE; x++)
 		{
 			for (int y = 0; y < CHUNK_SIZE; y++)
@@ -638,7 +789,10 @@ public partial class Chunk_Manager : Node
 
 					if (worldY <= height && abyssStrength < 0.5f)
 					{
-						byte blockType = (byte)Random.Shared.Next(1, 4);
+						// Use chunk RNG with a lightweight additional scramble based on voxel coords
+						int localSeed = seed + x * 7385609 + y * 1934969 + z * 834927;
+						rng = new Random(localSeed);
+						byte blockType = (byte)rng.Next(1, 4);
 						data[index] = blockType;
 					}
 					else
@@ -653,29 +807,22 @@ public partial class Chunk_Manager : Node
 
 	public Mesh create_mesh_from_data(Vector3[] vertices, Vector3[] normals, Vector2[] uvs, int[] indices, int vertCount, int uvCount, int idxCount)
 	{
-		var finalVerts = new Vector3[vertCount];
-		var finalNormals = new Vector3[vertCount];
-		var finalUvs = new Vector2[uvCount];
-		var finalIndices = new int[idxCount];
-
-		Array.Copy(vertices, finalVerts, vertCount);
-		Array.Copy(normals, finalNormals, vertCount);
-		Array.Copy(uvs, finalUvs, uvCount);
-		Array.Copy(indices, finalIndices, idxCount);
-
+		// Use provided arrays directly (they are sized to the exact counts)
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
 
-		arrays[(int)Mesh.ArrayType.Vertex] = finalVerts;
-		arrays[(int)Mesh.ArrayType.Normal] = finalNormals;
-		arrays[(int)Mesh.ArrayType.TexUV] = finalUvs;
-		arrays[(int)Mesh.ArrayType.Index] = finalIndices;
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+		arrays[(int)Mesh.ArrayType.Normal] = normals;
+		arrays[(int)Mesh.ArrayType.TexUV] = uvs;
+		arrays[(int)Mesh.ArrayType.Index] = indices;
 
 		var arrayMesh = new ArrayMesh();
 		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 
 		return arrayMesh;
 	}
+
+	// Disk persistence removed — chunks are kept in memory metadata only.
 
 	public int get_block(Vector3I position)
 	{
@@ -737,6 +884,86 @@ public partial class Chunk_Manager : Node
 		if (localPos.Y == CHUNK_SIZE - 1) mark_neighbor_dirty(chunkPos + new Vector3I(0, 1, 0));
 		if (localPos.Z == 0) mark_neighbor_dirty(chunkPos + new Vector3I(0, 0, -1));
 		if (localPos.Z == CHUNK_SIZE - 1) mark_neighbor_dirty(chunkPos + new Vector3I(0, 0, 1));
+	}
+
+	// Apply multiple block changes in a single batch to avoid per-block queueing
+	public void set_blocks_batch(List<(Vector3I pos, int blockId)> changes)
+	{
+		if (changes == null || changes.Count == 0) return;
+
+		var dirtySet = new HashSet<Vector3I>();
+
+		foreach (var change in changes)
+		{
+			var chunkPos = world_to_chunk(change.pos);
+			if (!chunks.ContainsKey(chunkPos)) continue;
+
+			Vector3I localPos = new Vector3I(
+				change.pos.X - (chunkPos.X * CHUNK_SIZE),
+				change.pos.Y - (chunkPos.Y * CHUNK_SIZE),
+				change.pos.Z - (chunkPos.Z * CHUNK_SIZE)
+			);
+
+			if (localPos.X < 0) localPos.X += CHUNK_SIZE;
+			if (localPos.Y < 0) localPos.Y += CHUNK_SIZE;
+			if (localPos.Z < 0) localPos.Z += CHUNK_SIZE;
+
+			var chunk = chunks[chunkPos];
+			chunk.Voxels[voxel_index(localPos)] = (byte)change.blockId;
+			chunk.IsFullySolid = false;
+			chunk.Dirty = true;
+			dirtySet.Add(chunkPos);
+
+			if (localPos.X == 0) dirtySet.Add(chunkPos + new Vector3I(-1, 0, 0));
+			if (localPos.X == CHUNK_SIZE - 1) dirtySet.Add(chunkPos + new Vector3I(1, 0, 0));
+			if (localPos.Y == 0) dirtySet.Add(chunkPos + new Vector3I(0, -1, 0));
+			if (localPos.Y == CHUNK_SIZE - 1) dirtySet.Add(chunkPos + new Vector3I(0, 1, 0));
+			if (localPos.Z == 0) dirtySet.Add(chunkPos + new Vector3I(0, 0, -1));
+			if (localPos.Z == CHUNK_SIZE - 1) dirtySet.Add(chunkPos + new Vector3I(0, 0, 1));
+		}
+
+		// Mark chunks dirty once and enqueue a single batch of load work
+		foreach (var cpos in dirtySet)
+		{
+			if (chunks.TryGetValue(cpos, out var c) && c.Generated)
+			{
+				c.Dirty = true;
+				dirtyChunks.Add(cpos);
+			}
+		}
+	}
+
+	public void explode(Vector3I center, float radius, float damage)
+	{
+		int r = Mathf.CeilToInt(radius);
+		float r2 = radius * radius;
+		var batch = new List<(Vector3I pos, int blockId)>();
+
+		for (int x = -r; x <= r; x++)
+		for (int y = -r; y <= r; y++)
+		for (int z = -r; z <= r; z++)
+		{
+			if (x*x + y*y + z*z > r2) continue;
+			var worldPos = center + new Vector3I(x, y, z);
+			int current = get_block(worldPos);
+			if (current == 0) continue;
+
+			float dist = Mathf.Sqrt(x*x + y*y + z*z);
+			float falloff = 1f - (dist / radius);
+			if (falloff <= 0f) continue;
+
+			if (falloff >= 1f)
+			{
+				batch.Add((worldPos, 0));
+			}
+			else
+			{
+				// partial damage: reduce health via damage_block which handles overlays
+				damage_block(worldPos, damage * falloff);
+			}
+		}
+
+		set_blocks_batch(batch);
 	}
 
 	private void mark_neighbor_dirty(Vector3I chunkPos)
@@ -803,11 +1030,12 @@ public partial class Chunk_Manager : Node
 		multiMesh.VisibleInstanceCount = 0;            // nothing visible yet
 
 		MultiMeshInstance3D instance = new MultiMeshInstance3D();
+		float worldRange = (RenderDistance + 4) * CHUNK_SIZE;
 		instance.CustomAabb = new Aabb(
-			new Vector3(-100000000f, -100000000f, -100000000f),
-			new Vector3(200000000f, 200000000f, 200000000f)
+			new Vector3(-worldRange, -worldRange, -worldRange),
+			new Vector3(worldRange * 2f, worldRange * 2f, worldRange * 2f)
 		);
-		instance.ExtraCullMargin = 100000000f;
+		instance.ExtraCullMargin = CHUNK_SIZE * 2f;
 		instance.VisibilityRangeBegin = 0f;
 		instance.VisibilityRangeEnd = 0f;
 		instance.TopLevel = true;
@@ -883,61 +1111,65 @@ public partial class Chunk_Manager : Node
 		if (overlayInstance == null) return;
 
 		var multiMesh = overlayInstance.Multimesh;
-		if (!damagePositionsByBlock.TryGetValue(blockType, out var posList))
+		List<Vector3I> posList;
+		lock (damageLock)
 		{
-			posList = new List<Vector3I>();
-			damagePositionsByBlock[blockType] = posList;
-		}
-
-		if (!damagedBlocks.ContainsKey(position))
-		{
-			BlockHealth newBlock = new BlockHealth
+			if (!damagePositionsByBlock.TryGetValue(blockType, out posList))
 			{
-				health = 1.0f - damage,
-				blockType = blockType
-			};
-
-			int newIndex = posList.Count;
-			if (newIndex >= multiMesh.InstanceCount)
-			{
-				return;
+				posList = new List<Vector3I>();
+				damagePositionsByBlock[blockType] = posList;
 			}
 
-			newBlock.multiMeshIndex = newIndex;
-
-			damagedBlocks.Add(position, newBlock);
-			damageQueue.Enqueue(position);
-			damageQueueLookup[position] = true;
-			posList.Add(position);
-
-			Transform3D transform = new Transform3D(Basis.Identity, position + new Vector3(0.5f, 0.5f, 0.5f));
-			multiMesh.SetInstanceTransform(newIndex, transform);
-			multiMesh.SetInstanceCustomData(newIndex, new Color(1.0f - newBlock.health, 0, 0, 1));
-
-			multiMesh.VisibleInstanceCount = posList.Count;
-		}
-		else
-		{
-			BlockHealth block = damagedBlocks[position];
-
-			if (block.blockType != blockType)
+			if (!damagedBlocks.ContainsKey(position))
 			{
-				RemoveBlockDamage(position);
-				damage_block(position, damage);
-				return;
+				BlockHealth newBlock = new BlockHealth
+				{
+					health = 1.0f - damage,
+					blockType = blockType
+				};
+
+				int newIndex = posList.Count;
+				if (newIndex >= multiMesh.InstanceCount)
+				{
+					return;
+				}
+
+				newBlock.multiMeshIndex = newIndex;
+
+				damagedBlocks.Add(position, newBlock);
+				damageQueue.Enqueue(position);
+				damageQueueLookup[position] = true;
+				posList.Add(position);
+
+				Transform3D transform = new Transform3D(Basis.Identity, position + new Vector3(0.5f, 0.5f, 0.5f));
+				multiMesh.SetInstanceTransform(newIndex, transform);
+				multiMesh.SetInstanceCustomData(newIndex, new Color(1.0f - newBlock.health, 0, 0, 1));
+
+				multiMesh.VisibleInstanceCount = posList.Count;
 			}
-
-			block.health -= damage;
-
-			if (block.health <= 0)
+			else
 			{
-				RemoveBlockDamage(position);
-				break_block(position);
-				return;
-			}
+				BlockHealth block = damagedBlocks[position];
 
-			multiMesh.SetInstanceCustomData(block.multiMeshIndex, new Color(1.0f - block.health, 0, 0, 1));
-			multiMesh.VisibleInstanceCount = posList.Count;
+				if (block.blockType != blockType)
+				{
+					RemoveBlockDamage(position);
+					damage_block(position, damage);
+					return;
+				}
+
+				block.health -= damage;
+
+				if (block.health <= 0)
+				{
+					RemoveBlockDamage(position);
+					break_block(position);
+					return;
+				}
+
+				multiMesh.SetInstanceCustomData(block.multiMeshIndex, new Color(1.0f - block.health, 0, 0, 1));
+				multiMesh.VisibleInstanceCount = posList.Count;
+			}
 		}
 
 		while (damagedBlocks.Count > MAX_DAMAGED_BLOCKS)
@@ -952,76 +1184,89 @@ public partial class Chunk_Manager : Node
 
 	private void RemoveBlockDamage(Vector3I position)
 	{
-		if (!damagedBlocks.ContainsKey(position)) return;
-
-		BlockHealth block = damagedBlocks[position];
-		if (!damageMultiMeshByBlock.TryGetValue(block.blockType, out var multiMesh))
+		lock (damageLock)
 		{
-			damagedBlocks.Remove(position);
-			return;
-		}
+			if (!damagedBlocks.ContainsKey(position)) return;
 
-		if (!damagePositionsByBlock.TryGetValue(block.blockType, out var posList))
-		{
-			damagedBlocks.Remove(position);
-			damageQueueLookup.Remove(position);
-			return;
-		}
-
-		int indexToRemove = block.multiMeshIndex;
-		if (indexToRemove < 0 || indexToRemove >= posList.Count)
-		{
-			damagedBlocks.Remove(position);
-			damageQueueLookup.Remove(position);
-			return;
-		}
-
-		int lastIndex = posList.Count - 1;
-
-		if (indexToRemove != lastIndex)
-		{
-			Vector3I swapPos = posList[lastIndex];
-			if (damagedBlocks.TryGetValue(swapPos, out var swapBlock) && swapBlock.blockType == block.blockType)
+			BlockHealth block = damagedBlocks[position];
+			if (!damageMultiMeshByBlock.TryGetValue(block.blockType, out var multiMesh))
 			{
-				Transform3D lastT = multiMesh.GetInstanceTransform(lastIndex);
-				Color lastC = multiMesh.GetInstanceCustomData(lastIndex);
-
-				multiMesh.SetInstanceTransform(indexToRemove, lastT);
-				multiMesh.SetInstanceCustomData(indexToRemove, lastC);
-
-				posList[indexToRemove] = swapPos;
-				swapBlock.multiMeshIndex = indexToRemove;
+				damagedBlocks.Remove(position);
+				return;
 			}
+
+			if (!damagePositionsByBlock.TryGetValue(block.blockType, out var posList))
+			{
+				damagedBlocks.Remove(position);
+				damageQueueLookup.Remove(position);
+				return;
+			}
+
+			int indexToRemove = block.multiMeshIndex;
+			if (indexToRemove < 0 || indexToRemove >= posList.Count)
+			{
+				damagedBlocks.Remove(position);
+				damageQueueLookup.Remove(position);
+				return;
+			}
+
+			int lastIndex = posList.Count - 1;
+
+			if (indexToRemove != lastIndex)
+			{
+				Vector3I swapPos = posList[lastIndex];
+				if (damagedBlocks.TryGetValue(swapPos, out var swapBlock) && swapBlock.blockType == block.blockType)
+				{
+					Transform3D lastT = multiMesh.GetInstanceTransform(lastIndex);
+					Color lastC = multiMesh.GetInstanceCustomData(lastIndex);
+
+					multiMesh.SetInstanceTransform(indexToRemove, lastT);
+					multiMesh.SetInstanceCustomData(indexToRemove, lastC);
+
+					posList[indexToRemove] = swapPos;
+					swapBlock.multiMeshIndex = indexToRemove;
+				}
+			}
+
+			posList.RemoveAt(lastIndex);
+			multiMesh.VisibleInstanceCount = posList.Count;
+
+			damagedBlocks.Remove(position);
+			damageQueueLookup.Remove(position);
 		}
-
-		posList.RemoveAt(lastIndex);
-		multiMesh.VisibleInstanceCount = posList.Count;
-
-		damagedBlocks.Remove(position);
-		damageQueueLookup.Remove(position);
 	}
 
 	private void ClearDamageInChunk(Vector3I chunkPos)
 	{
 		List<Vector3I> toRemove = new List<Vector3I>();
-		foreach (var blockPos in damagedBlocks.Keys)
+		lock (damageLock)
 		{
-			if (world_to_chunk(blockPos) == chunkPos)
-				toRemove.Add(blockPos);
-		}
+			foreach (var blockPos in damagedBlocks.Keys.ToList())
+			{
+				if (world_to_chunk(blockPos) == chunkPos)
+					toRemove.Add(blockPos);
+			}
 
-		foreach (var blockPos in toRemove)
-		{
-			RemoveBlockDamage(blockPos);
+			if (toRemove.Count == 0) return;
 
+			// Remove all damages and mark for queue rebuild
+			var removedSet = new HashSet<Vector3I>(toRemove);
+			foreach (var blockPos in toRemove)
+			{
+				RemoveBlockDamage(blockPos);
+			}
+
+			// Rebuild damageQueue excluding removed positions
 			var tempQueue = new Queue<Vector3I>();
 			while (damageQueue.Count > 0)
 			{
 				var pos = damageQueue.Dequeue();
-				if (pos != blockPos)
+				if (!removedSet.Contains(pos))
 					tempQueue.Enqueue(pos);
 			}
 			damageQueue = tempQueue;
+			foreach (var pos in removedSet)
+				damageQueueLookup.Remove(pos);
 		}
 	}
 
