@@ -1,11 +1,13 @@
-[gd_scene load_steps=10 format=3 uid="uid://dmhm1ql7cw68i"]
+[gd_scene load_steps=12 format=3 uid="uid://dmhm1ql7cw68i"]
 
 [ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player/Player.cs" id="1_x5jwr"]
 [ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/Entities/Player/interactions.gd" id="2_0w0kd"]
+[ext_resource type="PackedScene" uid="uid://dpuxy1inq4u77" path="res://Assets/GrappleHook.tscn" id="2_affd2"]
 [ext_resource type="Texture2D" uid="uid://c47ikq7xvlx14" path="res://Sprites/crosshair.png" id="3_gqhvq"]
 [ext_resource type="Script" uid="uid://qnlmb3pmrthp" path="res://Scripts/Handlers/DebugMenu.gd" id="5_jiiwr"]
 [ext_resource type="Material" uid="uid://76hqot3in3tq" path="res://Materials/new_standard_material_3d.tres" id="6_iwsel"]
 [ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/Entities/Player/inventory.gd" id="6_lgrlh"]
+[ext_resource type="PackedScene" uid="uid://bghnugice8y2l" path="res://Assets/right_arm.tscn" id="8_lgo0g"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_8ahl0"]
 
@@ -14,18 +16,17 @@ size = Vector3(0.75, 1.9, 0.75)
 
 [sub_resource type="BoxMesh" id="BoxMesh_x5jwr"]
 
-[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "Inventory", "HandMesh")]
+[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape")]
 collision_mask = 0
 script = ExtResource("1_x5jwr")
 Camera = NodePath("Camera3D")
 CollisionShape = NodePath("CollisionShape3D")
-Inventory = NodePath("Inventory")
-HandMesh = NodePath("SubViewportContainer/SubViewport/MeshInstance3D")
 Speed = 4.0
-SprintMult = 20.0
+SprintMult = 4.0
 Accel = 50.0
 JumpStrength = 20.0
-Gravity = 40.0
+Gravity = 35.0
+GrappleHookScene = ExtResource("2_affd2")
 offset = Vector2(0, -0.1)
 width = 0.9
 
@@ -127,10 +128,14 @@ far = 22.8
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="SubViewportContainer/SubViewport"]
 transform = Transform3D(0.24246156, -0.042752516, 0.17364818, 0.043412045, 0.24620193, 0, -0.042752516, 0.0075384225, 0.9848077, 0.5, 0.2, -0.6)
+visible = false
 layers = 32768
 mesh = SubResource("BoxMesh_x5jwr")
 skeleton = NodePath("../../../Camera3D")
 surface_material_override/0 = ExtResource("6_iwsel")
+
+[node name="right_arm" parent="SubViewportContainer/SubViewport" instance=ExtResource("8_lgo0g")]
+transform = Transform3D(0.09839411, -0.01784931, -2.1514013e-11, -7.5904033e-10, -4.3047312e-09, 0.10000002, -0.01784931, -0.09839411, -4.3710857e-09, 0.5, 0.2, -0.6429552)
 
 [node name="SpotLight3D" type="SpotLight3D" parent="SubViewportContainer/SubViewport"]
 transform = Transform3D(1, 5.587935e-09, 0, -5.587935e-09, 1, -1.4901159e-08, 0, 1.4901159e-08, 1, 0, 0.6, 0)

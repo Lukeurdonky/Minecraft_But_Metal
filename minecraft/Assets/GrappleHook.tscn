@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3 uid="uid://dpuxy1inq4u77"]
+
+[ext_resource type="Script" uid="uid://dgqk7m4x18vhm" path="res://Scripts/Entities/GrappleHook.cs" id="1_5cn4j"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_8mnux"]
+
+[node name="GrappleHook" type="Node3D"]
+script = ExtResource("1_5cn4j")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_8mnux")

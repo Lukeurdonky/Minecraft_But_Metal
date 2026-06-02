@@ -10,11 +10,10 @@ public partial class Player : Entity
 	[Export]
 	public CollisionShape3D CollisionShape { get; set; }
 	
-	[Export]
-	public Node3D Inventory { get; set; }
-	[Export]
-	public MeshInstance3D HandMesh { get; set; }
-	
+	// ARCHIVED: Inventory and HandMesh removed — Minecraft item system archived.
+	// public Node3D Inventory { get; set; }
+	// public MeshInstance3D HandMesh { get; set; }
+
 	[Export]
 	public float Speed { get; set; } = 5.0f;
 	
@@ -29,8 +28,9 @@ public partial class Player : Entity
 	
 	[Export]
 	public float Gravity { get; set; } = 9.8f;
-	[Export]
-	public float PickUpRange { get; set; } = 4.0f;
+
+	// ARCHIVED: PickUpRange removed — item pickup system archived.
+	// public float PickUpRange { get; set; } = 4.0f;
 
 	// How fast the player glides up a step (units per second).
 	// At 8.0 a 1-block step takes ~0.125 s — snappy but visible.
@@ -49,17 +49,23 @@ public partial class Player : Entity
 	public bool SpectatorMode { get; set; } = false;
 
 	private Vector3 forwardDirection = Vector3.Zero;
-	private Vector3 rightDirection = Vector3.Zero;
-	private Vector3 direction = Vector3.Zero;
+	private Vector3 rightDirection   = Vector3.Zero;
+	private Vector3 direction        = Vector3.Zero;
+
+	// Dual velocity channels — see ApplyMovement for rationale.
+	private Vector3 _inputVel = Vector3.Zero;   // WASD + gravity + jump
+
+	// Air jump state — shared with PlayerAbilities via partial class.
+	// _airJumps is set to 1 on leaving ground and incremented by grapple attach.
+	private int  _airJumps       = 0;
+	private bool _wasPhysOnFloor = true;
 
 	// ── Step-up traversal state ──────────────────────────────────────────────
 	// When the player steps onto a block we record how much vertical distance
 	// remains and smoothly close the gap every _PhysicsProcess tick.
-	private float stepRemainder = 0f;   // remaining Y to travel upward
-	private const float STEP_HEIGHT    = 1.0f;   // maximum climbable step (blocks)
-	private const float STEP_THRESHOLD = 0.001f; // snap-to-zero below this
-
-	private Area3D pickupArea;
+	private float stepRemainder = 0f;
+	private const float STEP_HEIGHT    = 1.0f;
+	private const float STEP_THRESHOLD = 0.001f;
 
 	public override void ImHere()
 	{
@@ -69,21 +75,8 @@ public partial class Player : Entity
 		Global.Player = this;
 		if (Camera != null)
 			Camera.Current = true;
-		
-		pickupArea = new Area3D();
-		pickupArea.Name = "PickupArea";
-		pickupArea.CollisionLayer = 0;
-		pickupArea.CollisionMask = 4;
-		pickupArea.Monitoring = true;
-		
-		var shape = new CollisionShape3D();
-		shape.Shape = new SphereShape3D { Radius = PickUpRange };
-		pickupArea.AddChild(shape);
-		
-		AddChild(pickupArea);
-		
-		pickupArea.BodyEntered += OnPickupAreaEntered;
-		pickupArea.BodyExited += OnPickupAreaExited;
+
+		// ARCHIVED: Pickup area removed — item pickup system archived.
 	}
 
 	public override void _Process(double delta)
@@ -145,6 +138,7 @@ public partial class Player : Entity
 				else
 				{
 					Velocity = new Vector3(0, Velocity.Y, Velocity.Z);
+					_inputVel.X = 0f; _abilityVel.X = 0f;
 					moveBy.X = 0;
 				}
 			}
@@ -162,6 +156,7 @@ public partial class Player : Entity
 			if (CheckAxisCollision(futureBox, true))
 			{
 				Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
+				_inputVel.Y = 0f; _abilityVel.Y = 0f;
 				moveBy.Y = 0;
 			}
 			else
@@ -184,6 +179,7 @@ public partial class Player : Entity
 				else
 				{
 					Velocity = new Vector3(Velocity.X, Velocity.Y, 0);
+					_inputVel.Z = 0f; _abilityVel.Z = 0f;
 					moveBy.Z = 0;
 				}
 			}
@@ -218,107 +214,98 @@ public partial class Player : Entity
 
 	public override void ApplyMovementFromInput(double delta)
 	{
-		timeSinceLeftGround += (float)delta; // Increment timer while in grace period
+		timeSinceLeftGround += (float)delta;
 		ApplyMovement(delta);
+		ProcessAbilities((float)delta);
+		Velocity = _inputVel + _abilityVel; // recompute so ability impulses are visible to HandleWorldCollisions this frame
 	}
 
 	private void ApplyMovement(double delta)
 	{
-		bool IsOnFloor = OnFloor();
-		if (Input.IsActionJustPressed("toggle_mouse"))
-		{
-			ToggleMouseVisibility();
-		}
-		
+		// Two velocity channels keep ability momentum separate from input movement:
+		//   _inputVel  — WASD steering + gravity + jump. Capped and friction'd normally.
+		//   _abilityVel — dash / grapple / jackhammer. Decays slowly, no hard cap.
+		// Abilities write only to _abilityVel so they never fight or re-cap input.
+
+		bool isOnFloor     = OnFloor();          // includes grace period — jump eligibility only
+		bool isPhysOnFloor = PhysicallyOnFloor(); // actual block contact — friction and caps
+
+		if (!_wasPhysOnFloor && isPhysOnFloor) _airJumps = 0; // landed — reset
+		if (_wasPhysOnFloor && !isPhysOnFloor) _airJumps = Mathf.Max(_airJumps, 1); // left ground — ensure at least 1
+		_wasPhysOnFloor = isPhysOnFloor;
+		float dt = (float)delta;
+
+		if (Input.IsActionJustPressed("toggle_mouse"))    ToggleMouseVisibility();
+		if (Input.IsActionJustPressed("toggle_spectator")) ToggleSpectator();
+
+		// ── Input direction ──────────────────────────────────────────────────────
 		direction = Vector3.Zero;
-		float tempSpeed = Speed;
-		float max = Speed;
-		
-		if (Input.IsActionPressed("sprint"))
-		{
-			TogglePlayerSprint(true);
-		}
-		
-		if (Input.IsActionJustPressed("toggle_spectator"))
-		{
-			ToggleSpectator();
-		}
-		
 		UpdateFacingDirections();
-		
-		if (Input.IsActionPressed("move_forward"))
+
+		if (Input.IsActionPressed("move_forward")) direction += forwardDirection;
+		else TogglePlayerSprint(false);
+
+		if (Input.IsActionPressed("move_back"))  { direction -= forwardDirection; TogglePlayerSprint(false); }
+		if (Input.IsActionPressed("move_left"))  direction -= rightDirection;
+		if (Input.IsActionPressed("move_right")) direction += rightDirection;
+		if (Input.IsActionPressed("sprint"))     TogglePlayerSprint(true);
+
+		float inputSpeed = Speed;
+		float inputMax   = Speed;
+		if (IsSprinting) { inputSpeed *= SprintMult; inputMax *= SprintMult; }
+
+		// ── _inputVel XZ: friction → accelerate → cap on ground ─────────────────
+		float fricMult = isPhysOnFloor ? Global.GroundFriction : Global.AirFriction;
+		if (!isPhysOnFloor) inputSpeed /= 8f;
+
+		_inputVel.X *= fricMult;
+		_inputVel.Z *= fricMult;
+
+		if (direction.LengthSquared() > 0f)
 		{
-			direction += forwardDirection;
-		}
-		else
-		{
-			TogglePlayerSprint(false);
-		}
-		
-		if (Input.IsActionPressed("move_back"))
-		{
-			direction -= forwardDirection;
-			TogglePlayerSprint(false);
-		}
-		
-		if (Input.IsActionPressed("move_left"))
-		{
-			direction -= rightDirection;
-		}
-		
-		if (Input.IsActionPressed("move_right"))
-		{
-			direction += rightDirection;
-		}
-		
-		if (IsSprinting)
-		{
-			tempSpeed *= SprintMult;
-			max *= SprintMult;
-		}
-		
-		float fricMult = Global.GroundFriction;
-		if (!IsOnFloor)
-		{
-			tempSpeed /= 8;
-			fricMult = Global.AirFriction;
-		}
-		
-		direction = direction.Normalized() * tempSpeed;
-		
-		Velocity = new Vector3(Velocity.X * fricMult, Velocity.Y, Velocity.Z * fricMult);
-		
-		Velocity = new Vector3(
-			Velocity.X + direction.X * (float)delta * Accel,
-			Velocity.Y,
-			Velocity.Z + direction.Z * (float)delta * Accel
-		);
-		
-		Velocity = new Vector3(Velocity.X, 0, Velocity.Z).LimitLength(max) + new Vector3(0, Velocity.Y, 0);
-		
-		if (!SpectatorMode)
-		{
-			Velocity = new Vector3(Velocity.X, Velocity.Y - Gravity * (float)delta, Velocity.Z);
-		}
-		else
-		{
-			Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
-		}
-		
-		if ((IsOnFloor || SpectatorMode) && Input.IsActionPressed("jump") && Velocity.Y <= .25f)
-		{
-			Velocity = new Vector3(Velocity.X, JumpStrength, Velocity.Z);
-		}
-		
-		if (Input.IsActionPressed("crouch"))
-		{
-			if (SpectatorMode)
-			{
-				Velocity = new Vector3(Velocity.X, -JumpStrength, Velocity.Z);
-			}
+			var inputDir = direction.Normalized() * inputSpeed;
+			_inputVel.X += inputDir.X * dt * Accel;
+			_inputVel.Z += inputDir.Z * dt * Accel;
 		}
 
-		Velocity = new Vector3(Velocity.X, Mathf.Clamp(Velocity.Y, -MaxFallSpeed, Mathf.Inf), Velocity.Z);
+		if (isPhysOnFloor)
+		{
+			var h = new Vector2(_inputVel.X, _inputVel.Z).LimitLength(inputMax);
+			_inputVel.X = h.X;
+			_inputVel.Z = h.Y;
+		}
+
+		// ── _inputVel Y: gravity + jump ──────────────────────────────────────────
+		if (!SpectatorMode)
+			_inputVel.Y -= Gravity * dt;
+		else
+			_inputVel.Y = 0f;
+
+		// Check combined Y so ability momentum (e.g. grapple pulling down) doesn't block jump
+		if ((isOnFloor || SpectatorMode) && Input.IsActionPressed("jump") && (_inputVel.Y + _abilityVel.Y) <= 0.25f)
+			_inputVel.Y = JumpStrength;
+		else if (!isOnFloor && !SpectatorMode && Input.IsActionJustPressed("jump") && _airJumps > 0)
+		{
+			_airJumps--;
+			_inputVel.Y  = JumpStrength;
+			_abilityVel.Y = 0f; // clear any downward ability vel so the air jump isn't fought
+		}
+
+		if (SpectatorMode && Input.IsActionPressed("crouch"))
+			_inputVel.Y = -JumpStrength;
+
+		_inputVel.Y = Mathf.Clamp(_inputVel.Y, -MaxFallSpeed, Mathf.Inf);
+
+		// ── _abilityVel decay ────────────────────────────────────────────────────
+		// XZ: fast on physical ground so you stop crisply on landing, gentle in air.
+		// Y:  always air-rate — ground state must never fight vertical ability momentum.
+		float abilityDecayXZ = isPhysOnFloor ? 0.85f : 0.97f;
+		_abilityVel.X *= abilityDecayXZ;
+		_abilityVel.Z *= abilityDecayXZ;
+		_abilityVel.Y *= 0.97f;
+
+		// ── Combine ──────────────────────────────────────────────────────────────
+		Velocity = _inputVel + _abilityVel;
 	}
 
 	public void RotateCamera()
@@ -368,15 +355,7 @@ public partial class Player : Entity
 			Die();
 	}
 
-	private void OnPickupAreaEntered(Node3D body)
-	{
-		// Item pickup detection disabled during testing
-	}
-
-	private void OnPickupAreaExited(Node3D body)
-	{
-		// Item pickup detection disabled during testing
-	}
+	// ARCHIVED: OnPickupAreaEntered / OnPickupAreaExited removed — item pickup system archived.
 
 	public override void Die()
 	{

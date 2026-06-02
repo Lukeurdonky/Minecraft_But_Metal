@@ -253,53 +253,68 @@ public partial class Entity : CharacterBody3D
 
 
 
-	public virtual bool OnFloor()
+	// True only when physically touching a block below — no grace period.
+	// Use this for friction and movement caps. Use OnFloor() for jump eligibility.
+	public virtual bool PhysicallyOnFloor()
 	{
-		// Get entity's foot-level AABB (slightly below actual position to check for ground)
-		Aabb entityBox = GetAABB();
-		
-		// Create a thin slice just below the entity's feet
+		Aabb entityBox   = GetAABB();
 		Aabb footCheckBox = new Aabb(
 			new Vector3(entityBox.Position.X, entityBox.Position.Y - onGroundDetectionLength, entityBox.Position.Z),
 			new Vector3(entityBox.Size.X, 0.1f, entityBox.Size.Z)
 		);
-		
-		// Calculate the min and max block positions the entity's feet could be over
-		int minX = (int)Mathf.Floor(footCheckBox.Position.X);
-		int maxX = (int)Mathf.Floor(footCheckBox.End.X);
-		int minZ = (int)Mathf.Floor(footCheckBox.Position.Z);
-		int maxZ = (int)Mathf.Floor(footCheckBox.End.Z);
+
+		int minX   = (int)Mathf.Floor(footCheckBox.Position.X);
+		int maxX   = (int)Mathf.Floor(footCheckBox.End.X);
+		int minZ   = (int)Mathf.Floor(footCheckBox.Position.Z);
+		int maxZ   = (int)Mathf.Floor(footCheckBox.End.Z);
 		int checkY = (int)Mathf.Floor(footCheckBox.Position.Y);
-		
-		// Check all blocks the entity could be standing on
-		for(int x = minX; x <= maxX; x++)
+
+		for (int x = minX; x <= maxX; x++)
 		{
-			for(int z = minZ; z <= maxZ; z++)
+			for (int z = minZ; z <= maxZ; z++)
 			{
-				Vector3I blockPos = new Vector3I(x, checkY, z);
-				
-				int blockID = Global.CubeManager.get_block(blockPos);
-				if(blockID == 0) continue; // Air, skip
-				
-				// Create AABB for this block
-				Aabb blockBox = new Aabb(
-					new Vector3(blockPos.X, blockPos.Y, blockPos.Z),
-					new Vector3(1, 1, 1)
-				);
-				
-				// Check if foot box intersects with this block
-				if(footCheckBox.Intersects(blockBox))
+				int blockID = Global.CubeManager.get_block(new Vector3I(x, checkY, z));
+				if (blockID == 0) continue;
+				Aabb blockBox = new Aabb(new Vector3(x, checkY, z), new Vector3(1, 1, 1));
+				if (footCheckBox.Intersects(blockBox)) return true;
+			}
+		}
+		return false;
+	}
+
+	public virtual bool OnFloor()
+	{
+		Aabb entityBox   = GetAABB();
+		Aabb footCheckBox = new Aabb(
+			new Vector3(entityBox.Position.X, entityBox.Position.Y - onGroundDetectionLength, entityBox.Position.Z),
+			new Vector3(entityBox.Size.X, 0.1f, entityBox.Size.Z)
+		);
+
+		int minX   = (int)Mathf.Floor(footCheckBox.Position.X);
+		int maxX   = (int)Mathf.Floor(footCheckBox.End.X);
+		int minZ   = (int)Mathf.Floor(footCheckBox.Position.Z);
+		int maxZ   = (int)Mathf.Floor(footCheckBox.End.Z);
+		int checkY = (int)Mathf.Floor(footCheckBox.Position.Y);
+
+		for (int x = minX; x <= maxX; x++)
+		{
+			for (int z = minZ; z <= maxZ; z++)
+			{
+				int blockID = Global.CubeManager.get_block(new Vector3I(x, checkY, z));
+				if (blockID == 0) continue;
+				Aabb blockBox = new Aabb(new Vector3(x, checkY, z), new Vector3(1, 1, 1));
+				if (footCheckBox.Intersects(blockBox))
 				{
-					timeSinceLeftGround = 0f; // Reset timer if we detect ground contact
+					timeSinceLeftGround = 0f;
 					return true;
 				}
 			}
 		}
-		if(timeSinceLeftGround < onGroundGracePeriod)
-		{
-			
-			return true; // Still within grace period after leaving ground
-		}
+
+		// Grace period — still jumpable, but not physically touching
+		if (timeSinceLeftGround < onGroundGracePeriod)
+			return true;
+
 		return false;
 	}
 }

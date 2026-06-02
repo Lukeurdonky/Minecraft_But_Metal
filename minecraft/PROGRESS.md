@@ -2,154 +2,129 @@
 
 > You're in your spaceship. You go to randomly generated planets. You kill things.
 
-A voxel-based action roguelike built in Godot 4 (C# + GDScript). Each run sends the player across a sequence of procedurally generated planets to clear combat encounters, collect upgrades, and reach a boss. No crafting. No base-building. Pure destructive capability.
+A voxel-based action roguelike built in **Godot 4** (C# + GDScript). Each run: choose a planet → fight → collect upgrades → boss. All combat, no crafting, no inventory. See `NEW_VISION.md` for the full design doc.
 
 ---
 
 ## Design Pillars
 
-- **All combat, no filler** — every system exists to make fights better
-- **Fun over narrative** — mechanics first, story never
-- **Still descending** — the world goes deep; exploration is vertical
-- **Darker palette + bright electronic enemies** — Antithesis aesthetic
-- **Destructible world** — the voxel foundation is a feature, not a legacy
-
----
+- All combat, no filler
+- Fun over narrative
+- Still descending — the world goes deep
+- Darker palette + bright electronic enemies
+- Destructible world
 
 ## Game Loop
 
 ```
-Choose 1 of 3 planets → Difficulty (Easy / Medium / Hard) → Clear / Survive → Upgrades → Next planet → Boss
+Choose 1 of 3 planets → Difficulty → Clear / Survive → Upgrades → Next planet → Boss
 ```
-
-- Planet map visible throughout the run
-- Demo target: one full map (one planet)
-- Future: multiple bosses, per-galaxy theming, an actual ending
-
-### Win Conditions per Planet
-
-| Type | Description |
-|---|---|
-| **Exploration** | Kill X enemies across caves and the surface |
-| **Survival** | Survive X minutes against a massive creature or swarm |
-| **Combat** | Kill everything — or reach the core |
 
 ---
 
 ## Architecture Overview
 
-The existing voxel engine carries over almost entirely. What changes is everything above the world layer — combat, player abilities, enemy AI, run structure, and progression.
+C# for all performance-critical systems, GDScript for camera/HUD/scene scripting.
 
 ```
 Scripts/
-├── Handlers/       — Global singleton, debug HUD, scene transitions
-├── The World/      — Chunk system, block definitions, world generator  ← KEEP, extend
-│   └── Generation/ — Staged generation pipeline                        ← FILL IN for planets
-├── Entities/       — Entity base, Player, Creature, Item, Projectile  ← OVERHAUL
-│   ├── Player/     — Controller, abilities, interactions               ← MAJOR CHANGES
-│   └── Item Behaviors/ — Replace with Weapon/Ability system           ← REPLACE
-└── Datasets/       — Registries                                        ← REPURPOSE
+├── Handlers/         Global.cs (singleton), DebugMenu.gd (HUD)
+├── The World/        Chunk_Manager.cs, Block_Registry.cs, Block_Model.cs
+│   └── Generation/   World_Generator.cs (5-stage pipeline, all stages EMPTY — fill these)
+├── Entities/         Entity.cs (base), GrappleHook.cs
+│   └── Player/       Player.cs, PlayerAbilities.cs, interactions.gd
+└── Datasets/         Block_Registry.cs, Item_Registry.cs (ARCHIVED)
 ```
 
-**What carries over:**
-- 16×16×16 chunk system with threaded generation and mesh building
-- Manual AABB collision against voxel data
-- Block damage, explosion system, and damage overlay shader
-- Entity base class (health, physics, ground detection)
-- Raycast interaction system
+### Key architectural decisions
 
-**What gets replaced or heavily modified:**
-- Minecraft-style 36-slot inventory → compact upgrade/accessory loadout
-- Item behavior system → Weapon + Ability system (Laser Arm, Grapple, Wings)
-- Passive creature AI → Aggressive enemy AI with varied behaviors
-- Flat terrain generation → Planet-shaped destructible terrain with caves
+**Dual velocity channels (Player.cs / PlayerAbilities.cs)**
+- `_inputVel` — WASD + gravity + jump. Friction and speed cap applied here only.
+- `_abilityVel` — dash, grapple, jackhammer impulse. Decays independently (0.97/tick air, 0.85/tick ground for XZ; always 0.97 for Y). No hard cap.
+- `Velocity = _inputVel + _abilityVel` recomputed twice per tick: once in `ApplyMovement`, once after `ProcessAbilities` so ability impulses are visible to collision that same frame.
+- On block collision any axis: both channel components zeroed for that axis.
+
+**PhysicallyOnFloor() vs OnFloor()**
+- `PhysicallyOnFloor()` — pure block check, no grace period. Used for friction, speed cap, ability XZ decay.
+- `OnFloor()` — includes coyote time (0.2s grace). Used only for jump eligibility.
+- Ground friction and ability decay never fire during coyote window.
+
+**Abilities (PlayerAbilities.cs — partial class of Player)**
+All four abilities consolidated in one file. Public state flags (JackhammerCharging, LaserActive, GrappleState, DashCooldown) are the accessory hook-in points — don't add new input systems, read these instead.
+
+**GrappleHook.cs**
+Standalone Node3D. Flies in `FireDirection` each `_Process` tick. Block detection via `get_block`. Entity detection via Area3D BodyEntered. State machine: Flying → Retracting → Done. Fires `OnAttach(Vector3)` or `OnRetracted()` callbacks. Has `StartRetract()` for early recall.
+
+**Entity.cs base**
+Manual AABB collision against voxel data. Do NOT switch to Godot physics for entity-world collision. All entities extend this.
 
 ---
 
-## What's Implemented (Inherited from Minecraft Base)
+## What's Implemented
 
 ### World & Rendering
-- 16×16×16 voxel chunks with threaded generation and mesh building
-- Greedy visibility culling — only exposed faces meshed
-- Sphere/cylinder render distance modes
-- Chunk lifecycle — generation, loading, unloading, cold-chunk eviction
-- Block texture atlas (12×8) with per-face UV mapping
-- Occlusion culling enabled
-- Block damage overlay — MultiMesh + `BlockDamage.gdshader`, up to 1500 damaged blocks simultaneously
-- **Explosion system** — radius-based block destruction with damage falloff ← directly useful for combat
+- 16×16×16 chunk system, threaded generation + mesh building
+- Greedy face culling, sphere/cylinder render distance, chunk eviction
+- Block damage overlay (MultiMesh + shader), up to 1500 simultaneously damaged blocks
+- **Explosion system** (`explode()` in Chunk_Manager) — directly used for combat
 
-### Player
-- WASD movement, mouse-look FPS camera, jump, sprint
-- Spectator/no-clip mode for testing
-- DDA raycast for targeting
-- First-person hand mesh
+### Player Movement
+- WASD, mouse-look FPS camera, sprint, spectator mode (V)
+- Dual velocity channel physics (see above)
+- `PhysicallyOnFloor()` / `OnFloor()` split for correct coyote behavior
+- Air velocity carries properly — no mid-air hard cap
 
-### Entities
-- `Entity.cs` — health, AABB physics, ground detection, fall cap
-- `Creature.cs` — detects player at 15 units, chases (placeholder AI)
-- `Item.cs` — world-dropped pickups with gravity and pursuit behavior
+### Player Abilities
+- **Jackhammer** (`attack1` hold/release) — charges over 1.5s, bounces player in opposite of camera look direction on release. Damages targeted block proportional to charge. Writes to `_abilityVel`.
+- **Laser** (`attack2`) — 1s persistent beam, 10s cooldown. Raycast on entity layer. `LaserActive`, `LaserTimer`, `LaserCooldown` public for VFX.
+- **Grapple** (`grapple_send`) — hook projectile travels at 150 u/s, max 120 units. Attaches to blocks or entities. While attached: acceleration-based pull (90 u/s²). Release: lunge at 60 u/s. Re-press while hook is out: despawn + refire. Release before attach: immediate retract. All writes to `_abilityVel`.
+- **Dash** (`dash`) — horizontal burst (22 u/s) in direction of currently-held keys only. Falls back to camera forward if no key held. 1s cooldown.
 
-### World Generation
-- FastNoise2D height terrain (bypasses the staged generator currently)
-- Abyss layer system in `Global.cs` — Surface, Underground Forest (−10 to −300), Purple Crystal Area (−310 to −600)
-- 5-stage generation pipeline architecture (`World_Generator.cs`) — all stages empty, ready to implement
+### Air Jump System
+- 1 air jump granted when leaving ground (`_wasPhysOnFloor && !isPhysOnFloor`)
+- +1 on grapple hook attach
+- +1 on grapple lunge release
+- Reset to 0 on landing
+- Air jump uses `IsActionJustPressed`, clears `_abilityVel.Y` so it isn't fought
+
+### Blocks & Entities
+- 3 block types: Grass, Dirt, Stone
+- Entity base with health, AABB physics, landing/collision callbacks
+- Creature.cs — placeholder chase AI
+- Explosion system wired to E key in interactions.gd
+
+### Archived (do not restore)
+- Minecraft inventory (36-slot), item registry, item behaviors, placeable/consumable/tool system, world-dropped items. All wrapped in `/* */` or `#`. See CLAUDE.md for file list.
 
 ---
 
-## What Needs to Be Built
+## What's Not Started Yet
 
-### Player Abilities (Core — build these first)
-- **Laser Arm** — primary attack; major beam shot + jackhammer bounce mode
-- **Mech Wings** — double jump + directional dash
-- **Flexible Left Arm** — grappling hook; attaches to walls and enemies, release to lunge
-
-### Accessories (Equippable modifiers)
-1. Super Jump
-2. Super Slam
-3. Explosive Bounce
-4. Destructive Laser
-5. Little Friend
-6. Glide
-7. Dig Dig Dig!
-8. Flaming Grapple *(fire on pull)*
-9. Tech Vision
-10. Exo Suit *(mobility)*
-
-### Combat Systems
-- Enemy damage, knockback, and death
-- Player damage reception and feedback
-- Enemy variety with distinct behaviors (swarm, heavy, boss)
-- Combat win condition tracking (kill counter, timer, core reach)
-
-### Run Structure
-- Planet selection screen (3 choices, difficulty visible)
-- Planet map HUD visible during run
-- Post-planet upgrade screen
-- Boss encounter trigger
-
-### World Generation (Planet-specific)
-- Surface and cave generation wired into `World_Generator.cs` stages
-- Planet-shaped terrain (not infinite flat world)
-- Enemy spawn points tied to terrain features
-- Difficulty modifiers affecting terrain hostility and enemy density
-
-### World Customization Parameters
-- Enemy hostility level
-- Environment hostility
-- World modifiers
-- Gravity (per planet)
+| System | Notes |
+|---|---|
+| World generation | `World_Generator.cs` 5-stage pipeline is empty. Chunk_Manager uses raw FastNoise2D directly. |
+| Enemy AI | `Creature.cs` only chases. No attack, no spawning system, no variety. |
+| Combat | No damage between player and enemies. No knockback. No player health UI. |
+| Run structure | No planet select, no upgrade screen, no boss trigger. |
+| Accessories | All 10 defined in NEW_VISION.md. None implemented. |
+| VFX | No laser beam, no grapple rope/line, no dash trail, no block break particles. |
+| Sound | Nothing. |
+| GrappleHook scene | User needs to create `Assets/GrappleHook.tscn` (see CLAUDE.md for structure). |
+| World save/load | Explicitly removed. Roguelike — no persistence between runs. |
 
 ---
 
 ## Notable Code Locations
 
-| Thing | Location |
+| Thing | File |
 |---|---|
-| Chunk generation & mesh building | `Scripts/The World/Chunk_Manager.cs` |
-| World generator pipeline (empty stages) | `Scripts/The World/Generation/World_Generator.cs` |
-| Block/item registries | `Scripts/Datasets/Block_Registry.cs`, `Item_Registry.cs` |
-| Player controller | `Scripts/Entities/Player/Player.cs` |
-| Block raycast + interaction | `Scripts/Entities/Player/interactions.gd` |
-| Global constants & depth layers | `Scripts/Handlers/Global.cs` |
+| Dual velocity channels, movement | `Scripts/Entities/Player/Player.cs` → `ApplyMovement` |
+| All 4 player abilities | `Scripts/Entities/Player/PlayerAbilities.cs` |
+| Grapple hook projectile | `Scripts/Entities/GrappleHook.cs` |
+| Air jump state | `Player.cs` → `_airJumps`, `_wasPhysOnFloor` |
+| Chunk generation & mesh | `Scripts/The World/Chunk_Manager.cs` |
+| World generator pipeline | `Scripts/The World/Generation/World_Generator.cs` |
+| Block registry | `Scripts/Datasets/Block_Registry.cs` |
+| Explosion | `Chunk_Manager.cs` → `explode()` |
+| Global constants + abyss layers | `Scripts/Handlers/Global.cs` |
 | Entity base physics | `Scripts/Entities/Entity.cs` |
-| Explosion system | `Scripts/The World/Chunk_Manager.cs` → `explode()` |
