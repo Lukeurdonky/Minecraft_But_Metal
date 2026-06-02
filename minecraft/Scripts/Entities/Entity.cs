@@ -16,6 +16,11 @@ public partial class Entity : CharacterBody3D
 	public float width = 1f;
 	[Export]
 	public float height = 1.8f;
+	[Export]
+	public float onGroundGracePeriod = 0.2f; // Time after leaving ground where jump is still allowed
+	public float timeSinceLeftGround = 0f;
+	[Export]
+	public float onGroundDetectionLength = 0.2f;
 	public int CurrentHealth { get; set; }
 	public Global Global;
 
@@ -165,7 +170,7 @@ public partial class Entity : CharacterBody3D
 		return didCollide;
 	}
 
-	private bool CheckAxisCollision(Aabb futureBox, bool isYAxis = false)
+	protected bool CheckAxisCollision(Aabb futureBox, bool isYAxis = false)
 	{
 		int minX = (int)Mathf.Floor(futureBox.Position.X);
 		int maxX = (int)Mathf.Ceil(futureBox.End.X);
@@ -255,7 +260,7 @@ public partial class Entity : CharacterBody3D
 		
 		// Create a thin slice just below the entity's feet
 		Aabb footCheckBox = new Aabb(
-			new Vector3(entityBox.Position.X, entityBox.Position.Y - 0.1f, entityBox.Position.Z),
+			new Vector3(entityBox.Position.X, entityBox.Position.Y - onGroundDetectionLength, entityBox.Position.Z),
 			new Vector3(entityBox.Size.X, 0.1f, entityBox.Size.Z)
 		);
 		
@@ -285,11 +290,16 @@ public partial class Entity : CharacterBody3D
 				// Check if foot box intersects with this block
 				if(footCheckBox.Intersects(blockBox))
 				{
+					timeSinceLeftGround = 0f; // Reset timer if we detect ground contact
 					return true;
 				}
 			}
 		}
-		
+		if(timeSinceLeftGround < onGroundGracePeriod)
+		{
+			
+			return true; // Still within grace period after leaving ground
+		}
 		return false;
 	}
 }

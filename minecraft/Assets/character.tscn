@@ -25,7 +25,7 @@ Speed = 4.0
 SprintMult = 20.0
 Accel = 50.0
 JumpStrength = 20.0
-Gravity = 27.0
+Gravity = 40.0
 offset = Vector2(0, -0.1)
 width = 0.9
 

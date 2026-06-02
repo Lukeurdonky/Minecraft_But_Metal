@@ -38,6 +38,36 @@ public partial class Chunk_Manager : Node
 		Cylinder,
 		Sphere
 	}
+
+	private void EvictColdEditedChunks(Vector3I playerChunkPos)
+	{
+		// Collect edited but unloaded chunks
+		var cold = new List<KeyValuePair<Vector3I, Chunk>>();
+		foreach (var kv in chunks)
+		{
+			if (kv.Value.WasEdited && !kv.Value.Loaded)
+				cold.Add(kv);
+		}
+
+		if (cold.Count <= MaxColdEditedChunks) return;
+
+		// Sort by distance from player (farthest first) and evict extras
+		var playerWorld = chunk_to_world(playerChunkPos);
+		var toEvict = cold.OrderByDescending(kv => (chunk_to_world(kv.Key) - playerWorld).LengthSquared())
+						  .Take(cold.Count - MaxColdEditedChunks)
+						  .ToList();
+
+		foreach (var kv in toEvict)
+		{
+			var pos = kv.Key;
+			// Clear damage and pending buffers
+			ClearDamageInChunk(pos);
+			pendingBuffers.TryRemove(pos, out _);
+			generationQueue.TryRemove(pos, out _);
+			loadingQueue.TryRemove(pos, out _);
+			chunks.Remove(pos);
+		}
+	}
 	[Export] public RenderMode RenderModeType = RenderMode.Sphere;
 	[Export] public Texture2D DamageTexture;
 
@@ -56,7 +86,7 @@ public partial class Chunk_Manager : Node
 	private Dictionary<int, MultiMesh> damageMultiMeshByBlock = new();
 	private Dictionary<int, List<Vector3I>> damagePositionsByBlock = new();
 
-	private const int MAX_DAMAGED_BLOCKS = 500;
+	private const int MAX_DAMAGED_BLOCKS = 1500;
 	private Material damageOverlayMaterial;
 
 	private class BlockHealth
@@ -90,6 +120,9 @@ public partial class Chunk_Manager : Node
 	private HashSet<Vector3I> cachedActiveSet = new HashSet<Vector3I>();
 	private List<Vector3I> chunksToUnload = new List<Vector3I>();
 	private List<Vector3I> dirtyChunksList = new List<Vector3I>();
+
+	[Export]
+	public int MaxColdEditedChunks = 2000;
 
 	private float[] meshVerticesFlat = new float[4096 * 3];
 	private float[] meshNormalsFlat = new float[4096 * 3];
@@ -211,6 +244,9 @@ public partial class Chunk_Manager : Node
 				}
 				Monitor.Pulse(loadingLock);
 			}
+
+			// Evict distant edited chunks if we have too many cold edited chunks
+			EvictColdEditedChunks(playerPos);
 		}
 
 		foreach (var offset in cachedChunkOffsets)
@@ -394,11 +430,18 @@ public partial class Chunk_Manager : Node
 			chunk.MeshInstance.QueueFree();
 		}
 
-		// Keep the chunk entry in memory but release voxel buffers and mark
-		// it as not generated so it will be regenerated when needed.
-		// Keep voxel buffers in memory so edits persist in `chunks`.
+		// Free mesh instance but keep voxel data only for edited chunks.
 		chunk.MeshInstance = null;
 		chunk.Loaded = false;
+
+		if (!chunk.WasEdited)
+		{
+			// Not edited by player: safe to evict entirely to save memory.
+			generationQueue.TryRemove(position, out _);
+			loadingQueue.TryRemove(position, out _);
+			pendingBuffers.TryRemove(position, out _);
+			chunks.Remove(position);
+		}
 	}
 
 	private void GenerationWorkerLoop()
@@ -859,6 +902,13 @@ public partial class Chunk_Manager : Node
 		if (!chunks.ContainsKey(chunkPos))
 			return;
 
+		// Remove damage overlay if block is being destroyed
+		if (blockId == 0)
+			RemoveBlockDamage(position);
+
+		// Mark that this chunk has been edited by the player
+		chunks[chunkPos].WasEdited = true;
+
 		if (!chunks[chunkPos].Dirty)
 		{
 			chunks[chunkPos].Dirty = true;
@@ -898,6 +948,10 @@ public partial class Chunk_Manager : Node
 			var chunkPos = world_to_chunk(change.pos);
 			if (!chunks.ContainsKey(chunkPos)) continue;
 
+			// Remove damage overlay if block is being destroyed
+			if (change.blockId == 0)
+				RemoveBlockDamage(change.pos);
+
 			Vector3I localPos = new Vector3I(
 				change.pos.X - (chunkPos.X * CHUNK_SIZE),
 				change.pos.Y - (chunkPos.Y * CHUNK_SIZE),
@@ -910,6 +964,7 @@ public partial class Chunk_Manager : Node
 
 			var chunk = chunks[chunkPos];
 			chunk.Voxels[voxel_index(localPos)] = (byte)change.blockId;
+			chunk.WasEdited = true;
 			chunk.IsFullySolid = false;
 			chunk.Dirty = true;
 			dirtySet.Add(chunkPos);
@@ -1276,12 +1331,15 @@ public partial class Chunk_Manager : Node
 		RemoveBlockDamage(position);
 		set_block(position, 0);
 
+		// Item drops disabled for now (commented out)
+		/*
 		int dropCount = Block_Registry.GetBlockDropCount(brokenType);
 		string dropId = Block_Registry.GetBlockDropID(brokenType);
 		for (int i = 0; i < dropCount; i++)
 		{
 			Item_Registry.SpawnItem(dropId, position + new Vector3(0.5f, 0.5f, 0.5f), GetTree().Root);
 		}
+		*/
 	}
 
 	public void place_block(Vector3I position, int blockId)

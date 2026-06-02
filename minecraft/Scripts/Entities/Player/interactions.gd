@@ -6,6 +6,9 @@ var baseFOV = 75
 var sprintFOVAdd = 15
 var max_distance = 5
 @export var throw_strength = 4
+@export var explode_radius = 4
+@export var explode_damage = 1.0
+var _explode_prev = false
 #@export var collision_mask: int = 0xFFFFFFFF
 var shader_material
 var selected_normal
@@ -27,7 +30,37 @@ func _ready() -> void:
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
 	delta_time = delta
+	
+	# Hide selection outline if player is dead
+	if pd == null or pd.is_queued_for_deletion() or pd.CurrentHealth <= 0:
+		if yeah != null:
+			yeah.visible = false
+		return
+	
 	selection()
+
+	# Explosion trigger: prefer an InputMap action named "explode", fallback to raw 'E' key (scancode 69)
+	var e_now = false
+	if Input.is_action_just_pressed("explode"):
+		e_now = true
+	elif Input.is_key_pressed(69) and not _explode_prev:
+		e_now = true
+
+	_explode_prev = Input.is_key_pressed(69)
+
+	if e_now:
+		# selection() already updates pd.SelectedCubePosition
+		var target = pd.SelectedCubePosition
+		if target != null:
+			# Call C# Chunk_Manager.explode(Vector3I, float, float)
+			Global.CubeManager.explode(target, explode_radius, explode_damage)
+			# Optional feedback
+			print("Exploded at ", target)
+			# Clear selection visuals so outline doesn't persist after death/block removal
+			yeah.visible = false
+			pd.SelectedCube = 0
+			# Reset selected position to an invalid/zero vector
+			pd.SelectedCubePosition = Vector3i(0, 0, 0)
 	if Input.is_action_pressed("drop_item"):
 		drop_item()
 		
@@ -274,13 +307,15 @@ func can_place(local: Vector3):
 	
 	
 func drop_item():
-	var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
-	if(item != null):
-		var dir = -global_transform.basis.z.normalized()
-		var drop = Item_Registry.SpawnItem(item, global_position + dir/4, get_tree().root)
-		drop.global_rotation.y = rotation.y+PI/4;
-		drop.velocity = dir*throw_strength;
-		pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
+	# Item dropping disabled for testing
+	#var item = Global.Player.Inventory.get_item(Global.Player.Inventory.selected_slot)
+	#if(item != null):
+	#	var dir = -global_transform.basis.z.normalized()
+	#	var drop = Item_Registry.SpawnItem(item, global_position + dir/4, get_tree().root)
+	#	drop.global_rotation.y = rotation.y+PI/4;
+	#	drop.velocity = dir*throw_strength;
+	#	pd.Inventory.remove_item(Global.Player.Inventory.selected_slot)
+	return
 				
 
 func update_hand_mesh(item: String):

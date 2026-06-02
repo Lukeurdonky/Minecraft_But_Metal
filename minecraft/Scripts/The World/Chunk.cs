@@ -11,6 +11,9 @@ public sealed class Chunk
 	public bool Generated = false;
 	public MeshInstance3D MeshInstance;
 	// public StaticBody3D CollisionShape;
+	// Whether the player (or game) has modified this chunk's voxels.
+	// If false, the chunk can be safely evicted and regenerated deterministically.
+	public bool WasEdited = false;
 
 	public Chunk(Vector3I position)
 	{
