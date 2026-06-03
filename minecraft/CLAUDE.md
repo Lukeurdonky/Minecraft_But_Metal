@@ -127,3 +127,13 @@ Base class for all entities. Manual AABB collision against voxel blocks. Do NOT 
 - No Minecraft systems (crafting, farming, hunger, sleep, building)
 - `Washed Code/` is read-only reference — don't add to it
 - `interactions.gd` handles camera, block targeting, explosion trigger — add new input wiring here if needed from GDScript side
+
+---
+
+## Project Identity Documents
+
+Additional design and lore documents are available in project knowledge. Consult these when making decisions about visual style, character, aesthetic, or the game's broader identity:
+
+- **ANTITHESIS.md** — character identity, visual style, sound, and aesthetic principles. Reference for any decision touching how the game looks, sounds, or feels.
+- **COSMOS_LORE.md** — narrative archive for the Cosmos universe. Reference for THE PLANT boss design, the game's tonal identity, and its relationship to the original Cosmos concept.
+- **ORIGIN.md** — background context on Cosmos Enterprises and the lineage of this project. Not active design direction, but useful for understanding *why* certain decisions are what they are.

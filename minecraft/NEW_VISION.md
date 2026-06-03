@@ -50,6 +50,7 @@ Specify aspects of your world:
 - Enemy hostility
 - Environment hostility
 - World modifiers
+- **Terrain density** *(visible on planet select — signals how much geometric freedom the player starts with)*
 - Gravity
 
 > 10 planets need to be wiped out. Worlds are pre-generated from the above parameters. Entry via crashlanding.
@@ -69,15 +70,23 @@ Grappling hook that grapples to walls and enemies. Release grapple to lunge towa
 
 ---
 
+## Movement & Geometry Philosophy
+
+The base kit is designed to make the world feel open without accessories. The Jackhammer's impact **destroys a small radius of blocks by default** — not just the targeted block. This gives every run a baseline of passive arena sculpting, regardless of accessory choices. Destruction accessories (Explosive Bounce, Destructive Laser, Super Slam, Dig Dig Dig) amplify this behavior rather than introduce it from scratch.
+
+Combat-only accessory builds are fully viable. Terrain density is a visible planet modifier so players can make informed tradeoffs between combat power and geometric agency.
+
+---
+
 ## Accessories
 
 1. Super Jump
-2. Super Slam
-3. Explosive Bounce
-4. Destructive Laser
+2. Super Slam *(amplifies jackhammer impact radius and damage)*
+3. Explosive Bounce *(jackhammer release triggers explosion at impact point)*
+4. Destructive Laser *(laser also destroys blocks)*
 5. Little Friend
 6. Glide
-7. Dig Dig Dig!
+7. Dig Dig Dig! *(jackhammer mines blocks faster; vertical escape tool)*
 8. Flaming Grapple *(plus extra fire on pull)*
 9. Tech Vision
 10. Exo Suit *(mobility)*
