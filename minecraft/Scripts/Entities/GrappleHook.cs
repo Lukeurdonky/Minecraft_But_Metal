@@ -8,10 +8,9 @@ public partial class GrappleHook : Node3D
     public float   Speed        { get; set; } = 50f;
     public float   MaxDistance  { get; set; } = 120f;
 
-    // Fired when the hook attaches to something. Arg is the world-space attach position.
-    public Action<Vector3> OnAttach;
-    // Fired when the hook reaches max range and fully retracts without attaching.
-    public Action OnRetracted;
+    public Action<Vector3> OnAttach;       // block attach — world-space position
+    public Action<Entity>  OnAttachEntity; // entity attach — the entity ref
+    public Action          OnRetracted;
 
     private enum State { Flying, Retracting, Done }
     private State  _state             = State.Flying;
@@ -30,7 +29,17 @@ public partial class GrappleHook : Node3D
     private void OnBodyEntered(Node3D body)
     {
         if (_state != State.Flying || body == PlayerRef) return;
-        Attach(GlobalPosition);
+
+        if (body is Entity entity)
+        {
+            _state = State.Done;
+            OnAttachEntity?.Invoke(entity);
+            QueueFree();
+        }
+        else
+        {
+            Attach(GlobalPosition);
+        }
     }
 
     public override void _Process(double delta)

@@ -1007,7 +1007,7 @@ public partial class Chunk_Manager : Node
 			float falloff = 1f - (dist / radius);
 			if (falloff <= 0f) continue;
 
-			if (falloff >= 1f)
+			if (falloff >= 1f && damage >= 1f)
 			{
 				batch.Add((worldPos, 0));
 			}
@@ -1015,6 +1015,7 @@ public partial class Chunk_Manager : Node
 			{
 				// partial damage: reduce health via damage_block which handles overlays
 				damage_block(worldPos, damage * falloff);
+				
 			}
 		}
 
@@ -1235,6 +1236,33 @@ public partial class Chunk_Manager : Node
 			damageQueueLookup.Remove(oldest);
 			RemoveBlockDamage(oldest);
 		}
+	}
+
+	public bool damage_check(Vector3I position, float damage)
+	{
+		int blockType = get_block(position);
+		if (blockType == 0) return false;
+
+		lock (damageLock)
+		{
+			if (damagedBlocks.TryGetValue(position, out BlockHealth block))
+			{
+				if (block.health - damage <= 0)
+				{
+					RemoveBlockDamage(position);
+					break_block(position);
+					return true;
+				}
+			}
+			else if (damage >= 1.0f)
+			{
+				break_block(position);
+				return true;
+			}
+		}
+
+		damage_block(position, damage);
+		return false;
 	}
 
 	private void RemoveBlockDamage(Vector3I position)

@@ -52,8 +52,7 @@ public partial class Player : Entity
 	private Vector3 rightDirection   = Vector3.Zero;
 	private Vector3 direction        = Vector3.Zero;
 
-	// Dual velocity channels — see ApplyMovement for rationale.
-	private Vector3 _inputVel = Vector3.Zero;   // WASD + gravity + jump
+	// All movement operates on Velocity directly. Friction only applied when steering.
 
 	// Air jump state — shared with PlayerAbilities via partial class.
 	// _airJumps is set to 1 on leaving ground and incremented by grapple attach.
@@ -82,6 +81,9 @@ public partial class Player : Entity
 	public override void _Process(double delta)
 	{
 		RotateCamera();
+		UpdateGrappleRope();
+		UpdateArmBlendShapes((float)delta);
+		UpdateLeftArmTracking((float)delta);
 		// ApplyStepTraversal((float)delta);
 	}
 
@@ -138,7 +140,6 @@ public partial class Player : Entity
 				else
 				{
 					Velocity = new Vector3(0, Velocity.Y, Velocity.Z);
-					_inputVel.X = 0f; _abilityVel.X = 0f;
 					moveBy.X = 0;
 				}
 			}
@@ -156,7 +157,6 @@ public partial class Player : Entity
 			if (CheckAxisCollision(futureBox, true))
 			{
 				Velocity = new Vector3(Velocity.X, 0, Velocity.Z);
-				_inputVel.Y = 0f; _abilityVel.Y = 0f;
 				moveBy.Y = 0;
 			}
 			else
@@ -179,7 +179,6 @@ public partial class Player : Entity
 				else
 				{
 					Velocity = new Vector3(Velocity.X, Velocity.Y, 0);
-					_inputVel.Z = 0f; _abilityVel.Z = 0f;
 					moveBy.Z = 0;
 				}
 			}
@@ -217,95 +216,86 @@ public partial class Player : Entity
 		timeSinceLeftGround += (float)delta;
 		ApplyMovement(delta);
 		ProcessAbilities((float)delta);
-		Velocity = _inputVel + _abilityVel; // recompute so ability impulses are visible to HandleWorldCollisions this frame
 	}
 
 	private void ApplyMovement(double delta)
 	{
-		// Two velocity channels keep ability momentum separate from input movement:
-		//   _inputVel  — WASD steering + gravity + jump. Capped and friction'd normally.
-		//   _abilityVel — dash / grapple / jackhammer. Decays slowly, no hard cap.
-		// Abilities write only to _abilityVel so they never fight or re-cap input.
+		bool isOnFloor     = OnFloor();
+		bool isPhysOnFloor = PhysicallyOnFloor();
 
-		bool isOnFloor     = OnFloor();          // includes grace period — jump eligibility only
-		bool isPhysOnFloor = PhysicallyOnFloor(); // actual block contact — friction and caps
-
-		if (!_wasPhysOnFloor && isPhysOnFloor) _airJumps = 0; // landed — reset
-		if (_wasPhysOnFloor && !isPhysOnFloor) _airJumps = Mathf.Max(_airJumps, 1); // left ground — ensure at least 1
+		if (!_wasPhysOnFloor && isPhysOnFloor) _airJumps = 0;
+		if (_wasPhysOnFloor && !isPhysOnFloor) _airJumps = Mathf.Max(_airJumps, 1);
 		_wasPhysOnFloor = isPhysOnFloor;
 		float dt = (float)delta;
 
-		if (Input.IsActionJustPressed("toggle_mouse"))    ToggleMouseVisibility();
+		if (Input.IsActionJustPressed("toggle_mouse"))     ToggleMouseVisibility();
 		if (Input.IsActionJustPressed("toggle_spectator")) ToggleSpectator();
 
-		// ── Input direction ──────────────────────────────────────────────────────
 		direction = Vector3.Zero;
 		UpdateFacingDirections();
 
 		if (Input.IsActionPressed("move_forward")) direction += forwardDirection;
 		else TogglePlayerSprint(false);
-
 		if (Input.IsActionPressed("move_back"))  { direction -= forwardDirection; TogglePlayerSprint(false); }
 		if (Input.IsActionPressed("move_left"))  direction -= rightDirection;
 		if (Input.IsActionPressed("move_right")) direction += rightDirection;
 		if (Input.IsActionPressed("sprint"))     TogglePlayerSprint(true);
 
-		float inputSpeed = Speed;
-		float inputMax   = Speed;
-		if (IsSprinting) { inputSpeed *= SprintMult; inputMax *= SprintMult; }
+		bool  hasInput   = direction.LengthSquared() > 0f;
+		float inputSpeed = Speed * (IsSprinting ? SprintMult : 1f);
 
-		// ── _inputVel XZ: friction → accelerate → cap on ground ─────────────────
-		float fricMult = isPhysOnFloor ? Global.GroundFriction : Global.AirFriction;
-		if (!isPhysOnFloor) inputSpeed /= 8f;
-
-		_inputVel.X *= fricMult;
-		_inputVel.Z *= fricMult;
-
-		if (direction.LengthSquared() > 0f)
-		{
-			var inputDir = direction.Normalized() * inputSpeed;
-			_inputVel.X += inputDir.X * dt * Accel;
-			_inputVel.Z += inputDir.Z * dt * Accel;
-		}
+		var vel      = Velocity;
+		var inputDir = hasInput ? direction.Normalized() : Vector3.Zero;
+		var inputDir2D = new Vector2(inputDir.X, inputDir.Z);
 
 		if (isPhysOnFloor)
 		{
-			var h = new Vector2(_inputVel.X, _inputVel.Z).LimitLength(inputMax);
-			_inputVel.X = h.X;
-			_inputVel.Z = h.Y;
+			float fric = Mathf.Pow(Global.GroundFriction, dt * 60f);
+			vel.X *= fric;
+			vel.Z *= fric;
+		}
+		else if (hasInput)
+		{
+			// Skip friction if we're already exceeding inputSpeed in the desired direction —
+			// preserves grapple/dash momentum when steering into it (Ultrakill-style).
+			float speedInDir = new Vector2(vel.X, vel.Z).Dot(inputDir2D);
+			if (speedInDir < inputSpeed)
+			{
+				float fric = Mathf.Pow(Global.AirFriction, dt * 60f);
+				vel.X *= fric;
+				vel.Z *= fric;
+			}
 		}
 
-		// ── _inputVel Y: gravity + jump ──────────────────────────────────────────
-		if (!SpectatorMode)
-			_inputVel.Y -= Gravity * dt;
-		else
-			_inputVel.Y = 0f;
+		if (hasInput)
+		{
+			float accel = isPhysOnFloor ? Accel : Accel / 8f;
+			// Only add up to inputSpeed in the input direction so WASD can't exceed the speed
+			// cap, but existing ability momentum above that cap is never removed.
+			float currentInDir = new Vector2(vel.X, vel.Z).Dot(inputDir2D);
+			float addSpeed     = Mathf.Clamp(inputSpeed - currentInDir, 0f, accel * dt);
+			vel.X += inputDir.X * addSpeed;
+			vel.Z += inputDir.Z * addSpeed;
+		}
 
-		// Check combined Y so ability momentum (e.g. grapple pulling down) doesn't block jump
-		if ((isOnFloor || SpectatorMode) && Input.IsActionPressed("jump") && (_inputVel.Y + _abilityVel.Y) <= 0.25f)
-			_inputVel.Y = JumpStrength;
+		if (!SpectatorMode)
+			vel.Y -= Gravity * dt;
+		else
+			vel.Y = 0f;
+
+		if ((isOnFloor || SpectatorMode) && Input.IsActionPressed("jump") && vel.Y <= 0.25f)
+			vel.Y = JumpStrength;
 		else if (!isOnFloor && !SpectatorMode && Input.IsActionJustPressed("jump") && _airJumps > 0)
 		{
 			_airJumps--;
-			_inputVel.Y  = JumpStrength;
-			_abilityVel.Y = 0f; // clear any downward ability vel so the air jump isn't fought
+			vel.Y = JumpStrength;
 		}
 
 		if (SpectatorMode && Input.IsActionPressed("crouch"))
-			_inputVel.Y = -JumpStrength;
+			vel.Y = -JumpStrength;
 
-		_inputVel.Y = Mathf.Clamp(_inputVel.Y, -MaxFallSpeed, Mathf.Inf);
-
-		// ── _abilityVel decay ────────────────────────────────────────────────────
-		// XZ: fast on physical ground so you stop crisply on landing, gentle in air.
-		// Y:  always air-rate — ground state must never fight vertical ability momentum.
-		float abilityDecayXZ = isPhysOnFloor ? 0.85f : 0.97f;
-		_abilityVel.X *= abilityDecayXZ;
-		_abilityVel.Z *= abilityDecayXZ;
-		_abilityVel.Y *= 0.97f;
-
-		// ── Combine ──────────────────────────────────────────────────────────────
-		Velocity = _inputVel + _abilityVel;
+		vel.Y    = Mathf.Clamp(vel.Y, -MaxFallSpeed, Mathf.Inf);
+		Velocity = vel;
 	}
 
 	public void RotateCamera()

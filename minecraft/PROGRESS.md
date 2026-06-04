@@ -31,32 +31,36 @@ Scripts/
 ├── Handlers/         Global.cs (singleton), DebugMenu.gd (HUD)
 ├── The World/        Chunk_Manager.cs, Block_Registry.cs, Block_Model.cs
 │   └── Generation/   World_Generator.cs (5-stage pipeline, all stages EMPTY — fill these)
-├── Entities/         Entity.cs (base), GrappleHook.cs
+├── Entities/         Entity.cs (base), GrappleHook.cs, Creature.cs
 │   └── Player/       Player.cs, PlayerAbilities.cs, interactions.gd
 └── Datasets/         Block_Registry.cs, Item_Registry.cs (ARCHIVED)
 ```
 
 ### Key architectural decisions
 
-**Dual velocity channels (Player.cs / PlayerAbilities.cs)**
-- `_inputVel` — WASD + gravity + jump. Friction and speed cap applied here only.
-- `_abilityVel` — dash, grapple, jackhammer impulse. Decays independently (0.97/tick air, 0.85/tick ground for XZ; always 0.97 for Y). No hard cap.
-- `Velocity = _inputVel + _abilityVel` recomputed twice per tick: once in `ApplyMovement`, once after `ProcessAbilities` so ability impulses are visible to collision that same frame.
-- On block collision any axis: both channel components zeroed for that axis.
+**Single velocity system (Player.cs)**
+All movement and ability impulses write directly to `Velocity`. No split channels.
+- Ground: `GroundFriction` (currently 0 = instant stop) applied every tick
+- Air + keys held: `AirFriction` (0.91) applied — delta-time corrected via `Mathf.Pow(friction, dt * 60f)`
+- Air + no keys: no friction — ability momentum (grapple, dash, jackhammer) carries freely
+- Quake-style steering: friction only skipped when already exceeding `inputSpeed` in the input direction; acceleration capped so WASD alone never exceeds speed limit
+- All vertical (gravity, jump, ability Y) lives in `Velocity.Y` — no separate decay channel
 
 **PhysicallyOnFloor() vs OnFloor()**
-- `PhysicallyOnFloor()` — pure block check, no grace period. Used for friction, speed cap, ability XZ decay.
+- `PhysicallyOnFloor()` — pure block check, no grace period. Used for friction.
 - `OnFloor()` — includes coyote time (0.2s grace). Used only for jump eligibility.
-- Ground friction and ability decay never fire during coyote window.
 
 **Abilities (PlayerAbilities.cs — partial class of Player)**
-All four abilities consolidated in one file. Public state flags (JackhammerCharging, LaserActive, GrappleState, DashCooldown) are the accessory hook-in points — don't add new input systems, read these instead.
+All four abilities consolidated in one file. Public state flags (`JackhammerCharging`, `LaserActive`, `CurrentGrappleState`, `DashCooldown`) are accessory hook-in points. Abilities write directly to `Velocity`.
 
 **GrappleHook.cs**
-Standalone Node3D. Flies in `FireDirection` each `_Process` tick. Block detection via `get_block`. Entity detection via Area3D BodyEntered. State machine: Flying → Retracting → Done. Fires `OnAttach(Vector3)` or `OnRetracted()` callbacks. Has `StartRetract()` for early recall.
+Standalone Node3D. Fires `OnAttach(Vector3)` for block hits, `OnAttachEntity(Entity)` for entity hits, `OnRetracted()` callbacks. State: Flying → Retracting → Done. `StartRetract()` for early recall. GlobalPosition must be set AFTER AddChild.
 
 **Entity.cs base**
-Manual AABB collision against voxel data. Do NOT switch to Godot physics for entity-world collision. All entities extend this.
+Manual AABB collision against voxel data. `heavy` bool on every entity — used by grapple to decide pull direction. All entities extend this.
+
+**Chunk_Manager damage system**
+`damage_block(pos, 0–1)` accumulates damage, `break_block(pos)` instant removal, `damage_check(pos, damage)` — checks remaining health and breaks immediately if the hit would be lethal (bypasses multi-frame accumulation).
 
 ---
 
@@ -66,35 +70,46 @@ Manual AABB collision against voxel data. Do NOT switch to Godot physics for ent
 - 16×16×16 chunk system, threaded generation + mesh building
 - Greedy face culling, sphere/cylinder render distance, chunk eviction
 - Block damage overlay (MultiMesh + shader), up to 1500 simultaneously damaged blocks
-- **Explosion system** (`explode()` in Chunk_Manager) — directly used for combat
+- Explosion system (`explode()` in Chunk_Manager) — damage = 1 required to instant-kill center block
+- `damage_check()` — instant break when accumulated damage would be lethal
 
 ### Player Movement
 - WASD, mouse-look FPS camera, sprint, spectator mode (V)
-- Dual velocity channel physics (see above)
+- Single velocity system with Quake-style directional air movement
+- Delta-time correct friction via `Mathf.Pow`
+- Air friction only applies when pressing movement keys AND slower than input speed in that direction
+- Ability momentum (grapple/dash) carries freely through open air, no friction unless steering
 - `PhysicallyOnFloor()` / `OnFloor()` split for correct coyote behavior
-- Air velocity carries properly — no mid-air hard cap
 
 ### Player Abilities
-- **Jackhammer** (`attack1` hold/release) — charges over 1.5s, bounces player in opposite of camera look direction on release. Damages targeted block proportional to charge. Writes to `_abilityVel`.
-- **Laser** (`attack2`) — 1s persistent beam, 10s cooldown. Raycast on entity layer. `LaserActive`, `LaserTimer`, `LaserCooldown` public for VFX.
-- **Grapple** (`grapple_send`) — hook projectile travels at 150 u/s, max 120 units. Attaches to blocks or entities. While attached: acceleration-based pull (90 u/s²). Release: lunge at 60 u/s. Re-press while hook is out: despawn + refire. Release before attach: immediate retract. All writes to `_abilityVel`.
-- **Dash** (`dash`) — horizontal burst (22 u/s) in direction of currently-held keys only. Falls back to camera forward if no key held. 1s cooldown.
+- **Jackhammer** (`attack1` hold/release) — charges over 0.5s, bounces player opposite camera look. Explosion at targeted block scaled by charge (`damage_block` + `explode`). Damage >= 0.2 charge required to trigger. Writes XZ to `Velocity`, Y to `Velocity.Y`.
+- **Laser** (`attack2`) — 1s persistent beam, 10s cooldown. Raycast on entity layer.
+- **Grapple** (`grapple_send`) — hook at 250 u/s, max 180 units. Attaches to blocks OR entities.
+  - *Block/heavy entity*: player accelerates toward anchor (Quake-style, 40 u/s cap). Release = lunge at 60 u/s.
+  - *Light entity*: player gets Y boost; entity velocity set toward player at 20 u/s each tick. Release = entity thrown at reel velocity.
+  - Rope: cylinder mesh in SubViewport using tentacle material + layer 32768.
+  - Arm tracks grapple target in 3D (LookAt in SubViewport space).
+- **Dash** (`dash`) — horizontal burst in held-key direction, fallback to camera forward. 1s cooldown.
+
+### Speed Threshold System
+Above 30 u/s, spherical radius-2.5 check around the player each tick:
+- Any block in radius → `damage_check(pos, excessRatio * rate * delta)` — breaks it immediately if lethal
+- Drag (`SpeedPenaltyDecay = 0.8`) applied only if a block was actually broken (not just chipped)
+- Outer ring blocks chip but don't trigger drag, allowing terrain to crumble at range
 
 ### Air Jump System
-- 1 air jump granted when leaving ground (`_wasPhysOnFloor && !isPhysOnFloor`)
-- +1 on grapple hook attach
-- +1 on grapple lunge release
+- Max 1 air jump at all times
+- Granted when leaving ground, on grapple attach, on grapple lunge release
 - Reset to 0 on landing
-- Air jump uses `IsActionJustPressed`, clears `_abilityVel.Y` so it isn't fought
 
 ### Blocks & Entities
 - 3 block types: Grass, Dirt, Stone
-- Entity base with health, AABB physics, landing/collision callbacks
-- Creature.cs — placeholder chase AI
+- Entity base with health, AABB physics, `heavy` bool
+- Creature.cs — placeholder chase AI, can be grappled (light = reeled in, heavy = player pulled)
 - Explosion system wired to E key in interactions.gd
 
 ### Archived (do not restore)
-- Minecraft inventory (36-slot), item registry, item behaviors, placeable/consumable/tool system, world-dropped items. All wrapped in `/* */` or `#`. See CLAUDE.md for file list.
+- Minecraft inventory (36-slot), item registry, item behaviors, placeable/consumable/tool system, world-dropped items. See CLAUDE.md for file list.
 
 ---
 
@@ -104,12 +119,11 @@ Manual AABB collision against voxel data. Do NOT switch to Godot physics for ent
 |---|---|
 | World generation | `World_Generator.cs` 5-stage pipeline is empty. Chunk_Manager uses raw FastNoise2D directly. |
 | Enemy AI | `Creature.cs` only chases. No attack, no spawning system, no variety. |
-| Combat | No damage between player and enemies. No knockback. No player health UI. |
+| Combat | No damage between player and enemies. No knockback from player. No player health UI. |
 | Run structure | No planet select, no upgrade screen, no boss trigger. |
 | Accessories | All 10 defined in NEW_VISION.md. None implemented. |
-| VFX | No laser beam, no grapple rope/line, no dash trail, no block break particles. |
+| VFX | No laser beam, no dash trail, no block break particles. Grapple rope ✅ done. |
 | Sound | Nothing. |
-| GrappleHook scene | User needs to create `Assets/GrappleHook.tscn` (see CLAUDE.md for structure). |
 | World save/load | Explicitly removed. Roguelike — no persistence between runs. |
 
 ---
@@ -118,13 +132,15 @@ Manual AABB collision against voxel data. Do NOT switch to Godot physics for ent
 
 | Thing | File |
 |---|---|
-| Dual velocity channels, movement | `Scripts/Entities/Player/Player.cs` → `ApplyMovement` |
-| All 4 player abilities | `Scripts/Entities/Player/PlayerAbilities.cs` |
-| Grapple hook projectile | `Scripts/Entities/GrappleHook.cs` |
+| Movement (single velocity, Quake air) | `Scripts/Entities/Player/Player.cs` → `ApplyMovement` |
+| All 4 player abilities + speed threshold | `Scripts/Entities/Player/PlayerAbilities.cs` |
+| Grapple hook projectile + entity detection | `Scripts/Entities/GrappleHook.cs` |
 | Air jump state | `Player.cs` → `_airJumps`, `_wasPhysOnFloor` |
 | Chunk generation & mesh | `Scripts/The World/Chunk_Manager.cs` |
+| damage_check (instant-break if lethal) | `Chunk_Manager.cs` → `damage_check()` |
 | World generator pipeline | `Scripts/The World/Generation/World_Generator.cs` |
 | Block registry | `Scripts/Datasets/Block_Registry.cs` |
 | Explosion | `Chunk_Manager.cs` → `explode()` |
-| Global constants + abyss layers | `Scripts/Handlers/Global.cs` |
+| Global constants + friction values | `Scripts/Handlers/Global.cs` |
 | Entity base physics | `Scripts/Entities/Entity.cs` |
+| Creature AI + `heavy` flag | `Scripts/Entities/Creature.cs` |

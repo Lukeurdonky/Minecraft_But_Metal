@@ -34,8 +34,8 @@ public partial class Global : Node
 	// 	{ 4, 0.16f }
 	// };
 
-	public float AirFriction { get; set; } = 0.91f;
-	public float GroundFriction { get; set; } = 0.5f;
+	public float AirFriction { get; set; } = 0.97f;
+	public float GroundFriction { get; set; } = .91f;
 	public Chunk_Manager CubeManager { get; set; }
 	public int AtlasWidth { get; set; } = 12;
 	public int AtlasHeight { get; set; } = 8;

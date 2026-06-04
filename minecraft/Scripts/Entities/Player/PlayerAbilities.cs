@@ -9,8 +9,9 @@ public partial class Player : Entity
     // direction of the camera's look vector, scaled by charge.
     public bool  JackhammerCharging { get; private set; } = false;
     public float JackhammerCharge   { get; private set; } = 0f;
+    public float JackhammerRadius   { get; private set; } = 3f;
 
-    private const float JackhammerMaxCharge = 1.5f;
+    private const float JackhammerMaxCharge = .5f;
     private const float JackhammerImpulse   = 35f;
 
     // ── Laser ────────────────────────────────────────────────────────────────
@@ -34,17 +35,64 @@ public partial class Player : Entity
     public Vector3      GrappleAnchor       { get; private set; } = Vector3.Zero;
 
     [Export] public PackedScene GrappleHookScene { get; set; }
+    // Optional: assign a Node3D child of the Camera in character.tscn for exact arm-tip origin.
+    // If left unassigned, the rope starts from a computed left-side camera offset.
+    [Export] public Node3D        GrappleArmTip { get; set; }
+    [Export] public MeshInstance3D RightArmMesh  { get; set; }
+    [Export] public MeshInstance3D LeftArmMesh   { get; set; }
 
-    // Ability momentum channel — declared here, shared with Player.cs via partial class.
-    // ApplyMovement() decays this each tick and adds it to _inputVel for the final Velocity.
-    private Vector3 _abilityVel = Vector3.Zero;
 
     private GrappleHook _activeHook;
-    private const float GrappleSpeed       = 150f;
-    private const float GrappleRange       = 120f;
-    private const float GrapplePullAccel   = 90f;  // acceleration added per second toward anchor
-    private const float GrappleLungeSpeed  = 60f;  // set velocity on release
-    private const float GrappleDetachDist  = 1.5f;
+    private Entity      _grappledEntity = null;
+    private Vector3     _reelVelocity   = Vector3.Zero;
+
+    private const float GrappleSpeed          = 250f;
+    private const float GrappleRange          = 180f;
+    private const float GrapplePullAccel      = 60f;
+    private const float GrappleMaxSpeed       = 40f;
+    private const float GrappleLungeSpeed     = 60f;
+    private const float GrappleDetachDist     = 1.5f;
+    private const float LightEntityYBoost    = 8f;  // Y velocity added to player on light-entity attach
+    private const float LightEntityReelSpeed = 20f; // speed entity is pulled toward player
+
+    private MeshInstance3D _ropeNode;
+
+    private float _leftArmBlend = 1f;
+
+    private bool  _leftArmBaseSet     = false;
+    private Basis _leftArmBaseBasis;
+    private Basis _leftArmCurrentBasis;
+
+    private const float GrappleArmResistance = 1f; // 0 = no tracking, 1 = full
+    private const float GrappleArmTrackSpeed = 8f;
+
+    private void ProcessSpeedThreshold(float delta)
+    {
+        float speed = Velocity.Length();
+        if (speed <= SpeedDamageThreshold) return;
+
+        float excessRatio = (speed - SpeedDamageThreshold) / SpeedDamageThreshold;
+        float damage      = excessRatio * SpeedBlockDamageRate * delta;
+        var   cur         = new Vector3I(
+            (int)Mathf.Floor(GlobalPosition.X),
+            (int)Mathf.Floor(GlobalPosition.Y),
+            (int)Mathf.Floor(GlobalPosition.Z));
+
+        bool brokeBlock = false;
+        for (int x = -2; x <= 2; x++)
+        for (int y = -2; y <= 2; y++)
+        for (int z = -2; z <= 2; z++)
+        {
+            if (x*x + y*y + z*z > 6) continue; // spherical ~radius 2.5
+            var pos = cur + new Vector3I(x, y, z);
+            if (Global.CubeManager.get_block(pos) != 0)
+                if (Global.CubeManager.damage_check(pos, damage))
+                    brokeBlock = true;
+        }
+
+        if (brokeBlock)
+            Velocity *= Mathf.Pow(SpeedPenaltyDecay, delta * 60f);
+    }
 
     // ── Dash ─────────────────────────────────────────────────────────────────
     // Press dash: burst in current input direction, or camera forward if idle.
@@ -52,6 +100,12 @@ public partial class Player : Entity
 
     private const float DashStrength    = 22f;
     private const float DashCooldownMax = 1.0f;
+
+    // ── Speed threshold ───────────────────────────────────────────────────────
+    // Above this speed: nearby blocks take damage and velocity is penalised.
+    private const float SpeedDamageThreshold = 30f;
+    private const float SpeedPenaltyDecay    = 0.8f; // per-frame multiplier (dt-corrected)
+    private const float SpeedBlockDamageRate = 60f;  // base damage/s scaled by excess ratio
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -61,6 +115,7 @@ public partial class Player : Entity
         ProcessLaser(delta);
         ProcessGrapple(delta);
         ProcessDash(delta);
+        ProcessSpeedThreshold(delta);
     }
 
     // ── Jackhammer ───────────────────────────────────────────────────────────
@@ -88,10 +143,11 @@ public partial class Player : Entity
         // Bounce opposite to where the camera is pointing — full charge = full impulse
         var lookDir   = -Camera.GlobalTransform.Basis.Z.Normalized();
         var bounceDir = -lookDir;
-        _abilityVel = bounceDir * (JackhammerImpulse * t);
+        float impulse = JackhammerImpulse * t;
+        Velocity      = new Vector3(bounceDir.X * impulse, bounceDir.Y * impulse, bounceDir.Z * impulse);
 
         if (SelectedCube != 0)
-            Global.CubeManager.damage_block(SelectedCubePosition, t);
+            Global.CubeManager.explode(SelectedCubePosition, JackhammerRadius * t, t);
     }
 
     // ── Laser ────────────────────────────────────────────────────────────────
@@ -158,27 +214,62 @@ public partial class Player : Entity
                 break;
 
             case GrappleState.Attached:
+                // Guard: entity may have died
+                if (_grappledEntity != null && !GodotObject.IsInstanceValid(_grappledEntity))
+                {
+                    CancelGrapple();
+                    break;
+                }
+
+                // Keep anchor tracking entity so rope and arm follow it
+                if (_grappledEntity != null)
+                    GrappleAnchor = _grappledEntity.GetCenter();
+
                 if (Input.IsActionJustPressed("grapple_send"))
                 {
                     CancelGrapple();
                 }
                 else if (Input.IsActionJustReleased("grapple_send"))
                 {
-                    // Lunge: blast ability channel toward anchor, input channel cleared so gravity doesn't immediately fight it
-                    var lungeDir = (GrappleAnchor - GlobalPosition).Normalized();
-                    _abilityVel = lungeDir * GrappleLungeSpeed;
-                    _inputVel.Y = 0f;
-                    _airJumps  += 1; // releasing the grapple lunge grants one more air jump
+                    if (_grappledEntity != null && !_grappledEntity.heavy)
+                    {
+                        // Throw: hand the entity the velocity it was being reeled with
+                        _grappledEntity.Velocity = _reelVelocity;
+                    }
+                    else
+                    {
+                        // Lunge toward block or heavy entity
+                        var raw = GrappleAnchor - GlobalPosition;
+                        if (raw.LengthSquared() > 0.001f)
+                            Velocity = raw.Normalized() * GrappleLungeSpeed;
+                    }
+                    _grappledEntity     = null;
+                    _airJumps           = 1;
                     CurrentGrappleState = GrappleState.Idle;
                 }
                 else
                 {
-                    // Accelerate toward anchor each tick — friction and gravity act naturally
                     var toAnchor = GrappleAnchor - GlobalPosition;
                     if (toAnchor.Length() < GrappleDetachDist)
+                    {
+                        _grappledEntity     = null;
                         CurrentGrappleState = GrappleState.Idle;
+                    }
+                    else if (_grappledEntity != null && !_grappledEntity.heavy)
+                    {
+                        // Pull light entity toward player
+                        var toPlayer   = GlobalPosition - _grappledEntity.GetCenter();
+                        _reelVelocity  = toPlayer.Normalized() * LightEntityReelSpeed;
+                        _grappledEntity.Velocity = _reelVelocity;
+                    }
                     else
-                        _abilityVel += toAnchor.Normalized() * GrapplePullAccel * delta;
+                    {
+                        // Pull player toward block or heavy entity
+                        var pullDir    = toAnchor.Normalized();
+                        float inDir    = Velocity.Dot(pullDir);
+                        float addSpeed = Mathf.Clamp(GrappleMaxSpeed - inDir, 0f, GrapplePullAccel * delta);
+                        Velocity      += pullDir * addSpeed;
+                    }
                 }
                 break;
         }
@@ -200,8 +291,24 @@ public partial class Player : Entity
         {
             GrappleAnchor       = worldPos;
             CurrentGrappleState = GrappleState.Attached;
-            _airJumps          += 1; // successful grapple grants one additional air jump
+            _airJumps           = 1;
             _activeHook         = null;
+        };
+
+        hook.OnAttachEntity = (entity) =>
+        {
+            _grappledEntity     = entity;
+            GrappleAnchor       = entity.GetCenter();
+            CurrentGrappleState = GrappleState.Attached;
+            _airJumps           = 1;
+            _activeHook         = null;
+
+            if (!entity.heavy)
+            {
+                var v = Velocity;
+                v.Y      = Mathf.Max(v.Y, 0f) + LightEntityYBoost;
+                Velocity = v;
+            }
         };
 
         hook.OnRetracted = () =>
@@ -220,7 +327,123 @@ public partial class Player : Entity
     {
         _activeHook?.QueueFree();
         _activeHook         = null;
+        _grappledEntity     = null;
         CurrentGrappleState = GrappleState.Idle;
+    }
+
+    public void UpdateGrappleRope()
+    {
+        if (Camera == null) return;
+        var svCam = LeftArmMesh?.GetViewport()?.GetCamera3D();
+        if (svCam == null) return;
+
+        if (_ropeNode == null)
+        {
+            var cylinder          = new CylinderMesh();
+            cylinder.TopRadius    = 0.005f;
+            cylinder.BottomRadius = 0.025f;
+            cylinder.Height       = 1f;
+
+            var mat = LeftArmMesh?.GetActiveMaterial(0);
+            if (mat != null)
+                cylinder.SurfaceSetMaterial(0, mat);
+
+            _ropeNode            = new MeshInstance3D { Mesh = cylinder };
+            _ropeNode.Layers     = 32768;
+            _ropeNode.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+            LeftArmMesh.GetViewport().AddChild(_ropeNode);
+        }
+
+        Vector3 hookPosWorld;
+        switch (CurrentGrappleState)
+        {
+            case GrappleState.Sent when _activeHook != null:
+                hookPosWorld = _activeHook.GlobalPosition;
+                break;
+            case GrappleState.Attached:
+                hookPosWorld = GrappleAnchor;
+                break;
+            default:
+                _ropeNode.Visible = false;
+                return;
+        }
+
+        // Arm tip is already in SubViewport space
+        var armTip = GrappleArmTip != null
+            ? GrappleArmTip.GlobalPosition
+            : svCam.GlobalPosition - svCam.GlobalTransform.Basis.X * 0.3f - svCam.GlobalTransform.Basis.Y * 0.2f;
+
+        // Convert world-space hook direction + distance into SubViewport space
+        var toGrapple  = hookPosWorld - Camera.GlobalPosition;
+        var distance   = toGrapple.Length();
+        var localDir   = Camera.GlobalTransform.Basis.Inverse() * toGrapple.Normalized();
+        var hookPosSv  = svCam.GlobalPosition + localDir * distance;
+
+        var diff   = hookPosSv - armTip;
+        var length = diff.Length();
+
+        if (length < 0.001f) { _ropeNode.Visible = false; return; }
+
+        _ropeNode.Visible = true;
+
+        var dir   = diff / length;
+        var xAxis = (Mathf.Abs(dir.Dot(Vector3.Up)) < 0.99f ? Vector3.Up : Vector3.Forward).Cross(dir).Normalized();
+        var zAxis = xAxis.Cross(dir).Normalized();
+        _ropeNode.GlobalTransform = new Transform3D(new Basis(xAxis, dir * length, zAxis), armTip + diff * 0.5f);
+    }
+
+    // ── Arm blend shapes ─────────────────────────────────────────────────────
+
+    public void UpdateArmBlendShapes(float delta)
+    {
+        // Right arm: jackhammer charge mapped directly to blend shape (0 = idle, 1 = full charge)
+        if (RightArmMesh != null)
+            RightArmMesh.SetBlendShapeValue(0, JackhammerCharge / JackhammerMaxCharge);
+
+        // Left arm: 1 = ready, 0 = thrown. Fast retract on throw, slower return when grapple lands back.
+        if (LeftArmMesh != null)
+        {
+            float target = CurrentGrappleState == GrappleState.Idle ? 1f : 0f;
+            float speed  = target == 0f ? 10f : 10f;
+            _leftArmBlend = Mathf.MoveToward(_leftArmBlend, target, speed * delta);
+            LeftArmMesh.SetBlendShapeValue(0, _leftArmBlend);
+        }
+    }
+
+    public void UpdateLeftArmTracking(float delta)
+    {
+        if (LeftArmMesh == null || Camera == null) return;
+        var leftArm = LeftArmMesh.GetParentOrNull<Node3D>();
+        if (leftArm == null) return;
+
+        if (!_leftArmBaseSet)
+        {
+            _leftArmBaseBasis    = leftArm.GlobalTransform.Basis;
+            _leftArmCurrentBasis = _leftArmBaseBasis;
+            _leftArmBaseSet      = true;
+        }
+
+        Basis targetBasis = _leftArmBaseBasis;
+
+        if (CurrentGrappleState != GrappleState.Idle)
+        {
+            var grapplePos = CurrentGrappleState == GrappleState.Attached
+                ? GrappleAnchor
+                : (_activeHook?.GlobalPosition ?? Camera.GlobalPosition - Camera.GlobalTransform.Basis.Z * 5f);
+
+            var rawDir = grapplePos - Camera.GlobalPosition;
+            if (rawDir.LengthSquared() > 1e-6f)
+            {
+                var svTarget = leftArm.GlobalPosition + Camera.GlobalTransform.Basis.Inverse() * rawDir.Normalized() * 10f;
+                targetBasis  = leftArm.GlobalTransform.LookingAt(svTarget, Vector3.Up).Basis;
+            }
+        }
+
+        _leftArmCurrentBasis = _leftArmCurrentBasis.Slerp(targetBasis, Mathf.Min(GrappleArmTrackSpeed * delta, 1f));
+
+        var t = leftArm.GlobalTransform;
+        t.Basis = _leftArmCurrentBasis;
+        leftArm.GlobalTransform = t;
     }
 
     // ── Dash ─────────────────────────────────────────────────────────────────
@@ -245,8 +468,10 @@ public partial class Player : Entity
         }
 
         dashDir = dashDir.Normalized();
-        _abilityVel.X = dashDir.X * DashStrength;
-        _abilityVel.Z = dashDir.Z * DashStrength;
+        var v = Velocity;
+        v.X      = dashDir.X * DashStrength;
+        v.Z      = dashDir.Z * DashStrength;
+        Velocity = v;
 
         DashCooldown = DashCooldownMax;
     }

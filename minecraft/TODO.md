@@ -5,17 +5,19 @@
 ## Immediate / In Progress
 
 - [x] Create `Assets/GrappleHook.tscn` and assign to Player node's `GrappleHookScene` export
+- [x] Grapple rope — cylinder mesh in SubViewport using tentacle material
+- [ ] Verify Creature collision layer is on Layer 2 so GrappleHook's Area3D can detect them
+- [ ] Entity grapple feel — tune `LightEntityYBoost` (8f) and `LightEntityReelSpeed` (20f)
 
 ---
 
 ## Player Abilities — Polish
 
 - [ ] Laser VFX — visible beam while `LaserActive` is true (use `LaserTimer` / `LaserCooldown`)
-- [ ] Grapple rope/line — draw line from player to hook position while Sent/Attached
 - [ ] Jackhammer charge feedback — visual or audio cue as `JackhammerCharge` builds
 - [ ] Dash trail / directional feedback
 - [ ] Ability cooldown HUD (laser recharge bar, dash cooldown indicator)
-- [ ] Jackhammer ground slam — when looking straight down, damage blocks in a radius on landing
+- [ ] Speed threshold VFX — particles or screen shake when bulldozing terrain at high speed
 
 ---
 
@@ -35,6 +37,7 @@
 
 - [ ] At least 3 distinct enemy types (swarm, heavy, ranged)
 - [ ] Improve Creature.cs AI — attack behavior, not just chase
+- [ ] Mark some creatures as `heavy = true` (pulled toward instead of reeled in when grappled)
 - [ ] Enemy spawning system (tied to terrain + difficulty)
 - [ ] Enemy drops (upgrade currency)
 - [ ] Boss enemy with health bar

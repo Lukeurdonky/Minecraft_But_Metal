@@ -1,5 +1,20 @@
 # Antithesis Conquering Simulator — Claude Context
 
+> **Starting a new session?** See `STARTUP.md`.
+
+## MCP server — use it proactively
+
+The `godot-ai` MCP server is always available when Godot is open. Use it without being asked whenever it would give better results than guessing:
+
+- **Before touching a scene file** — call `scene_get_hierarchy` / `node_get_properties` to read live state instead of assuming from the `.tscn` text.
+- **After any visual change** — call `editor_screenshot` to confirm it looks right.
+- **When iterating on transforms, materials, or export values** — use `node_set_property` directly instead of editing the `.tscn` file by hand.
+- **When the user reports a visual bug** — screenshot first, then diagnose.
+- **When building new scene structure** — use `node_create` + `script_attach` instead of writing raw `.tscn` text.
+- **When checking logs after a crash or error** — call `logs_read` instead of asking the user to paste output.
+
+---
+
 ## What this project is
 
 A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minecraft clone. Game loop: choose a planet → fight → collect upgrades → next planet → boss. All combat, no crafting, no inventory. See `NEW_VISION.md` for full design doc, `PROGRESS.md` for current state, `TODO.md` for next steps.
@@ -25,8 +40,8 @@ Scripts/
 ├── Entities/         Entity.cs, GrappleHook.cs, Creature.cs, Projectile.cs
 │   └── Player/       Player.cs, PlayerAbilities.cs, interactions.gd, inventory.gd (ARCHIVED)
 └── Datasets/         Block_Registry.cs, Item_Registry.cs (ARCHIVED stub)
-Assets/               character.tscn, creature.tscn
-                      GrappleHook.tscn  ← NEEDS TO BE CREATED BY USER
+Assets/               character.tscn, creature.tscn, GrappleHook.tscn
+                      left_arm.tscn, right_arm.tscn
 Scenes/               CubeLand.tscn (main scene)
 Washed Code/          Old/abandoned code — read-only reference, do not add to it
 ```
@@ -50,35 +65,39 @@ Washed Code/          Old/abandoned code — read-only reference, do not add to 
 
 ## Critical architecture — read before touching movement or abilities
 
-### Dual velocity channels
+### Single velocity system
 
-`Player.cs` splits velocity into two independent vectors:
+`Player.cs` operates on a single `Velocity` vector. There are no separate `_inputVel` / `_abilityVel` channels.
 
-- **`_inputVel`** — WASD steering, gravity, jump. Has friction, speed cap (ground only), coyote jump.
-- **`_abilityVel`** — dash, grapple pull/lunge, jackhammer bounce. Decays slowly (0.97/tick air; XZ only 0.85/tick on physical ground; Y always 0.97). No hard cap.
-- `Velocity = _inputVel + _abilityVel` — recomputed in `ApplyMovement` AND again after `ProcessAbilities` so ability impulses hit collision the same frame.
-- On block collision any axis: both channel components zeroed for that axis in `CheckWorldCollisionsWithStepUp`.
-- Abilities write ONLY to `_abilityVel`. Never write directly to `Velocity` from an ability.
+- **Ground**: `Global.GroundFriction` applied every tick (currently 0 = instant stop, rebuilt from input)
+- **Air + keys held**: `Global.AirFriction` applied, but **only** if current speed in the input direction is below `inputSpeed` — ability momentum is preserved when steering into it
+- **Air + no keys**: no friction at all — grapple/dash/jackhammer momentum carries freely
+- All friction is delta-time correct: `Mathf.Pow(friction, delta * 60f)`
+- **Quake-style acceleration**: only adds velocity up to `inputSpeed` in the input direction; WASD can never push past the speed cap, but existing momentum above it is never removed
+- All vertical (gravity, jump, ability Y impulses) lives directly in `Velocity.Y` — no separate decay channel
+
+On block collision any axis: `Velocity` component zeroed for that axis in `CheckWorldCollisionsWithStepUp`.
+
+Abilities write directly to `Velocity`. Never introduce a separate accumulation channel.
 
 ### PhysicallyOnFloor() vs OnFloor()
 
-- `PhysicallyOnFloor()` — actual block contact, no grace period. Used for: friction multiplier, speed cap, ability XZ decay.
+- `PhysicallyOnFloor()` — actual block contact, no grace period. Used for: friction.
 - `OnFloor()` — includes 0.2s coyote grace. Used ONLY for: jump eligibility check.
 - Never use `OnFloor()` for friction — it causes ground friction to fire mid-air during coyote window.
 
 ### Air jump system
 
-Declared in `Player.cs`: `_airJumps`, `_wasPhysOnFloor`.
+Declared in `Player.cs`: `_airJumps`, `_wasPhysOnFloor`. **Max 1 at all times.**
 
 - Leave ground → `_airJumps = max(existing, 1)`
-- Grapple hook attaches (`OnAttach` callback) → `_airJumps += 1`
-- Grapple lunge (release while Attached) → `_airJumps += 1`
+- Grapple hook attaches or lunge releases → `_airJumps = 1`
 - Land → `_airJumps = 0`
-- Air jump input: `IsActionJustPressed("jump")` while `!isOnFloor` and `_airJumps > 0`. Clears `_abilityVel.Y`.
+- Air jump input: `IsActionJustPressed("jump")` while `!isOnFloor` and `_airJumps > 0`
 
 ### PlayerAbilities.cs
 
-Partial class of Player — shares all private fields. All four abilities here:
+Partial class of Player — shares all private fields. All abilities here:
 
 | Ability | Input action | Key state |
 |---|---|---|
@@ -92,37 +111,66 @@ Public state properties are the **accessory hook-in points**. Accessories read t
 Grapple states:
 - `Idle` → press fires hook
 - `Sent` → hook in flight; release = immediate retract; re-press = despawn + refire
-- `Attached` → acceleration pull; release = lunge + `_airJumps += 1`; re-press = cancel
+- `Attached` (block or heavy entity) → Quake-style pull toward anchor (40 u/s cap); release = lunge at 60 u/s
+- `Attached` (light entity) → entity pulled toward player at 20 u/s; release = throw entity at reel velocity
+
+Also in PlayerAbilities: **speed threshold** — above 30 u/s, spherical radius-2.5 scan around player breaks blocks via `damage_check`. Drag (`SpeedPenaltyDecay`) only fires when a block actually broke.
 
 ### GrappleHook.cs
 
-Standalone `Node3D`. Does NOT extend Entity. Properties set before `AddChild`, `GlobalPosition` set AFTER `AddChild` (Godot requirement). State machine: `Flying → Retracting → Done`. Block detection via `Global.CubeManager.get_block()`. Entity detection via `Area3D` `BodyEntered`. `StartRetract()` method for immediate recall.
+Standalone `Node3D`. Does NOT extend Entity. `GlobalPosition` set AFTER `AddChild` (Godot requirement). State machine: `Flying → Retracting → Done`. Block detection via `get_block()`. Entity detection via `Area3D` `BodyEntered`.
 
-**The scene `Assets/GrappleHook.tscn` still needs to be created:**
+Two attach callbacks:
+- `OnAttach(Vector3 worldPos)` — fired for block hits
+- `OnAttachEntity(Entity entity)` — fired for entity hits (non-player bodies)
+
+`StartRetract()` for immediate recall.
+
+GrappleHook.tscn structure (already created — assign `GrappleHookScene` export on Player in Inspector if missing):
 ```
 Node3D  (name: GrappleHook, script: GrappleHook.cs)
 ├── MeshInstance3D  (name: Mesh)
 └── Area3D  (name: HitArea, Collision Layer: 0, Mask: Layer 2)
     └── CollisionShape3D  (SphereShape3D, radius 0.2)
 ```
-After creating: assign to `GrappleHookScene` export on the Player node in Inspector.
 
 ### Entity.cs
 
 Base class for all entities. Manual AABB collision against voxel blocks. Do NOT use Godot physics engine for entity-world collision. `TakeDamage(int amount, Vector3 knockback)` overload exists for combat. Override `OnLandedOnBlock` and `OnBlockCollision` for custom behavior.
 
+`heavy` (bool, default false) — controls grapple behaviour. Heavy = player pulled toward entity. Light = entity pulled toward player and thrown on release. Set on creature prefabs/exports.
+
 ---
 
 ## Chunk_Manager.cs — do not casually refactor
 
-~1400 lines. Threaded chunk generation. The `explode()` method is the primary combat terrain-destruction tool — wire new weapon effects through it. The 5-stage world generator pipeline in `World_Generator.cs` is meant to replace the direct FastNoise2D call in Chunk_Manager — that's the next major world system task.
+~1400 lines. Threaded chunk generation. Key methods:
+
+- `explode(center, radius, damage)` — primary combat terrain-destruction. Requires `damage >= 1f` to instant-kill the center block.
+- `damage_block(pos, 0–1)` — accumulates damage over frames, breaks when health ≤ 0.
+- `damage_check(pos, damage)` — checks remaining health and calls `break_block` immediately if the hit would be lethal. Returns `true` if block broke. Use this when you need same-frame removal.
+- `break_block(pos)` — instant removal, updates chunk data immediately so collision checks see air.
+
+The 5-stage world generator pipeline in `World_Generator.cs` is meant to replace the direct FastNoise2D call in Chunk_Manager — that's the next major world system task.
+
+---
+
+## Arm rendering (SubViewport)
+
+Arms render in a SubViewport with its own Camera3D that mirrors the main camera's rotation. Key rules:
+
+- Arm nodes live in `SubViewportContainer/SubViewport/` — their `GlobalPosition` is SubViewport-space, not main-scene world space
+- To convert a world-space direction to SubViewport space: `Camera.GlobalTransform.Basis.Inverse() * worldDir`
+- Arm tip (`GrappleArmTip`) uses `GlobalPosition` directly — already SubViewport-space
+- Rope cylinder is parented to the SubViewport (not main scene). Hook world position in SubViewport space: `svCam.GlobalPosition + Camera.GlobalTransform.Basis.Inverse() * toGrapple.Normalized() * distance`
+- Left arm tracking uses `LookingAt` with a virtual target in SubViewport space
 
 ---
 
 ## Conventions
 
-- New enemy types extend `Entity.cs`
-- New abilities go in `PlayerAbilities.cs`, write to `_abilityVel`
+- New enemy types extend `Entity.cs`, set `heavy` appropriately
+- New abilities go in `PlayerAbilities.cs`, write directly to `Velocity`
 - New blocks go in `Block_Registry.cs`
 - No Minecraft systems (crafting, farming, hunger, sleep, building)
 - `Washed Code/` is read-only reference — don't add to it

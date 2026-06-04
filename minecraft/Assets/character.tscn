@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://dmhm1ql7cw68i"]
+[gd_scene load_steps=13 format=3 uid="uid://dmhm1ql7cw68i"]
 
 [ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player/Player.cs" id="1_x5jwr"]
 [ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/Entities/Player/interactions.gd" id="2_0w0kd"]
@@ -8,6 +8,7 @@
 [ext_resource type="Material" uid="uid://76hqot3in3tq" path="res://Materials/new_standard_material_3d.tres" id="6_iwsel"]
 [ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/Entities/Player/inventory.gd" id="6_lgrlh"]
 [ext_resource type="PackedScene" uid="uid://bghnugice8y2l" path="res://Assets/right_arm.tscn" id="8_lgo0g"]
+[ext_resource type="PackedScene" uid="uid://crptx6d6mtcux" path="res://Assets/left_arm.tscn" id="8_xbmyk"]
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_8ahl0"]
 
@@ -16,7 +17,7 @@ size = Vector3(0.75, 1.9, 0.75)
 
 [sub_resource type="BoxMesh" id="BoxMesh_x5jwr"]
 
-[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape")]
+[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "GrappleArmTip", "RightArmMesh", "LeftArmMesh")]
 collision_mask = 0
 script = ExtResource("1_x5jwr")
 Camera = NodePath("Camera3D")
@@ -27,6 +28,9 @@ Accel = 50.0
 JumpStrength = 20.0
 Gravity = 35.0
 GrappleHookScene = ExtResource("2_affd2")
+GrappleArmTip = NodePath("SubViewportContainer/SubViewport/left_arm/grapple tip")
+RightArmMesh = NodePath("SubViewportContainer/SubViewport/right_arm/Jackhammer")
+LeftArmMesh = NodePath("SubViewportContainer/SubViewport/left_arm/Tentacle")
 offset = Vector2(0, -0.1)
 width = 0.9
 
@@ -133,6 +137,12 @@ layers = 32768
 mesh = SubResource("BoxMesh_x5jwr")
 skeleton = NodePath("../../../Camera3D")
 surface_material_override/0 = ExtResource("6_iwsel")
+
+[node name="left_arm" parent="SubViewportContainer/SubViewport" instance=ExtResource("8_xbmyk")]
+transform = Transform3D(0.94664925, -0.055960838, -0.31736973, 0, 0.98480755, -0.17364818, 0.32226568, 0.16438389, 0.9322675, -0.59451604, 0.2, -0.202)
+
+[node name="grapple tip" type="Node3D" parent="SubViewportContainer/SubViewport/left_arm"]
+transform = Transform3D(-4.371139e-08, 0.99999994, 0, -1.0000001, -4.371139e-08, 0, 0, 0, 1, 0, 0, -0.6)
 
 [node name="right_arm" parent="SubViewportContainer/SubViewport" instance=ExtResource("8_lgo0g")]
 transform = Transform3D(0.09839411, -0.01784931, -2.1514013e-11, -7.5904033e-10, -4.3047312e-09, 0.10000002, -0.01784931, -0.09839411, -4.3710857e-09, 0.5, 0.2, -0.6429552)

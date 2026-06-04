@@ -21,6 +21,7 @@ public partial class Entity : CharacterBody3D
 	public float timeSinceLeftGround = 0f;
 	[Export]
 	public float onGroundDetectionLength = 0.2f;
+	public bool heavy = false; 
 	public int CurrentHealth { get; set; }
 	public Global Global;
 
