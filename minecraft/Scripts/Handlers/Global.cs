@@ -42,9 +42,32 @@ public partial class Global : Node
 	private Vector3 _prevPos = Vector3.Zero;
 	public Node3D[] Portals;
 
+	// ── Camera shake ─────────────────────────────────────────────────────────
+	private float _shakePeak     = 0f;
+	private float _shakeDuration = 0f;
+	private float _shakeTimer    = 0f;
+
+	public float CurrentShake => _shakeDuration > 0f
+		? _shakePeak * Mathf.Clamp(_shakeTimer / _shakeDuration, 0f, 1f)
+		: 0f;
+
+	public void ShakeCamera(float intensity, float duration)
+	{
+		if (intensity > _shakePeak || _shakeTimer <= 0f)
+			_shakePeak = intensity;
+		_shakeDuration = duration;
+		_shakeTimer    = Mathf.Max(_shakeTimer, duration);
+	}
+
 	public override void _Ready()
 	{
 		Instance = this;
+	}
+
+	public override void _Process(double delta)
+	{
+		if (_shakeTimer > 0f)
+			_shakeTimer = Mathf.Max(_shakeTimer - (float)delta, 0f);
 	}
 
 	public Vector3 GetPlayerPos()

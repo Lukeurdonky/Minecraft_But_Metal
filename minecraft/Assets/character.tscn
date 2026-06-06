@@ -12,8 +12,33 @@
 [ext_resource type="PackedScene" uid="uid://bghnugice8y2l" path="res://Assets/right_arm.tscn" id="8_lgo0g"]
 [ext_resource type="PackedScene" uid="uid://crptx6d6mtcux" path="res://Assets/left_arm.tscn" id="8_xbmyk"]
 
-[sub_resource type="Animation" id="Animation_h2xnx"]
-length = 0.001
+[sub_resource type="Animation" id="Animation_0qfhu"]
+resource_name = "JumpUIFalse"
+length = 0.1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:scale:x")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [1.0, 0.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:scale:y")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [1.0, 0.0]
+}
 
 [sub_resource type="Animation" id="Animation_4ia3o"]
 resource_name = "JumpUI"
@@ -43,39 +68,67 @@ tracks/1/keys = {
 "values": [0.0, 1.0]
 }
 
-[sub_resource type="Animation" id="Animation_0qfhu"]
-resource_name = "JumpUIFalse"
-length = 0.1
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath(".:scale:x")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {
-"times": PackedFloat32Array(0, 0.1),
-"transitions": PackedFloat32Array(1, 1),
-"update": 0,
-"values": [1.0, 0.0]
-}
-tracks/1/type = "value"
-tracks/1/imported = false
-tracks/1/enabled = true
-tracks/1/path = NodePath(".:scale:y")
-tracks/1/interp = 1
-tracks/1/loop_wrap = true
-tracks/1/keys = {
-"times": PackedFloat32Array(0, 0.1),
-"transitions": PackedFloat32Array(1, 1),
-"update": 0,
-"values": [1.0, 0.0]
-}
+[sub_resource type="Animation" id="Animation_h2xnx"]
+length = 0.001
 
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_0qfhu"]
 _data = {
 &"JumpUIFalse": SubResource("Animation_0qfhu"),
 &"JumpUITrue": SubResource("Animation_4ia3o"),
 &"RESET": SubResource("Animation_h2xnx")
+}
+
+[sub_resource type="Animation" id="Animation_dcsg3"]
+resource_name = "EnemyUIGrappling"
+length = 0.8
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:scale")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.2, 0.4, 0.6, 0.8),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(1.5, 1.5), Vector2(1.7, 1.7), Vector2(1.5, 1.5), Vector2(1.7, 1.7), Vector2(1.5, 1.5)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:rotation")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.4, 0.8),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 3.141592653589793, 6.283185307179586]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Double Jump Indicator2:modulate")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(1, 0, 0, 1)]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Double Jump Indicator:modulate")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(1, 0, 0, 1)]
 }
 
 [sub_resource type="Animation" id="Animation_gbs0t"]
@@ -181,59 +234,6 @@ tracks/3/keys = {
 "values": [Color(0.16470589, 1, 0.29803923, 1)]
 }
 
-[sub_resource type="Animation" id="Animation_dcsg3"]
-resource_name = "EnemyUIGrappling"
-length = 0.8
-loop_mode = 1
-tracks/0/type = "value"
-tracks/0/imported = false
-tracks/0/enabled = true
-tracks/0/path = NodePath(".:scale")
-tracks/0/interp = 1
-tracks/0/loop_wrap = true
-tracks/0/keys = {
-"times": PackedFloat32Array(0, 0.2, 0.4, 0.6, 0.8),
-"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
-"update": 0,
-"values": [Vector2(1.5, 1.5), Vector2(1.7, 1.7), Vector2(1.5, 1.5), Vector2(1.7, 1.7), Vector2(1.5, 1.5)]
-}
-tracks/1/type = "value"
-tracks/1/imported = false
-tracks/1/enabled = true
-tracks/1/path = NodePath(".:rotation")
-tracks/1/interp = 1
-tracks/1/loop_wrap = true
-tracks/1/keys = {
-"times": PackedFloat32Array(0, 0.4, 0.8),
-"transitions": PackedFloat32Array(1, 1, 1),
-"update": 0,
-"values": [0.0, 3.141592653589793, 6.283185307179586]
-}
-tracks/2/type = "value"
-tracks/2/imported = false
-tracks/2/enabled = true
-tracks/2/path = NodePath("Double Jump Indicator2:modulate")
-tracks/2/interp = 1
-tracks/2/loop_wrap = true
-tracks/2/keys = {
-"times": PackedFloat32Array(0),
-"transitions": PackedFloat32Array(1),
-"update": 0,
-"values": [Color(1, 0, 0, 1)]
-}
-tracks/3/type = "value"
-tracks/3/imported = false
-tracks/3/enabled = true
-tracks/3/path = NodePath("Double Jump Indicator:modulate")
-tracks/3/interp = 1
-tracks/3/loop_wrap = true
-tracks/3/keys = {
-"times": PackedFloat32Array(0),
-"transitions": PackedFloat32Array(1),
-"update": 0,
-"values": [Color(1, 0, 0, 1)]
-}
-
 [sub_resource type="AnimationLibrary" id="AnimationLibrary_dcsg3"]
 _data = {
 &"EnemyUIGrappling": SubResource("Animation_dcsg3"),
@@ -257,6 +257,7 @@ SprintMult = 4.0
 Accel = 120.0
 JumpStrength = 20.0
 Gravity = 35.0
+DeathScreen = NodePath("CanvasLayer/DeathScreen")
 GrappleHookScene = ExtResource("2_4ia3o")
 GrappleArmTip = NodePath("SubViewportContainer/SubViewport/left_arm/grapple tip")
 LaserTip = NodePath("SubViewportContainer/SubViewport/right_arm/laser tip")
@@ -268,7 +269,7 @@ width = 0.9
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 follow_viewport_enabled = true
 
-[node name="Control Center" type="Control" parent="CanvasLayer" node_paths=PackedStringArray("JumpAnimPlayer", "EnemyIndicator", "Crosshair")]
+[node name="Control Center" type="Control" parent="CanvasLayer" node_paths=PackedStringArray("JumpAnimPlayer", "EnemyIndicator", "Crosshair", "HpBarFg", "SpeedSection1", "SpeedSection2", "SpeedSection3", "HitFlash")]
 layout_mode = 3
 anchors_preset = 8
 anchor_left = 0.5
@@ -286,6 +287,11 @@ script = ExtResource("2_ly1c7")
 JumpAnimPlayer = NodePath("Panel/Jump/AnimationPlayer")
 EnemyIndicator = NodePath("Panel/Enemy")
 Crosshair = NodePath("Panel/Crosshair")
+HpBarFg = NodePath("../BarContainer/HPBarFg")
+SpeedSection1 = NodePath("../BarContainer/SpeedSection1")
+SpeedSection2 = NodePath("../BarContainer/SpeedSection2")
+SpeedSection3 = NodePath("../BarContainer/SpeedSection3")
+HitFlash = NodePath("../HitFlash")
 metadata/_edit_use_anchors_ = true
 
 [node name="Panel" type="Panel" parent="CanvasLayer/Control Center"]
@@ -363,6 +369,144 @@ offset_bottom = 233.0
 text = "sfdafasfasfas"
 script = ExtResource("5_jiiwr")
 Player = NodePath("../../..")
+
+[node name="BarContainer" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="HPBarBg" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 1245.0
+offset_top = -789.0
+offset_right = 1425.0
+offset_bottom = -781.0
+grow_vertical = 0
+color = Color(0.07, 0.07, 0.07, 0.85)
+
+[node name="HPBarFg" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 1245.0
+offset_top = -789.0
+offset_right = 1425.0
+offset_bottom = -781.0
+grow_vertical = 0
+color = Color(1, 0, 0, 1)
+
+[node name="LaserBarBg" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 1245.0
+offset_top = -772.0
+offset_right = 1425.0
+offset_bottom = -764.0
+grow_vertical = 0
+color = Color(0.07, 0.07, 0.07, 0.85)
+
+[node name="LaserBarFg" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 1245.0
+offset_top = -772.0
+offset_right = 1425.0
+offset_bottom = -764.0
+grow_vertical = 0
+color = Color(0.48677072, 0.7373294, 1, 1)
+
+[node name="SpeedSection1" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 1245.0
+offset_top = -755.0
+offset_right = 1303.0
+offset_bottom = -747.0
+grow_vertical = 0
+color = Color(0.2, 0.85, 0.2, 1)
+
+[node name="SpeedSection2" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 1306.0
+offset_top = -755.0
+offset_right = 1364.0
+offset_bottom = -747.0
+grow_vertical = 0
+color = Color(1.0, 0.85, 0.0, 1)
+
+[node name="SpeedSection3" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 1367.0
+offset_top = -755.0
+offset_right = 1425.0
+offset_bottom = -747.0
+grow_vertical = 0
+color = Color(1.0, 0.2, 0.2, 1)
+
+[node name="HitFlash" type="ColorRect" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 0, 0, 1)
+modulate = Color(1, 1, 1, 0)
+
+[node name="DeathScreen" type="Control" parent="CanvasLayer"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Overlay" type="ColorRect" parent="CanvasLayer/DeathScreen"]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0, 0, 0, 0.75)
+
+[node name="Center" type="VBoxContainer" parent="CanvasLayer/DeathScreen"]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Title" type="Label" parent="CanvasLayer/DeathScreen/Center"]
+layout_mode = 2
+text = "SIGNAL LOST"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="CanvasLayer/DeathScreen/Center"]
+layout_mode = 2
+text = "press jump to restart"
+horizontal_alignment = 1
 
 [node name="Inventory" type="Node3D" parent="."]
 script = ExtResource("6_lgrlh")

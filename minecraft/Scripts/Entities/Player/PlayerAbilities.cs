@@ -6,17 +6,24 @@ using System.Collections.Generic;
 public partial class Player : Entity
 {
     // ── Jackhammer ───────────────────────────────────────────────────────────
-    // Hold attack1 to charge. Release to bounce: velocity fires in the opposite
-    // direction of the camera's look vector, scaled by charge.
+    // Press attack1 to commit a charge — builds automatically to full.
+    // Holding at full charge holds the pose; release fires.
+    // Damage is determined by speed at the moment of fire (3 tiers).
     public bool  JackhammerCharging { get; private set; } = false;
     public float JackhammerCharge   { get; private set; } = 0f;
     public float JackhammerRadius   { get; private set; } = 3f;
 
     private const float JackhammerMaxCharge  = .5f;
-    private const float JackhammerImpulse   = 35f;
-    private const float JackhammerBaseDamage = 30f;
-    private const float JackhammerConeRange = 6f;
-    private const float JackhammerConeAngle = 0.75f; // ~41° half-angle
+    private const float JackhammerImpulse    = 35f;
+    private const float JackhammerConeRange  = 6f;
+    private const float JackhammerConeAngle  = 0.75f; // ~41° half-angle
+
+    // Speed-based damage tiers (player speed sampled at fire time)
+    private const float JackhammerMedThreshold  = 15f;
+    private const float JackhammerFastThreshold = 30f;
+    private const int   JackhammerDamageWeak    = 20;
+    private const int   JackhammerDamageMed     = 50;
+    private const int   JackhammerDamageHard    = 100;
 
     // ── Laser ────────────────────────────────────────────────────────────────
     // Press attack2 to fire a persistent 1s beam. 10s cooldown after use.
@@ -27,10 +34,10 @@ public partial class Player : Entity
     private const float LaserDuration           = 1.5f;
     private const float LaserCooldownMax        = 7.0f;
     private const float LaserRange              = 100f;
-    private const float LaserDamagePerSecond    = 20f;
-    private const float LaserKnockbackPerSecond = 45f;
-    private const float LaserTunnelRadius       = 3f;
-    private const float LaserBeamRadius         = .25f;
+    private const float LaserDamagePerSecond    = 200f;
+    private const float LaserKnockbackPerSecond = 55f;
+    private const float LaserTunnelRadius       = 4f;
+    private const float LaserBeamRadius         = .35f;
     private const float LaserExplodeRate        = 0.05f; // seconds between explode calls (~20/s)
 
     private MeshInstance3D _laserBeam;
@@ -48,6 +55,7 @@ public partial class Player : Entity
     public Vector3      GrappleAnchor       { get; private set; } = Vector3.Zero;
 
     [Export] public PackedScene    GrappleHookScene { get; set; }
+    [Export] public bool           CanGrappleLunge  { get; set; } = false;
     // Optional: assign a Node3D child of the Camera in character.tscn for exact arm-tip origin.
     // If left unassigned, the rope starts from a computed left-side camera offset.
     [Export] public Node3D         GrappleArmTip { get; set; }
@@ -73,7 +81,8 @@ public partial class Player : Entity
     private const float HeavyEntityArrivalBoost = 8f;  // upward boost when player reaches heavy entity
     private const float GrappleCooldownMax       = 0.1f;
 
-    private float _grappleCooldown = 0f;
+    private float _grappleCooldown     = 0f;
+    private float _grappleJumpCooldown = 0f;
 
     private MeshInstance3D _ropeNode;
 
@@ -124,13 +133,26 @@ public partial class Player : Entity
     // ── Speed threshold ───────────────────────────────────────────────────────
     // Above this speed: nearby blocks take damage and velocity is penalised.
     private const float SpeedDamageThreshold = 30f;
-    private const float SpeedPenaltyDecay    = 0.8f; // per-frame multiplier (dt-corrected)
-    private const float SpeedBlockDamageRate = 60f;  // base damage/s scaled by excess ratio
+    private const float SpeedPenaltyDecay    = 0.8f;
+    private const float SpeedBlockDamageRate = 60f;
+
+    // Speed tier coyote — once speed drops below a threshold the tier stays
+    // active for SpeedCoyoteDuration seconds so the player can still benefit.
+    private const float SpeedCoyoteDuration = 0.5f;
+    private float _hardCoyoteTimer = 0f;
+    private float _medCoyoteTimer  = 0f;
+
+    // 0=weak, 1=medium, 2=hard — updated every frame
+    public int   RawSpeedTier      { get; private set; } = 0;
+    public int   EffectiveSpeedTier { get; private set; } = 0;
+    public float HardCoyoteTimer   => _hardCoyoteTimer;
+    public float MedCoyoteTimer    => _medCoyoteTimer;
 
     // ─────────────────────────────────────────────────────────────────────────
 
     public void ProcessAbilities(float delta)
     {
+        ProcessSpeedTier(delta);
         ProcessJackhammer(delta);
         ProcessLaser(delta);
         ProcessGrapple(delta);
@@ -138,16 +160,45 @@ public partial class Player : Entity
         ProcessSpeedThreshold(delta);
     }
 
+    private void ProcessSpeedTier(float delta)
+    {
+        float speed = Velocity.Length();
+
+        RawSpeedTier = speed >= JackhammerFastThreshold ? 2
+                     : speed >= JackhammerMedThreshold  ? 1
+                     : 0;
+
+        // Coyote only fires when descending: timer resets while above threshold,
+        // counts down only after dropping below it.
+        if (speed >= JackhammerFastThreshold)
+            _hardCoyoteTimer = SpeedCoyoteDuration;
+        else
+            _hardCoyoteTimer = Mathf.Max(_hardCoyoteTimer - delta, 0f);
+
+        if (speed >= JackhammerMedThreshold)
+            _medCoyoteTimer = SpeedCoyoteDuration;
+        else
+            _medCoyoteTimer = Mathf.Max(_medCoyoteTimer - delta, 0f);
+
+        EffectiveSpeedTier = _hardCoyoteTimer > 0f ? 2 : (_medCoyoteTimer > 0f ? 1 : 0);
+    }
+
     // ── Jackhammer ───────────────────────────────────────────────────────────
 
     private void ProcessJackhammer(float delta)
     {
-        if (Input.IsActionPressed("attack1"))
+        if (!JackhammerCharging)
         {
-            JackhammerCharging = true;
-            JackhammerCharge   = Mathf.Min(JackhammerCharge + delta, JackhammerMaxCharge);
+            if (Input.IsActionJustPressed("attack1"))
+                JackhammerCharging = true;
+            return;
         }
-        else if (JackhammerCharging)
+
+        JackhammerCharge = Mathf.Min(JackhammerCharge + delta, JackhammerMaxCharge);
+
+        // Fire when fully charged and button is no longer held.
+        // Still holding = hold the charge pose; fires the moment you release.
+        if (JackhammerCharge >= JackhammerMaxCharge && !Input.IsActionPressed("attack1"))
         {
             FireJackhammer();
             JackhammerCharging = false;
@@ -163,17 +214,24 @@ public partial class Player : Entity
         List<Entity> targets  = FindJackhammerEntities();
         if (!hitBlock && targets.Count == 0) return;
 
-        float t     = JackhammerCharge / JackhammerMaxCharge;
+        // Use coyote-aware effective tier — ProcessSpeedTier already ran this frame.
+        int damage = EffectiveSpeedTier switch
+        {
+            2 => JackhammerDamageHard,
+            1 => JackhammerDamageMed,
+            _ => JackhammerDamageWeak,
+        };
+
         var lookDir = -Camera.GlobalTransform.Basis.Z.Normalized();
-        Velocity    = -lookDir * JackhammerImpulse * t;
+        Velocity    = -lookDir * JackhammerImpulse;
         _airJumps   = 1;
 
         if (hitBlock)
-            Global.CubeManager.explode(blockPos, JackhammerRadius * t, t);
+            Global.CubeManager.explode(blockPos, JackhammerRadius, 1f);
 
-        var knockback = -lookDir * JackhammerImpulse * t * 0.5f;
+        var knockback = -lookDir * JackhammerImpulse * 0.5f;
         foreach (var entity in targets)
-            entity.TakeDamage((int)(JackhammerBaseDamage * t), knockback);
+            entity.TakeDamage(damage, knockback);
 
         if (_grappledEntity != null && targets.Contains(_grappledEntity))
             CancelGrapple();
@@ -360,7 +418,10 @@ public partial class Player : Entity
 
     private void ProcessGrapple(float delta)
     {
-        _grappleCooldown = Mathf.Max(_grappleCooldown - delta, 0f);
+        _grappleCooldown     = Mathf.Max(_grappleCooldown - delta, 0f);
+        _grappleJumpCooldown = Mathf.Max(_grappleJumpCooldown - delta, 0f);
+        if (CurrentGrappleState == GrappleState.Attached && _grappledEntity != null && _grappleJumpCooldown <= 0f)
+            _airJumps = Mathf.Max(_airJumps, 1);
 
         switch (CurrentGrappleState)
         {
@@ -401,29 +462,38 @@ public partial class Player : Entity
                 {
                     if (_grappledEntity != null && _grappledEntity.heavy)
                     {
-                        // Toggle mode: release does nothing — stays latched until re-press or line blocked
+                        // Lunge player toward heavy entity on release
+                        var toEntity = GrappleAnchor - GlobalPosition;
+                        if (toEntity.LengthSquared() > 0.001f)
+                            Velocity = toEntity.Normalized() * HeavyEntityReelSpeed;
+                        ReleaseGrappledEntity();
+                        _airJumps           = 1;
+                        CurrentGrappleState = GrappleState.Idle;
+                        _grappleCooldown    = GrappleCooldownMax;
                     }
                     else if (_grappledEntity != null && !_grappledEntity.heavy)
                     {
-                        // Throw light entity + upward boost
-                        _grappledEntity.Velocity = _reelVelocity;
-                        var v = Velocity;
-                        v.Y      = LightEntityReleaseBoost;
-                        Velocity = v;
+                        // Launch light entity toward player on release
+                        var toPlayer = GlobalPosition - _grappledEntity.GetCenter();
+                        if (toPlayer.LengthSquared() > 0.001f)
+                            _grappledEntity.Velocity = toPlayer.Normalized() * LightEntityReelSpeed;
                         ReleaseGrappledEntity();
-                        _airJumps            = 1;
-                        CurrentGrappleState  = GrappleState.Idle;
-                        _grappleCooldown     = GrappleCooldownMax;
+                        _airJumps           = 1;
+                        CurrentGrappleState = GrappleState.Idle;
+                        _grappleCooldown    = GrappleCooldownMax;
                     }
                     else
                     {
-                        // Lunge toward block — only if not already faster in that direction
-                        var raw = GrappleAnchor - GlobalPosition;
-                        if (raw.LengthSquared() > 0.001f)
+                        if (CanGrappleLunge)
                         {
-                            var lungeDir = raw.Normalized();
-                            if (Velocity.Dot(lungeDir) < GrappleLungeSpeed)
-                                Velocity = lungeDir * GrappleLungeSpeed;
+                            // Lunge toward block — only if not already faster in that direction
+                            var raw = GrappleAnchor - GlobalPosition;
+                            if (raw.LengthSquared() > 0.001f)
+                            {
+                                var lungeDir = raw.Normalized();
+                                if (Velocity.Dot(lungeDir) < GrappleLungeSpeed)
+                                    Velocity = lungeDir * GrappleLungeSpeed;
+                            }
                         }
                         ReleaseGrappledEntity();
                         _airJumps            = 1;
@@ -433,10 +503,22 @@ public partial class Player : Entity
                 }
                 else
                 {
-                    // Jump breaks out of any entity grapple
-                    if (_grappledEntity != null && Input.IsActionJustPressed("jump"))
+                    // Jump escape — directional lunge if movement keys held, straight up if not.
+                    // ApplyMovement already applied the Y jump this frame, so we only override XZ.
+                    if (Input.IsActionJustPressed("jump") && _grappledEntity == null)
                     {
                         CancelGrapple();
+                        var lungeDir = Vector3.Zero;
+                        if (Input.IsActionPressed("move_back"))  lungeDir -= forwardDirection;
+                        if (Input.IsActionPressed("move_left"))  lungeDir -= rightDirection;
+                        if (Input.IsActionPressed("move_right")) lungeDir += rightDirection;
+                        if (lungeDir.LengthSquared() > 0.01f)
+                        {
+                            var v = Velocity;
+                            v.X      = lungeDir.Normalized().X * DashStrength;
+                            v.Z      = lungeDir.Normalized().Z * DashStrength;
+                            Velocity = v;
+                        }
                         break;
                     }
 
@@ -461,32 +543,6 @@ public partial class Player : Entity
                         break;
                     }
 
-                    // Light enemy arrived at player — zero their horizontal velocity and detach
-                    if (toAnchor.Length() < GrappleDetachDist && (_grappledEntity == null || !_grappledEntity.heavy))
-                    {
-                        if (_grappledEntity != null)
-                        {
-                            var ev = _grappledEntity.Velocity;
-                            ev.X = 0f;
-                            ev.Z = 0f;
-                            _grappledEntity.Velocity = ev;
-                        }
-                        ReleaseGrappledEntity();
-                        CurrentGrappleState = GrappleState.Idle;
-                        _grappleCooldown    = GrappleCooldownMax;
-                    }
-                    else if (_grappledEntity != null && !_grappledEntity.heavy)
-                    {
-                        // Pull light entity toward player
-                        var toPlayer  = GlobalPosition - _grappledEntity.GetCenter();
-                        _reelVelocity = toPlayer.Normalized() * LightEntityReelSpeed;
-                        _grappledEntity.Velocity = _reelVelocity;
-                    }
-                    else if (_grappledEntity != null && _grappledEntity.heavy)
-                    {
-                        // Pull player toward heavy entity — direct velocity, mirrors light entity reel
-                        Velocity = toAnchor.Normalized() * HeavyEntityReelSpeed;
-                    }
                     else
                     {
                         // Pull player toward block (Quake-style acceleration)

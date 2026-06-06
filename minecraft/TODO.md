@@ -16,19 +16,22 @@
 - [x] Jackhammer cone hit detection — generous ~41° cone replaces crosshair raycast
 - [x] Jackhammer air swing — no knockback if no block in cone
 - [x] Laser VFX — orange emissive beam, block tunneling via explode(), player knockback opposite fire direction
-- [ ] Jackhammer charge feedback — visual or audio cue as `JackhammerCharge` builds
-- [ ] Dash trail / directional feedback
-- [ ] Ability cooldown HUD (laser recharge bar, dash cooldown indicator)
+- [x] Jackhammer committed charge — press once to commit; auto-fires at full charge, hold to delay release
+- [x] Jackhammer speed-based damage tiers — weak/medium/hard at <15/15–30/>30 u/s; 0.5s descending coyote window
+- [ ] ~~Dash trail / directional feedback~~ — dash deprioritized, grapple covers mobility
+- [x] Ability cooldown HUD — laser bar: blue when ready/firing, gray + fills while recharging
+- [x] Speed tier HUD (temp) — 3 colored segments, active tier bright, coyote tier flashes
 - [ ] Speed threshold VFX — particles or screen shake when bulldozing terrain at high speed
 
 ---
 
 ## Combat
 
-- [ ] Enemy takes damage and dies
-- [ ] Player takes damage, has health bar UI
-- [ ] Knockback on hit (use `TakeDamage(amount, knockbackVector)` — already on Entity)
-- [ ] Player death / run-end state
+- [x] Enemy takes damage and dies — `Entity.TakeDamage()` + `Die()` → `QueueFree()`
+- [x] Player takes damage, has health bar UI — contact damage from Creature, red bar bottom-left
+- [x] Knockback on hit — `TakeDamage(amount, knockbackVector)` implemented; enemy contact applies directional knockback to player
+- [x] Global camera shake — `Global.ShakeCamera(intensity, duration)` callable from any script; applied in `RotateCamera()`
+- [x] Player death / run-end state — SIGNAL LOST screen, jump to reload scene
 - [ ] Kill counter per planet (Exploration win condition)
 - [ ] Survival timer (Survival win condition)
 - [ ] "Reach the core" objective (Combat win condition)
@@ -40,9 +43,10 @@
 - [x] Entity → Enemy → Creature class hierarchy
 - [x] Enemy base class — `AttackDamage`, `DetectionRange`, world-space health bar (green→red, faces camera)
 - [x] Damage/health single source of truth — all damage through `Entity.TakeDamage()`, health bar refreshes on hit
-- [ ] Enemy health bar visual polish — billboard shader, damage flash, hide at full health
+- [x] Enemy health bar visual polish — billboard shader (fixed via BillboardMode material)
+- [ ] Enemy health bar polish — damage flash, hide at full health
 - [ ] At least 3 distinct enemy types (swarm, heavy, ranged)
-- [ ] Improve Creature.cs AI — attack behavior (deal `AttackDamage` on contact), not just chase
+- [x] Improve Creature.cs AI — attack behavior (deal `AttackDamage` on contact), not just chase
 - [ ] Mark some creatures as `heavy = true` (pulled toward instead of reeled in when grappled)
 - [ ] Enemy spawning system (tied to terrain + difficulty)
 - [ ] Enemy drops (upgrade currency)
@@ -79,7 +83,7 @@
 - [ ] Super Jump
 - [ ] Super Slam — amplify jackhammer ground slam radius/damage
 - [ ] Explosive Bounce — jackhammer release creates explosion at impact
-- [ ] Destructive Laser — laser also destroys blocks
+- [x] Destructive Laser — laser already destroys blocks via `explode()` tunneling (base behavior, not an accessory upgrade)
 - [ ] Little Friend
 - [ ] Glide — slow fall while holding jump in air
 - [ ] Dig Dig Dig! — jackhammer mines blocks faster
@@ -94,7 +98,7 @@
 - [ ] Antithesis aesthetic — dark terrain palette, bright electronic enemy materials
 - [ ] Crashlanding entry sequence (player enters planet via crash)
 - [ ] Sound effects — weapons, enemies, environment
-- [ ] Player hit feedback — screen flash, shake on damage
+- [x] Player hit feedback — red full-screen flash (0.4s fade) + global camera shake on damage
 - [ ] Particles — laser impact, explosion, enemy death, dash trail
 
 ---

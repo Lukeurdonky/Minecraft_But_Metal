@@ -6,8 +6,9 @@ public partial class Creature : Enemy
     [Export] public float ChaseSpeed { get; set; } = 6.0f;
     [Export] public float ChaseAccel { get; set; } = 15.0f;
 
-    private Vector3 targetPosition = Vector3.Zero;
-    private bool    isChasing      = false;
+    private Vector3 targetPosition  = Vector3.Zero;
+    private bool    isChasing       = false;
+    private float   _attackCooldown = 0f;
 
     public override void ImHere()
     {
@@ -60,5 +61,23 @@ public partial class Creature : Enemy
             vel.Y = Mathf.Clamp(vel.Y, -MaxFallSpeed, Mathf.Inf);
 
         Velocity = vel;
+
+        TryAttackPlayer(dt);
+    }
+
+    private void TryAttackPlayer(float dt)
+    {
+        _attackCooldown = Mathf.Max(_attackCooldown - dt, 0f);
+        if (_attackCooldown > 0f) return;
+
+        var player = Global.Instance?.Player;
+        if (player == null) return;
+
+        if (GetAABB().Intersects(player.GetAABB()))
+        {
+            var knockback = (player.GlobalPosition - GlobalPosition).Normalized() * 8f;
+            player.TakeDamage(AttackDamage, knockback);
+            _attackCooldown = 1.0f;
+        }
     }
 }
