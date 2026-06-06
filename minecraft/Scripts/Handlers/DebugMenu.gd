@@ -9,13 +9,8 @@ func _process(delta: float) -> void:
 	var frame_time = delta * 1000  # Convert frame time to milliseconds
 	var memory = (OS.get_static_memory_usage() + 0.0) / (1024 * 1024)  # Convert bytes to MB
 	var coords = Vector3i(Player.global_transform.origin)
-	var inventory = Player.Inventory.get_items()
-	#var coords_x = "%.1f" % coords.x
-	#var coords_y = "%.1f" % coords.y
-	#var coords_z = "%.1f" % coords.z
-	#var video_memory = RenderingServer.get_video_memory_usage() / (1024 * 1024)  # Video memory usage in MB
+	# var inventory = Player.Inventory.get_items()  # ARCHIVED: inventory system removed
 
-	# Update the text with the stats
-	text = "FPS: %d\nFrame Time: %.2f ms\nMemory Usage: %.2f MB\nCoordinates: %s\nInventory: %s" % [
-		fps, frame_time, memory, coords, inventory
+	text = "FPS: %d\nFrame Time: %.2f ms\nMemory Usage: %.2f MB\nCoordinates: %s" % [
+		fps, frame_time, memory, coords
 	]

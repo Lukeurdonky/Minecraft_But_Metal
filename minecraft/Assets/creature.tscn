@@ -7,12 +7,15 @@
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_7gn67"]
 
 [node name="Creature" type="CharacterBody3D"]
+collision_layer = 3
+motion_mode = 1
 script = ExtResource("1_8m8vt")
 WalkSpeed = 1.0
 ChaseSpeed = 3.0
 offset = Vector2(0, -0.1)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+layers = 3
 mesh = SubResource("CapsuleMesh_y7sn2")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]

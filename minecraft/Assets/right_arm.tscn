@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3 uid="uid://bghnugice8y2l"]
+
+[ext_resource type="PackedScene" uid="uid://cnybxggnu48cq" path="res://Assets/JackhammerArm1.glb" id="1_5w4po"]
+
+[node name="right_arm" instance=ExtResource("1_5w4po")]
+
+[node name="Jackhammer" parent="." index="0"]
+layers = 32768
