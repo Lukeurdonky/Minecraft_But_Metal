@@ -1,14 +1,245 @@
-[gd_scene load_steps=13 format=3 uid="uid://dmhm1ql7cw68i"]
+[gd_scene load_steps=23 format=3 uid="uid://dmhm1ql7cw68i"]
 
 [ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player/Player.cs" id="1_x5jwr"]
 [ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/Entities/Player/interactions.gd" id="2_0w0kd"]
-[ext_resource type="PackedScene" uid="uid://dpuxy1inq4u77" path="res://Assets/GrappleHook.tscn" id="2_affd2"]
+[ext_resource type="PackedScene" uid="uid://dpuxy1inq4u77" path="res://Assets/GrappleHook.tscn" id="2_4ia3o"]
+[ext_resource type="Script" uid="uid://dfu7p2e3tfbti" path="res://Scripts/Entities/Player/PlayerHUD.cs" id="2_ly1c7"]
 [ext_resource type="Texture2D" uid="uid://c47ikq7xvlx14" path="res://Sprites/crosshair.png" id="3_gqhvq"]
+[ext_resource type="Texture2D" uid="uid://c5au3c7qxlp1j" path="res://Sprites/Jump UI.png" id="3_xbmyk"]
 [ext_resource type="Script" uid="uid://qnlmb3pmrthp" path="res://Scripts/Handlers/DebugMenu.gd" id="5_jiiwr"]
 [ext_resource type="Material" uid="uid://76hqot3in3tq" path="res://Materials/new_standard_material_3d.tres" id="6_iwsel"]
 [ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/Entities/Player/inventory.gd" id="6_lgrlh"]
 [ext_resource type="PackedScene" uid="uid://bghnugice8y2l" path="res://Assets/right_arm.tscn" id="8_lgo0g"]
 [ext_resource type="PackedScene" uid="uid://crptx6d6mtcux" path="res://Assets/left_arm.tscn" id="8_xbmyk"]
+
+[sub_resource type="Animation" id="Animation_h2xnx"]
+length = 0.001
+
+[sub_resource type="Animation" id="Animation_4ia3o"]
+resource_name = "JumpUI"
+length = 0.1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:scale:x")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 1.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:scale:y")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 1.0]
+}
+
+[sub_resource type="Animation" id="Animation_0qfhu"]
+resource_name = "JumpUIFalse"
+length = 0.1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:scale:x")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [1.0, 0.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:scale:y")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.1),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [1.0, 0.0]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_0qfhu"]
+_data = {
+&"JumpUIFalse": SubResource("Animation_0qfhu"),
+&"JumpUITrue": SubResource("Animation_4ia3o"),
+&"RESET": SubResource("Animation_h2xnx")
+}
+
+[sub_resource type="Animation" id="Animation_gbs0t"]
+resource_name = "EnemyUISpin"
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:rotation")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.5, 1),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 3.141592653589793, 6.283185307179586]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.23333333, 0.5, 0.74756694, 1),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(1.5, 1.5), Vector2(1.7, 1.7), Vector2(1.5, 1.5), Vector2(1.7, 1.7), Vector2(1.5, 1.5)]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Double Jump Indicator2:modulate")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(0.16470589, 1, 0.29803923, 1)]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Double Jump Indicator:modulate")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(0.16470589, 1, 0.29803923, 1)]
+}
+
+[sub_resource type="Animation" id="Animation_3ex6i"]
+length = 0.001
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:rotation")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:scale")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Vector2(1.5, 1.5)]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Double Jump Indicator2:modulate")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(0.16470589, 1, 0.29803923, 1)]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Double Jump Indicator:modulate")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(0.16470589, 1, 0.29803923, 1)]
+}
+
+[sub_resource type="Animation" id="Animation_dcsg3"]
+resource_name = "EnemyUIGrappling"
+length = 0.8
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:scale")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 0.2, 0.4, 0.6, 0.8),
+"transitions": PackedFloat32Array(1, 1, 1, 1, 1),
+"update": 0,
+"values": [Vector2(1.5, 1.5), Vector2(1.7, 1.7), Vector2(1.5, 1.5), Vector2(1.7, 1.7), Vector2(1.5, 1.5)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:rotation")
+tracks/1/interp = 1
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0, 0.4, 0.8),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [0.0, 3.141592653589793, 6.283185307179586]
+}
+tracks/2/type = "value"
+tracks/2/imported = false
+tracks/2/enabled = true
+tracks/2/path = NodePath("Double Jump Indicator2:modulate")
+tracks/2/interp = 1
+tracks/2/loop_wrap = true
+tracks/2/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(1, 0, 0, 1)]
+}
+tracks/3/type = "value"
+tracks/3/imported = false
+tracks/3/enabled = true
+tracks/3/path = NodePath("Double Jump Indicator:modulate")
+tracks/3/interp = 1
+tracks/3/loop_wrap = true
+tracks/3/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [Color(1, 0, 0, 1)]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_dcsg3"]
+_data = {
+&"EnemyUIGrappling": SubResource("Animation_dcsg3"),
+&"EnemyUISpin": SubResource("Animation_gbs0t"),
+&"RESET": SubResource("Animation_3ex6i")
+}
 
 [sub_resource type="CapsuleMesh" id="CapsuleMesh_8ahl0"]
 
@@ -17,18 +248,18 @@ size = Vector3(0.75, 1.9, 0.75)
 
 [sub_resource type="BoxMesh" id="BoxMesh_x5jwr"]
 
-[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "GrappleArmTip", "RightArmMesh", "LeftArmMesh")]
-collision_mask = 0
+[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "GrappleArmTip", "LaserTip", "RightArmMesh", "LeftArmMesh")]
 script = ExtResource("1_x5jwr")
 Camera = NodePath("Camera3D")
 CollisionShape = NodePath("CollisionShape3D")
-Speed = 4.0
+Speed = 6.0
 SprintMult = 4.0
-Accel = 50.0
+Accel = 120.0
 JumpStrength = 20.0
 Gravity = 35.0
-GrappleHookScene = ExtResource("2_affd2")
+GrappleHookScene = ExtResource("2_4ia3o")
 GrappleArmTip = NodePath("SubViewportContainer/SubViewport/left_arm/grapple tip")
+LaserTip = NodePath("SubViewportContainer/SubViewport/right_arm/laser tip")
 RightArmMesh = NodePath("SubViewportContainer/SubViewport/right_arm/Jackhammer")
 LeftArmMesh = NodePath("SubViewportContainer/SubViewport/left_arm/Tentacle")
 offset = Vector2(0, -0.1)
@@ -37,7 +268,7 @@ width = 0.9
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 follow_viewport_enabled = true
 
-[node name="Control Center" type="Control" parent="CanvasLayer"]
+[node name="Control Center" type="Control" parent="CanvasLayer" node_paths=PackedStringArray("JumpAnimPlayer", "EnemyIndicator", "Crosshair")]
 layout_mode = 3
 anchors_preset = 8
 anchor_left = 0.5
@@ -51,6 +282,10 @@ offset_bottom = 20.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+script = ExtResource("2_ly1c7")
+JumpAnimPlayer = NodePath("Panel/Jump/AnimationPlayer")
+EnemyIndicator = NodePath("Panel/Enemy")
+Crosshair = NodePath("Panel/Crosshair")
 metadata/_edit_use_anchors_ = true
 
 [node name="Panel" type="Panel" parent="CanvasLayer/Control Center"]
@@ -67,11 +302,52 @@ offset_bottom = -20.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Sprite2D" type="Sprite2D" parent="CanvasLayer/Control Center/Panel"]
+[node name="Jump" type="Node2D" parent="CanvasLayer/Control Center/Panel"]
+position = Vector2(20, 20)
+
+[node name="Double Jump Indicator" type="Sprite2D" parent="CanvasLayer/Control Center/Panel/Jump"]
+modulate = Color(1, 1, 1, 0.49803922)
+position = Vector2(-10, 0)
+rotation = 2.3561945
+texture = ExtResource("3_xbmyk")
+
+[node name="Double Jump Indicator2" type="Sprite2D" parent="CanvasLayer/Control Center/Panel/Jump"]
+modulate = Color(1, 1, 1, 0.49803922)
+position = Vector2(10, 0)
+rotation = -0.7853982
+texture = ExtResource("3_xbmyk")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="CanvasLayer/Control Center/Panel/Jump"]
+libraries = {
+&"": SubResource("AnimationLibrary_0qfhu")
+}
+
+[node name="Crosshair" type="Sprite2D" parent="CanvasLayer/Control Center/Panel"]
 modulate = Color(1, 1, 1, 0.498039)
 self_modulate = Color(1, 1, 1, 0.486275)
 position = Vector2(20, 20)
 texture = ExtResource("3_gqhvq")
+
+[node name="Enemy" type="Node2D" parent="CanvasLayer/Control Center/Panel"]
+position = Vector2(20, 20)
+scale = Vector2(1.5, 1.5)
+
+[node name="Double Jump Indicator2" type="Sprite2D" parent="CanvasLayer/Control Center/Panel/Enemy"]
+modulate = Color(0.16470589, 1, 0.29803923, 1)
+self_modulate = Color(1, 1, 1, 0.49803922)
+rotation = 3.1415927
+scale = Vector2(0.99999994, 0.99999994)
+texture = ExtResource("3_xbmyk")
+
+[node name="Double Jump Indicator" type="Sprite2D" parent="CanvasLayer/Control Center/Panel/Enemy"]
+modulate = Color(0.16470589, 1, 0.29803923, 1)
+self_modulate = Color(1, 1, 1, 0.49803922)
+texture = ExtResource("3_xbmyk")
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="CanvasLayer/Control Center/Panel/Enemy"]
+libraries = {
+&"": SubResource("AnimationLibrary_dcsg3")
+}
 
 [node name="Control Debug" type="Control" parent="CanvasLayer"]
 layout_mode = 3
@@ -146,6 +422,9 @@ transform = Transform3D(-4.371139e-08, 0.99999994, 0, -1.0000001, -4.371139e-08,
 
 [node name="right_arm" parent="SubViewportContainer/SubViewport" instance=ExtResource("8_lgo0g")]
 transform = Transform3D(0.09839411, -0.01784931, -2.1514013e-11, -7.5904033e-10, -4.3047312e-09, 0.10000002, -0.01784931, -0.09839411, -4.3710857e-09, 0.5, 0.2, -0.6429552)
+
+[node name="laser tip" type="Node3D" parent="SubViewportContainer/SubViewport/right_arm"]
+transform = Transform3D(-4.371139e-08, 0.99999994, 0, -1.0000001, -4.371139e-08, 0, 0, 0, 1, 1.3113416e-07, 3.0000005, -0.6)
 
 [node name="SpotLight3D" type="SpotLight3D" parent="SubViewportContainer/SubViewport"]
 transform = Transform3D(1, 5.587935e-09, 0, -5.587935e-09, 1, -1.4901159e-08, 0, 1.4901159e-08, 1, 0, 0.6, 0)

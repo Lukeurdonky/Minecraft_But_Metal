@@ -6,14 +6,16 @@
 
 - [x] Create `Assets/GrappleHook.tscn` and assign to Player node's `GrappleHookScene` export
 - [x] Grapple rope — cylinder mesh in SubViewport using tentacle material
-- [ ] Verify Creature collision layer is on Layer 2 so GrappleHook's Area3D can detect them
-- [ ] Entity grapple feel — tune `LightEntityYBoost` (8f) and `LightEntityReelSpeed` (20f)
+- [x] Entity grapple feel — tuned reelspeed, lunge, cooldown, jump escape, LOS filter
+- [x] Verify Creature collision layer is on Layer 2 so GrappleHook's Area3D can detect them
 
 ---
 
 ## Player Abilities — Polish
 
-- [ ] Laser VFX — visible beam while `LaserActive` is true (use `LaserTimer` / `LaserCooldown`)
+- [x] Jackhammer cone hit detection — generous ~41° cone replaces crosshair raycast
+- [x] Jackhammer air swing — no knockback if no block in cone
+- [x] Laser VFX — orange emissive beam, block tunneling via explode(), player knockback opposite fire direction
 - [ ] Jackhammer charge feedback — visual or audio cue as `JackhammerCharge` builds
 - [ ] Dash trail / directional feedback
 - [ ] Ability cooldown HUD (laser recharge bar, dash cooldown indicator)
@@ -35,12 +37,16 @@
 
 ## Enemies
 
+- [x] Entity → Enemy → Creature class hierarchy
+- [x] Enemy base class — `AttackDamage`, `DetectionRange`, world-space health bar (green→red, faces camera)
+- [x] Damage/health single source of truth — all damage through `Entity.TakeDamage()`, health bar refreshes on hit
+- [ ] Enemy health bar visual polish — billboard shader, damage flash, hide at full health
 - [ ] At least 3 distinct enemy types (swarm, heavy, ranged)
-- [ ] Improve Creature.cs AI — attack behavior, not just chase
+- [ ] Improve Creature.cs AI — attack behavior (deal `AttackDamage` on contact), not just chase
 - [ ] Mark some creatures as `heavy = true` (pulled toward instead of reeled in when grappled)
 - [ ] Enemy spawning system (tied to terrain + difficulty)
 - [ ] Enemy drops (upgrade currency)
-- [ ] Boss enemy with health bar
+- [ ] Boss enemy with large health bar UI
 
 ---
 
@@ -95,6 +101,7 @@
 
 ## Tech Debt / Cleanup
 
+- [x] Block damage overlay FIFO eviction — oldest tracked block evicted (health + visual) when cap (1500) is hit; `LinkedList` + node pointer for O(1) removal
 - [ ] Delete or archive `Washed Code/` once nothing left to salvage
 - [ ] Remove `dummy.gd`, `portal.gd` from root (unused)
 - [ ] `Mob_Registry.cs` — repurpose for enemy definitions or remove

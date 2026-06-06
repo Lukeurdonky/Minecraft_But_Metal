@@ -3,10 +3,11 @@ using System;
 
 public partial class GrappleHook : Node3D
 {
-    public Vector3 FireDirection { get; set; }
-    public Node3D  PlayerRef    { get; set; }
-    public float   Speed        { get; set; } = 50f;
-    public float   MaxDistance  { get; set; } = 120f;
+    public Vector3 FireDirection  { get; set; }
+    public Node3D  PlayerRef     { get; set; }
+    public float   Speed         { get; set; } = 50f;
+    public float   RetractSpeed  { get; set; } = 600f;
+    public float   MaxDistance   { get; set; } = 120f;
 
     public Action<Vector3> OnAttach;       // block attach — world-space position
     public Action<Entity>  OnAttachEntity; // entity attach — the entity ref
@@ -83,7 +84,7 @@ public partial class GrappleHook : Node3D
     {
         if (PlayerRef == null) { Finish(); return; }
 
-        GlobalPosition = GlobalPosition.MoveToward(PlayerRef.GlobalPosition, Speed * dt);
+        GlobalPosition = GlobalPosition.MoveToward(PlayerRef.GlobalPosition, RetractSpeed * dt);
 
         if (GlobalPosition.DistanceTo(PlayerRef.GlobalPosition) < 0.5f)
         {

@@ -80,20 +80,22 @@ public partial class Chunk_Manager : Node
 
 	// Block damage system
 	private Dictionary<Vector3I, BlockHealth> damagedBlocks = new();
-	private Queue<Vector3I> damageQueue = new();
-	private Dictionary<Vector3I, bool> damageQueueLookup = new();
 	private Dictionary<int, MultiMeshInstance3D> damageOverlaysByBlock = new();
 	private Dictionary<int, MultiMesh> damageMultiMeshByBlock = new();
 	private Dictionary<int, List<Vector3I>> damagePositionsByBlock = new();
+	private HashSet<int> _dirtyDamageTypes = new();
+	private LinkedList<Vector3I> _damageInsertionOrder = new LinkedList<Vector3I>();
 
 	private const int MAX_DAMAGED_BLOCKS = 1500;
+	// Blocks hit below this threshold don't get a damage overlay — cuts peripheral explosion entries.
+	private const float MinDamageForOverlay = 0.15f;
 	private Material damageOverlayMaterial;
 
 	private class BlockHealth
 	{
 		public float health = 1.0f;
-		public int multiMeshIndex = -1;
 		public int blockType = 0;
+		public LinkedListNode<Vector3I> insertionNode;
 	}
 
 	private Thread generationThread;
@@ -194,6 +196,8 @@ public partial class Chunk_Manager : Node
 			handle_chunks_art();
 			handle_dirties();
 		}
+
+		FlushDirtyDamageOverlays();
 	}
 
 	public void handle_chunks_art()
@@ -832,11 +836,7 @@ public partial class Chunk_Manager : Node
 
 					if (worldY <= height && abyssStrength < 0.5f)
 					{
-						// Use chunk RNG with a lightweight additional scramble based on voxel coords
-						int localSeed = seed + x * 7385609 + y * 1934969 + z * 834927;
-						rng = new Random(localSeed);
-						byte blockType = (byte)rng.Next(1, 4);
-						data[index] = blockType;
+						data[index] = 1; // stone
 					}
 					else
 					{
@@ -1163,50 +1163,35 @@ public partial class Chunk_Manager : Node
 		int blockType = get_block(position);
 		if (blockType == 0) return;
 
-		var overlayInstance = GetOrCreateDamageOverlay(blockType);
-		if (overlayInstance == null) return;
-
-		var multiMesh = overlayInstance.Multimesh;
-		List<Vector3I> posList;
 		lock (damageLock)
 		{
-			if (!damagePositionsByBlock.TryGetValue(blockType, out posList))
-			{
-				posList = new List<Vector3I>();
-				damagePositionsByBlock[blockType] = posList;
-			}
-
 			if (!damagedBlocks.ContainsKey(position))
 			{
-				BlockHealth newBlock = new BlockHealth
+				// At cap: evict the oldest tracked block to make room
+				if (damagedBlocks.Count >= MAX_DAMAGED_BLOCKS && _damageInsertionOrder.Count > 0)
 				{
-					health = 1.0f - damage,
-					blockType = blockType
-				};
-
-				int newIndex = posList.Count;
-				if (newIndex >= multiMesh.InstanceCount)
-				{
-					return;
+					Vector3I oldest = _damageInsertionOrder.First.Value;
+					RemoveBlockDamage(oldest);
 				}
 
-				newBlock.multiMeshIndex = newIndex;
+				var node = _damageInsertionOrder.AddLast(position);
+				damagedBlocks[position] = new BlockHealth { health = 1.0f - damage, blockType = blockType, insertionNode = node };
 
-				damagedBlocks.Add(position, newBlock);
-				damageQueue.Enqueue(position);
-				damageQueueLookup[position] = true;
-				posList.Add(position);
-
-				Transform3D transform = new Transform3D(Basis.Identity, position + new Vector3(0.5f, 0.5f, 0.5f));
-				multiMesh.SetInstanceTransform(newIndex, transform);
-				multiMesh.SetInstanceCustomData(newIndex, new Color(1.0f - newBlock.health, 0, 0, 1));
-
-				multiMesh.VisibleInstanceCount = posList.Count;
+				if (damage >= MinDamageForOverlay)
+				{
+					GetOrCreateDamageOverlay(blockType);
+					if (!damagePositionsByBlock.TryGetValue(blockType, out var posList))
+					{
+						posList = new List<Vector3I>();
+						damagePositionsByBlock[blockType] = posList;
+					}
+					posList.Add(position);
+					_dirtyDamageTypes.Add(blockType);
+				}
 			}
 			else
 			{
-				BlockHealth block = damagedBlocks[position];
-
+				var block = damagedBlocks[position];
 				if (block.blockType != blockType)
 				{
 					RemoveBlockDamage(position);
@@ -1215,7 +1200,6 @@ public partial class Chunk_Manager : Node
 				}
 
 				block.health -= damage;
-
 				if (block.health <= 0)
 				{
 					RemoveBlockDamage(position);
@@ -1223,18 +1207,8 @@ public partial class Chunk_Manager : Node
 					return;
 				}
 
-				multiMesh.SetInstanceCustomData(block.multiMeshIndex, new Color(1.0f - block.health, 0, 0, 1));
-				multiMesh.VisibleInstanceCount = posList.Count;
+				_dirtyDamageTypes.Add(blockType);
 			}
-		}
-
-		while (damagedBlocks.Count > MAX_DAMAGED_BLOCKS)
-		{
-			Vector3I oldest = damageQueue.Dequeue();
-			if (!damageQueueLookup.ContainsKey(oldest)) continue;
-
-			damageQueueLookup.Remove(oldest);
-			RemoveBlockDamage(oldest);
 		}
 	}
 
@@ -1269,87 +1243,53 @@ public partial class Chunk_Manager : Node
 	{
 		lock (damageLock)
 		{
-			if (!damagedBlocks.ContainsKey(position)) return;
+			if (!damagedBlocks.TryGetValue(position, out var block)) return;
 
-			BlockHealth block = damagedBlocks[position];
-			if (!damageMultiMeshByBlock.TryGetValue(block.blockType, out var multiMesh))
-			{
-				damagedBlocks.Remove(position);
-				return;
-			}
-
-			if (!damagePositionsByBlock.TryGetValue(block.blockType, out var posList))
-			{
-				damagedBlocks.Remove(position);
-				damageQueueLookup.Remove(position);
-				return;
-			}
-
-			int indexToRemove = block.multiMeshIndex;
-			if (indexToRemove < 0 || indexToRemove >= posList.Count)
-			{
-				damagedBlocks.Remove(position);
-				damageQueueLookup.Remove(position);
-				return;
-			}
-
-			int lastIndex = posList.Count - 1;
-
-			if (indexToRemove != lastIndex)
-			{
-				Vector3I swapPos = posList[lastIndex];
-				if (damagedBlocks.TryGetValue(swapPos, out var swapBlock) && swapBlock.blockType == block.blockType)
-				{
-					Transform3D lastT = multiMesh.GetInstanceTransform(lastIndex);
-					Color lastC = multiMesh.GetInstanceCustomData(lastIndex);
-
-					multiMesh.SetInstanceTransform(indexToRemove, lastT);
-					multiMesh.SetInstanceCustomData(indexToRemove, lastC);
-
-					posList[indexToRemove] = swapPos;
-					swapBlock.multiMeshIndex = indexToRemove;
-				}
-			}
-
-			posList.RemoveAt(lastIndex);
-			multiMesh.VisibleInstanceCount = posList.Count;
-
+			int bt = block.blockType;
 			damagedBlocks.Remove(position);
-			damageQueueLookup.Remove(position);
+
+			if (block.insertionNode != null)
+				_damageInsertionOrder.Remove(block.insertionNode);
+
+			if (damagePositionsByBlock.TryGetValue(bt, out var posList))
+				posList.Remove(position);
+
+			_dirtyDamageTypes.Add(bt);
+		}
+	}
+
+	private void FlushDirtyDamageOverlays()
+	{
+		if (_dirtyDamageTypes.Count == 0) return;
+
+		lock (damageLock)
+		{
+			foreach (int bt in _dirtyDamageTypes)
+			{
+				if (!damageMultiMeshByBlock.TryGetValue(bt, out var mm)) continue;
+				if (!damagePositionsByBlock.TryGetValue(bt, out var posList)) continue;
+
+				for (int i = 0; i < posList.Count; i++)
+				{
+					if (!damagedBlocks.TryGetValue(posList[i], out var bh)) continue;
+					mm.SetInstanceTransform(i, new Transform3D(Basis.Identity, posList[i] + new Vector3(0.5f, 0.5f, 0.5f)));
+					mm.SetInstanceCustomData(i, new Color(1f - bh.health, 0f, 0f, 1f));
+				}
+				mm.VisibleInstanceCount = posList.Count;
+			}
+			_dirtyDamageTypes.Clear();
 		}
 	}
 
 	private void ClearDamageInChunk(Vector3I chunkPos)
 	{
-		List<Vector3I> toRemove = new List<Vector3I>();
 		lock (damageLock)
 		{
 			foreach (var blockPos in damagedBlocks.Keys.ToList())
 			{
 				if (world_to_chunk(blockPos) == chunkPos)
-					toRemove.Add(blockPos);
+					RemoveBlockDamage(blockPos);
 			}
-
-			if (toRemove.Count == 0) return;
-
-			// Remove all damages and mark for queue rebuild
-			var removedSet = new HashSet<Vector3I>(toRemove);
-			foreach (var blockPos in toRemove)
-			{
-				RemoveBlockDamage(blockPos);
-			}
-
-			// Rebuild damageQueue excluding removed positions
-			var tempQueue = new Queue<Vector3I>();
-			while (damageQueue.Count > 0)
-			{
-				var pos = damageQueue.Dequeue();
-				if (!removedSet.Contains(pos))
-					tempQueue.Enqueue(pos);
-			}
-			damageQueue = tempQueue;
-			foreach (var pos in removedSet)
-				damageQueueLookup.Remove(pos);
 		}
 	}
 

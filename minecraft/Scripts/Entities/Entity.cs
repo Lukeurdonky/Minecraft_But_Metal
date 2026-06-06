@@ -21,7 +21,9 @@ public partial class Entity : CharacterBody3D
 	public float timeSinceLeftGround = 0f;
 	[Export]
 	public float onGroundDetectionLength = 0.2f;
-	public bool heavy = false; 
+	[Export]
+	public bool heavy   = true;
+	public bool Grappled = false;
 	public int CurrentHealth { get; set; }
 	public Global Global;
 
@@ -55,8 +57,8 @@ public partial class Entity : CharacterBody3D
 		// }
 		// _lastDelta = delta;
 		
-		// Entity logic here
-		ApplyMovementFromInput(delta);
+		if (!Grappled)
+			ApplyMovementFromInput(delta);
 		
 		HandleWorldCollisions(Velocity * (float)delta);
 		MoveAndSlide();
@@ -99,7 +101,6 @@ public partial class Entity : CharacterBody3D
 
 	public virtual void ApplyMovementFromInput(double delta)
 	{
-		// Placeholder for movement logic
 		Velocity = new Vector3(Velocity.X, Mathf.Clamp(Velocity.Y, -MaxFallSpeed, Mathf.Inf), Velocity.Z);
 	}
 

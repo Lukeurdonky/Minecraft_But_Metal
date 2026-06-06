@@ -59,6 +59,13 @@ public partial class Player : Entity
 	private int  _airJumps       = 0;
 	private bool _wasPhysOnFloor = true;
 
+	public int    AirJumpsAvailable => _airJumps;
+	public Entity SelectedEnemy     { get; private set; }
+	public bool   HasGrappleTarget  { get; private set; }
+
+	private SphereShape3D _enemySelectShape;
+	private const float EnemySelectCone = 0.96f; // ~20° half-angle
+
 	// ── Step-up traversal state ──────────────────────────────────────────────
 	// When the player steps onto a block we record how much vertical distance
 	// remains and smoothly close the gap every _PhysicsProcess tick.
@@ -81,10 +88,80 @@ public partial class Player : Entity
 	public override void _Process(double delta)
 	{
 		RotateCamera();
+		UpdateEnemySelection();
+		UpdateGrappleTargetCheck();
 		UpdateGrappleRope();
 		UpdateArmBlendShapes((float)delta);
 		UpdateLeftArmTracking((float)delta);
 		// ApplyStepTraversal((float)delta);
+	}
+
+	private void UpdateGrappleTargetCheck()
+	{
+		if (SelectedEnemy != null) { HasGrappleTarget = true; return; }
+		if (Camera == null || Global?.CubeManager == null) { HasGrappleTarget = false; return; }
+
+		var origin  = Camera.GlobalPosition;
+		var lookDir = -Camera.GlobalTransform.Basis.Z.Normalized();
+
+		const float step = 1.0f;
+		for (float t = step; t <= GrappleRange; t += step)
+		{
+			var p  = origin + lookDir * t;
+			var bp = new Vector3I(Mathf.FloorToInt(p.X), Mathf.FloorToInt(p.Y), Mathf.FloorToInt(p.Z));
+			if (Global.CubeManager.get_block(bp) != 0) { HasGrappleTarget = true; return; }
+		}
+
+		HasGrappleTarget = false;
+	}
+
+	private void UpdateEnemySelection()
+	{
+		if (Camera == null) { SelectedEnemy = null; return; }
+
+		var lookDir = -Camera.GlobalTransform.Basis.Z.Normalized();
+
+		_enemySelectShape ??= new SphereShape3D { Radius = GrappleRange };
+
+		var query = new PhysicsShapeQueryParameters3D
+		{
+			Shape         = _enemySelectShape,
+			Transform     = new Transform3D(Basis.Identity, GlobalPosition),
+			CollisionMask = 2
+		};
+
+		var results = GetWorld3D().DirectSpaceState.IntersectShape(query);
+
+		Entity best    = null;
+		float  bestDot = EnemySelectCone;
+
+		foreach (var result in results)
+		{
+			if (result["collider"].AsGodotObject() is not Entity entity) continue;
+			float dot = lookDir.Dot((entity.GetCenter() - Camera.GlobalPosition).Normalized());
+			if (dot <= bestDot) continue;
+			if (!HasBlockLOS(Camera.GlobalPosition, entity.GetCenter())) continue;
+			bestDot = dot;
+			best    = entity;
+		}
+
+		SelectedEnemy = best;
+	}
+
+	private bool HasBlockLOS(Vector3 from, Vector3 to)
+	{
+		var   toTarget = to - from;
+		float dist     = toTarget.Length();
+		if (dist < 0.01f) return true;
+		var         dir  = toTarget / dist;
+		const float step = 0.5f;
+		for (float t = step; t < dist - 0.5f; t += step)
+		{
+			var p  = from + dir * t;
+			var bp = new Vector3I(Mathf.FloorToInt(p.X), Mathf.FloorToInt(p.Y), Mathf.FloorToInt(p.Z));
+			if (Global.CubeManager.get_block(bp) != 0) return false;
+		}
+		return true;
 	}
 
 	// ── Smooth step traversal ────────────────────────────────────────────────

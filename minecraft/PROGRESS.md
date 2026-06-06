@@ -84,9 +84,13 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
 ### Player Abilities
 - **Jackhammer** (`attack1` hold/release) — charges over 0.5s, bounces player opposite camera look. Explosion at targeted block scaled by charge (`damage_block` + `explode`). Damage >= 0.2 charge required to trigger. Writes XZ to `Velocity`, Y to `Velocity.Y`.
 - **Laser** (`attack2`) — 1s persistent beam, 10s cooldown. Raycast on entity layer.
-- **Grapple** (`grapple_send`) — hook at 250 u/s, max 180 units. Attaches to blocks OR entities.
-  - *Block/heavy entity*: player accelerates toward anchor (Quake-style, 40 u/s cap). Release = lunge at 60 u/s.
-  - *Light entity*: player gets Y boost; entity velocity set toward player at 20 u/s each tick. Release = entity thrown at reel velocity.
+- **Grapple** (`grapple_send`) — hook at 300 u/s, max 220 units. Attaches to blocks OR entities. 0.1s cooldown between fires.
+  - *Block*: Quake-style pull (72 u/s accel, 50 u/s cap). Release = lunge at 50 u/s (Quake-capped, won't slow you if already faster).
+  - *Heavy entity*: toggle-latch — stays attached until re-press or block crosses the line. Player pulled at 35 u/s. Arrival boosts player up. Line-of-sight blocked = auto-cancel.
+  - *Light entity*: player gets Y boost on attach; entity reeled toward player at 35 u/s. Release = thrown at reel velocity + upward boost.
+  - Jump while attached to entity = breaks grapple and uses air jump to launch away.
+  - Jackhammer hit on the grappled entity = ungrapple (knockback not overridden).
+  - Enemy soft-aim: cone dot > 0.96, LOS ray march, blocks selection through walls.
   - Rope: cylinder mesh in SubViewport using tentacle material + layer 32768.
   - Arm tracks grapple target in 3D (LookAt in SubViewport space).
 - **Dash** (`dash`) — horizontal burst in held-key direction, fallback to camera forward. 1s cooldown.
@@ -103,9 +107,10 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 - Reset to 0 on landing
 
 ### Blocks & Entities
-- 3 block types: Grass, Dirt, Stone
-- Entity base with health, AABB physics, `heavy` bool
-- Creature.cs — placeholder chase AI, can be grappled (light = reeled in, heavy = player pulled)
+- Stone-only generation (temp — full palette wired once World_Generator pipeline is built)
+- `Entity.cs` base: health, AABB physics, `heavy` bool, `Grappled` bool (suppresses movement during reel)
+- `Enemy.cs` (extends Entity): `AttackDamage`, `DetectionRange`, `Flying`, procedural world-space health bar (green→red, camera-facing billboard)
+- `Creature.cs` (extends Enemy): 3D flying chase AI, accelerates toward player up to `ChaseSpeed`, respects `MaxFallSpeed` when not flying
 - Explosion system wired to E key in interactions.gd
 
 ### Archived (do not restore)
@@ -118,8 +123,8 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 | System | Notes |
 |---|---|
 | World generation | `World_Generator.cs` 5-stage pipeline is empty. Chunk_Manager uses raw FastNoise2D directly. |
-| Enemy AI | `Creature.cs` only chases. No attack, no spawning system, no variety. |
-| Combat | No damage between player and enemies. No knockback from player. No player health UI. |
+| Enemy AI | `Creature.cs` chases + can be grappled/killed. No attack on contact, no spawning system, no variety. |
+| Combat | Enemies take damage and die. Player deals damage via jackhammer/laser/grapple. No player health UI yet. |
 | Run structure | No planet select, no upgrade screen, no boss trigger. |
 | Accessories | All 10 defined in NEW_VISION.md. None implemented. |
 | VFX | No laser beam, no dash trail, no block break particles. Grapple rope ✅ done. |
@@ -143,4 +148,6 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 | Explosion | `Chunk_Manager.cs` → `explode()` |
 | Global constants + friction values | `Scripts/Handlers/Global.cs` |
 | Entity base physics | `Scripts/Entities/Entity.cs` |
+| Enemy base class (health bar, stats) | `Scripts/Entities/Enemy.cs` |
 | Creature AI + `heavy` flag | `Scripts/Entities/Creature.cs` |
+| Enemy soft-aim + LOS check | `Player.cs` → `UpdateEnemySelection`, `HasBlockLOS` |
