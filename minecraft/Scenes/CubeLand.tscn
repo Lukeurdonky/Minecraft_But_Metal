@@ -31,8 +31,20 @@ environment = SubResource("Environment_akwl5")
 
 [node name="Players" type="Node" parent="Game"]
 
+[node name="Creature3" parent="Game" instance=ExtResource("5_n2v53")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 45, 0)
+Flying = true
+
+[node name="Creature2" parent="Game" instance=ExtResource("5_n2v53")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 30, 0)
+WalkSpeed = 5.0
+ChaseSpeed = 15.0
+ChaseAccel = 35.0
+Flying = true
+
 [node name="Creature" parent="Game" instance=ExtResource("5_n2v53")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 15, 0)
+Flying = true
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://du771gwxm45or")

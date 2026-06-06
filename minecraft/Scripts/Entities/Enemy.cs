@@ -27,9 +27,10 @@ public partial class Enemy : Entity
         if (_healthBarRoot == null) return;
         var cam = Global.Instance?.Player?.Camera;
         if (cam == null) return;
+        // Look away from camera so the root's +Z (QuadMesh face direction) points at the camera
         var toCamera = cam.GlobalPosition - _healthBarRoot.GlobalPosition;
         if (toCamera.LengthSquared() > 0.001f)
-            _healthBarRoot.LookAt(cam.GlobalPosition, Vector3.Up);
+            _healthBarRoot.LookAt(_healthBarRoot.GlobalPosition - toCamera, Vector3.Up);
     }
 
     private void BuildHealthBar()
@@ -49,8 +50,9 @@ public partial class Enemy : Entity
         var fgMesh = new QuadMesh { Size = new Vector2(BarWidth, BarHeight * 0.7f) };
         _healthBarFgMat = new StandardMaterial3D
         {
-            AlbedoColor = new Color(0.2f, 0.9f, 0.2f),
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            AlbedoColor    = new Color(0.2f, 0.9f, 0.2f),
+            ShadingMode    = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            RenderPriority = 1,
         };
         fgMesh.SurfaceSetMaterial(0, _healthBarFgMat);
         _healthBarFg = new MeshInstance3D { Mesh = fgMesh };
