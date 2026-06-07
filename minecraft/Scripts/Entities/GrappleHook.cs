@@ -29,12 +29,7 @@ public partial class GrappleHook : Node3D
         var mesh = GetNodeOrNull<MeshInstance3D>("MeshInstance3D");
         if (mesh != null)
         {
-            var mat = new StandardMaterial3D();
-            mat.ShadingMode              = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            mat.AlbedoColor              = new Color(0f, 0.4f, 0.1f);
-            mat.EmissionEnabled          = true;
-            mat.Emission                 = new Color(0f, 0.3f, 0.05f);
-            mat.EmissionEnergyMultiplier = 1.5f;
+            var mat = GD.Load<StandardMaterial3D>("res://Materials/GrappleMaterial.tres");
             mesh.SetSurfaceOverrideMaterial(0, mat);
         }
     }

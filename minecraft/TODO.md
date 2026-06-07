@@ -24,7 +24,7 @@
 - [x] LaserOutline arm animation — state machine: Extended (slow idle spin, poles=0.65, triangle=0) → Spinning (fast spin, both=0) → FoldPoles → FoldTriangle → Retracted → UnfoldPoles → UnfoldTriangle → Extended
 - [x] Laser beam color — red emissive unshaded material
 - [x] Grapple rope + hook color — dark green emissive unshaded material
-- [ ] Speed threshold VFX — particles or screen shake when bulldozing terrain at high speed
+- [x] Speed threshold VFX — camera shake when bulldozing terrain at high speed
 
 ---
 
@@ -47,12 +47,18 @@
 - [x] Enemy base class — `AttackDamage`, `DetectionRange`, world-space health bar (green→red, faces camera)
 - [x] Damage/health single source of truth — all damage through `Entity.TakeDamage()`, health bar refreshes on hit
 - [x] Enemy health bar visual polish — billboard shader (fixed via BillboardMode material)
-- [ ] Enemy health bar polish — damage flash, hide at full health
+- [x] Enemy health bar polish — damage flash, hide at full health
 - [ ] At least 3 distinct enemy types (swarm, heavy, ranged)
+  - [x] SwarmEnemy.cs — fast, small, flying, light, group attacker (needs model + scene)
+  - [x] HeavyEnemy.cs — slow, tanky, ground, heavy=true, charge attack (needs model + scene)
+  - [x] RangedEnemy.cs — medium, ground, maintains distance, fires EnemyBolt (needs model + scene)
+  - [ ] Assign scenes to EnemySpawner once models are built
+- [x] Wall navigation — ground enemies auto-jump over 1-block walls when chasing
 - [x] Improve Creature.cs AI — attack behavior (deal `AttackDamage` on contact), not just chase
-- [ ] Mark some creatures as `heavy = true` (pulled toward instead of reeled in when grappled)
-- [ ] Enemy spawning system (tied to terrain + difficulty)
+- [x] Mark some creatures as `heavy = true` (pulled toward instead of reeled in when grappled)
+- [x] Enemy spawning system (tied to terrain + difficulty)
 - [ ] Enemy drops (upgrade currency)
+- [ ] A* block pathfinding — for enemies that get stuck behind complex geometry (low priority while terrain is open)
 - [ ] Boss enemy with large health bar UI
 
 ---

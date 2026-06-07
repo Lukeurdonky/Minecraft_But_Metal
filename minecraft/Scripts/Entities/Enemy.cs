@@ -12,6 +12,8 @@ public partial class Enemy : Entity
     private Node3D             _healthBarRoot;
     private MeshInstance3D     _healthBarFg;
     private StandardMaterial3D _healthBarFgMat;
+    private float              _flashTimer = 0f;
+    private const float        FlashDuration = 0.12f;
 
     private const float BarWidth  = 1.2f;
     private const float BarHeight = 0.1f;
@@ -20,6 +22,13 @@ public partial class Enemy : Entity
     {
         base.ImHere();
         BuildHealthBar();
+        if (Global.Instance != null) Global.Instance.EnemyCount++;
+    }
+
+    public override void Die()
+    {
+        if (Global.Instance != null) Global.Instance.EnemyCount--;
+        base.Die();
     }
 
     public override void _Process(double delta)
@@ -27,10 +36,18 @@ public partial class Enemy : Entity
         if (_healthBarRoot == null) return;
         var cam = Global.Instance?.Player?.Camera;
         if (cam == null) return;
-        // Look away from camera so the root's +Z (QuadMesh face direction) points at the camera
         var toCamera = cam.GlobalPosition - _healthBarRoot.GlobalPosition;
         if (toCamera.LengthSquared() > 0.001f)
             _healthBarRoot.LookAt(_healthBarRoot.GlobalPosition - toCamera, Vector3.Up);
+
+        if (_flashTimer > 0f)
+        {
+            _flashTimer -= (float)delta;
+            float t = Mathf.Clamp(_flashTimer / FlashDuration, 0f, 1f);
+            float ratio = MaxHealth > 0 ? Mathf.Clamp((float)CurrentHealth / MaxHealth, 0f, 1f) : 0f;
+            var baseColor = new Color(1f - ratio, 0.8f * ratio, 0.1f);
+            _healthBarFgMat.AlbedoColor = baseColor.Lerp(Colors.White, t);
+        }
     }
 
     private void BuildHealthBar()
@@ -58,7 +75,7 @@ public partial class Enemy : Entity
         _healthBarFg = new MeshInstance3D { Mesh = fgMesh };
         _healthBarRoot.AddChild(_healthBarFg);
 
-        RefreshHealthBar();
+        _healthBarRoot.Visible = false;
     }
 
     private void RefreshHealthBar()
@@ -66,10 +83,9 @@ public partial class Enemy : Entity
         if (_healthBarFg == null) return;
         float ratio = MaxHealth > 0 ? Mathf.Clamp((float)CurrentHealth / MaxHealth, 0f, 1f) : 0f;
 
+        _healthBarRoot.Visible = ratio < 1f;
         ((QuadMesh)_healthBarFg.Mesh).Size = new Vector2(BarWidth * ratio, BarHeight * 0.7f);
-        // Shift left so the bar shrinks from the right
         _healthBarFg.Position = new Vector3((ratio - 1f) * BarWidth * 0.5f, 0f, 0.001f);
-        // Green → red as health drops
         _healthBarFgMat.AlbedoColor = new Color(1f - ratio, 0.8f * ratio, 0.1f);
     }
 
@@ -77,11 +93,13 @@ public partial class Enemy : Entity
     {
         base.TakeDamage(amount);
         RefreshHealthBar();
+        _flashTimer = FlashDuration;
     }
 
     public override void TakeDamage(int amount, Vector3 knockback)
     {
         base.TakeDamage(amount, knockback);
         RefreshHealthBar();
+        _flashTimer = FlashDuration;
     }
 }

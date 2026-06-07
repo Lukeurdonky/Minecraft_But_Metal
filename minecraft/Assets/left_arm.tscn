@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://crptx6d6mtcux"]
+[gd_scene load_steps=3 format=3 uid="uid://crptx6d6mtcux"]
 
 [ext_resource type="PackedScene" uid="uid://ba148ni1q4bno" path="res://Assets/TentacleArm1.glb" id="1_masoh"]
+[ext_resource type="Material" path="res://Materials/GrappleMaterial.tres" id="2_2j5ru"]
 
 [node name="left_arm" instance=ExtResource("1_masoh")]
 
@@ -8,3 +9,4 @@
 transform = Transform3D(0.113, 0, 0, 0, -4.9393867e-09, 0.113, 0, -0.113, -4.9393867e-09, 0, 0, 0)
 layers = 32768
 "blend_shapes/Key 1" = 1.0
+surface_material_override/0 = ExtResource("2_2j5ru")

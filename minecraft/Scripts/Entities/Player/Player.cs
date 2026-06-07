@@ -76,6 +76,8 @@ public partial class Player : Entity
 	private const float STEP_HEIGHT    = 1.0f;
 	private const float STEP_THRESHOLD = 0.001f;
 
+	private bool _wasInHitstop = false;
+
 	public override void ImHere()
 	{
 		base.ImHere();
@@ -96,6 +98,32 @@ public partial class Player : Entity
 				GetTree().ReloadCurrentScene();
 			return;
 		}
+		bool hitstopNow = Global?.HitstopActive == true;
+		if (hitstopNow)
+		{
+			foreach (var action in _bufferableActions)
+				if (Input.IsActionJustPressed(action))
+					_inputBuffer.Add(action);
+		}
+		if (_wasInHitstop && !hitstopNow)
+		{
+			if (_pendingJackhammerImpulse > 0f)
+			{
+				Velocity = Camera.GlobalTransform.Basis.Z.Normalized() * _pendingJackhammerImpulse;
+				_pendingJackhammerImpulse = 0f;
+			}
+			if (Input.IsActionPressed("attack1"))
+				_jackhammerHoldQueued = true;
+			if (Input.IsActionPressed("jump"))
+				_inputBuffer.Add("jump");
+			if (Input.IsActionPressed("grapple_send"))
+			{
+				_inputBuffer.Add("grapple_send");
+				_grappleCooldown = 0f;
+			}
+		}
+		_wasInHitstop = hitstopNow;
+
 		RotateCamera();
 		UpdateEnemySelection();
 		UpdateGrappleTargetCheck();
@@ -372,9 +400,9 @@ public partial class Player : Entity
 
 		if ((isOnFloor || SpectatorMode) && Input.IsActionPressed("jump") && vel.Y <= 0.25f)
 			vel.Y = JumpStrength;
-		else if (!isOnFloor && !SpectatorMode && Input.IsActionJustPressed("jump")
+		else if (!isOnFloor && !SpectatorMode
 			&& CurrentGrappleState == GrappleState.Attached && _grappledEntity != null
-			&& _grappleJumpCooldown <= 0f)
+			&& _grappleJumpCooldown <= 0f && IsJustPressedOrBuffered("jump"))
 		{
 			vel.Y                = JumpStrength;
 			_grappleJumpCooldown = 0.1f;
@@ -390,7 +418,7 @@ public partial class Player : Entity
 				vel.Z    = lungeDir.Z * DashStrength;
 			}
 		}
-		else if (!isOnFloor && !SpectatorMode && Input.IsActionJustPressed("jump") && _airJumps > 0)
+		else if (!isOnFloor && !SpectatorMode && _airJumps > 0 && IsJustPressedOrBuffered("jump"))
 		{
 			_airJumps--;
 			vel.Y = JumpStrength;

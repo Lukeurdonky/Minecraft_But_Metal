@@ -6,7 +6,8 @@ public partial class Global : Node
 {
 	public static Global Instance { get; private set; }
 	
-	public Player Player { get; set; }
+	public Player Player      { get; set; }
+	public int    EnemyCount  { get; set; } = 0;
 	
 	[Export]
 	public float SensitivityX { get; set; } = 0.3f;
@@ -42,6 +43,16 @@ public partial class Global : Node
 	private Vector3 _prevPos = Vector3.Zero;
 	public Node3D[] Portals;
 
+	// ── Hitstop ──────────────────────────────────────────────────────────────
+	private float _hitstopTimer = 0f;
+
+	public bool HitstopActive => _hitstopTimer > 0f;
+
+	public void TriggerHitstop(float duration)
+	{
+		_hitstopTimer = Mathf.Max(_hitstopTimer, duration);
+	}
+
 	// ── Camera shake ─────────────────────────────────────────────────────────
 	private float _shakePeak     = 0f;
 	private float _shakeDuration = 0f;
@@ -66,6 +77,8 @@ public partial class Global : Node
 
 	public override void _Process(double delta)
 	{
+		if (_hitstopTimer > 0f)
+			_hitstopTimer = Mathf.Max(_hitstopTimer - (float)delta, 0f);
 		if (_shakeTimer > 0f)
 			_shakeTimer = Mathf.Max(_shakeTimer - (float)delta, 0f);
 	}

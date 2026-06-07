@@ -121,8 +121,12 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 ### Blocks & Entities
 - Stone-only generation (temp — full palette wired once World_Generator pipeline is built)
 - `Entity.cs` base: health, AABB physics, `heavy` bool, `Grappled` bool (suppresses movement during reel)
-- `Enemy.cs` (extends Entity): `AttackDamage`, `DetectionRange`, `Flying`, procedural world-space health bar (green→red, camera-facing billboard)
-- `Creature.cs` (extends Enemy): 3D flying chase AI, accelerates toward player up to `ChaseSpeed`, respects `MaxFallSpeed` when not flying. Deals `AttackDamage` on AABB contact (1s cooldown) with directional knockback toward player × 8 u/s.
+- `Enemy.cs` (extends Entity): `AttackDamage`, `DetectionRange`, `Flying`, procedural world-space health bar (green→red, camera-facing billboard, damage flash, hidden at full health). Tracks `EnemyCount` in Global on spawn/death.
+- `Creature.cs` (extends Enemy): 3D flying chase AI, accelerates toward player up to `ChaseSpeed`, respects `MaxFallSpeed` when not flying. Deals `AttackDamage` on AABB contact (1s cooldown) with directional knockback.
+- `SwarmEnemy.cs` (extends Enemy): fast (12 u/s), small (0.6×0.7), flying, `heavy=false`. Random jitter each 0.4s prevents all swarm members taking identical paths. Short attack cooldown (0.6s). Needs model + scene.
+- `HeavyEnemy.cs` (extends Enemy): slow (3.5 u/s), large (1.4×2.2), ground, `heavy=true`. Charge attack (18 u/s burst, 0.4s, 4s cooldown) at range > 12. Auto-jumps 1-block walls via `OnBlockCollision`. Needs model + scene.
+- `RangedEnemy.cs` (extends Enemy): medium (4.5 u/s), ground, `heavy=false`. Maintains 20-unit ideal range, strafes perpendicular to player. Fires `EnemyBolt` every 2.5s when in LOS. LOS via block ray march. Auto-jumps walls. Needs model + scene.
+- `EnemyBolt.cs` (extends Projectile): orange emissive box, slight arc (gravity 4), 4s lifetime. Damages player on contact with directional knockback.
 - Explosion system wired to E key in interactions.gd
 - `PlayerHUD.cs`: jump indicator, enemy soft-aim indicator, crosshair color, player health bar (red, bottom-left), laser charge bar (blue when ready/firing, gray while recharging), speed tier indicator (3 segments, temp), red full-screen flash on player hit (fades over 0.4s)
 
@@ -136,7 +140,7 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 | System | Notes |
 |---|---|
 | World generation | `World_Generator.cs` 5-stage pipeline is empty. Chunk_Manager uses raw FastNoise2D directly. |
-| Enemy AI | `Creature.cs` chases, attacks on contact, can be grappled/killed. No spawning system, no variety. |
+| Enemy AI | 3 enemy type skeletons (Swarm/Heavy/Ranged) coded, waiting on models. EnemySpawner active. A* pathfinding not yet implemented — ground enemies auto-jump 1-block walls for now. |
 | Combat | Enemies take damage and die. Player deals damage via jackhammer/laser/grapple. No player health UI yet. |
 | Run structure | No planet select, no upgrade screen, no boss trigger. |
 | Accessories | All 10 defined in NEW_VISION.md. None implemented. |

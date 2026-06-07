@@ -257,7 +257,6 @@ SprintMult = 4.0
 Accel = 120.0
 JumpStrength = 20.0
 Gravity = 35.0
-DeathScreen = NodePath("CanvasLayer/DeathScreen")
 GrappleHookScene = ExtResource("2_4ia3o")
 GrappleArmTip = NodePath("SubViewportContainer/SubViewport/left_arm/grapple tip")
 LaserTip = NodePath("SubViewportContainer/SubViewport/right_arm/laser tip")
@@ -450,7 +449,7 @@ offset_top = -755.0
 offset_right = 1364.0
 offset_bottom = -747.0
 grow_vertical = 0
-color = Color(1.0, 0.85, 0.0, 1)
+color = Color(1, 0.85, 0, 1)
 
 [node name="SpeedSection3" type="ColorRect" parent="CanvasLayer/BarContainer"]
 layout_mode = 1
@@ -462,10 +461,10 @@ offset_top = -755.0
 offset_right = 1425.0
 offset_bottom = -747.0
 grow_vertical = 0
-color = Color(1.0, 0.2, 0.2, 1)
+color = Color(1, 0.2, 0.2, 1)
 
 [node name="HitFlash" type="ColorRect" parent="CanvasLayer"]
-layout_mode = 3
+modulate = Color(1, 1, 1, 0)
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -473,7 +472,6 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 color = Color(1, 0, 0, 1)
-modulate = Color(1, 1, 1, 0)
 
 [node name="DeathScreen" type="Control" parent="CanvasLayer"]
 visible = false
@@ -566,10 +564,10 @@ transform = Transform3D(0.94664925, -0.055960838, -0.31736973, 0, 0.98480755, -0
 transform = Transform3D(-4.371139e-08, 0.99999994, 0, -1.0000001, -4.371139e-08, 0, 0, 0, 1, 0, 0, -0.6)
 
 [node name="right_arm" parent="SubViewportContainer/SubViewport" instance=ExtResource("8_lgo0g")]
-transform = Transform3D(0.09839411, -0.01784931, -2.1514013e-11, -7.5904033e-10, -4.3047312e-09, 0.10000002, -0.01784931, -0.09839411, -4.3710857e-09, 0.5, 0.2, -0.6429552)
+transform = Transform3D(0.10000001, 0, 0, 0, -4.371139e-09, 0.100000024, 0, -0.1, -4.37114e-09, 0.3173796, 0.25930002, -0.7726291)
 
 [node name="laser tip" type="Node3D" parent="SubViewportContainer/SubViewport/right_arm"]
-transform = Transform3D(-4.371139e-08, 0.99999994, 0, -1.0000001, -4.371139e-08, 0, 0, 0, 1, 1.3113416e-07, 3.0000005, -0.6)
+transform = Transform3D(-4.371139e-08, 0.99999994, 0, -1.0000001, -4.371139e-08, 0, 0, 0, 1, 0, 3, 0)
 
 [node name="SpotLight3D" type="SpotLight3D" parent="SubViewportContainer/SubViewport"]
 transform = Transform3D(1, 5.587935e-09, 0, -5.587935e-09, 1, -1.4901159e-08, 0, 1.4901159e-08, 1, 0, 0.6, 0)

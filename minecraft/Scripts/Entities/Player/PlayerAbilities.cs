@@ -14,9 +14,20 @@ public partial class Player : Entity
     public float JackhammerRadius   { get; private set; } = 3f;
 
     private const float JackhammerMaxCharge  = .5f;
-    private const float JackhammerImpulse    = 35f;
+    private const float JackhammerImpulseWeak = 35f;
+    private const float JackhammerImpulseMed  = 50f;
+    private const float JackhammerImpulseHard = 70f;
     private const float JackhammerConeRange  = 6f;
     private const float JackhammerConeAngle  = 0.65f; // ~41° half-angle
+
+    private float _pendingJackhammerImpulse = 0f;
+
+    // Actions whose IsActionJustPressed are buffered during hitstop and consumed on the next frame.
+    private readonly HashSet<string> _inputBuffer = new();
+    private static readonly string[] _bufferableActions = { "attack2", "grapple_send", "dash", "jump" };
+
+    private bool IsJustPressedOrBuffered(string action)
+        => Input.IsActionJustPressed(action) || _inputBuffer.Remove(action);
 
     // Speed-based damage tiers (player speed sampled at fire time)
     private const float JackhammerMedThreshold  = 15f;
@@ -134,7 +145,10 @@ public partial class Player : Entity
         }
 
         if (brokeBlock)
+        {
             Velocity *= Mathf.Pow(SpeedPenaltyDecay, delta * 60f);
+            Global.Instance.ShakeCamera(Mathf.Clamp(excessRatio * 0.45f, 0.1f, 0.5f), 0.08f);
+        }
     }
 
     // ── Dash ─────────────────────────────────────────────────────────────────
@@ -199,12 +213,17 @@ public partial class Player : Entity
 
     // ── Jackhammer ───────────────────────────────────────────────────────────
 
+    private bool _jackhammerHoldQueued = false;
+
     private void ProcessJackhammer(float delta)
     {
         if (!JackhammerCharging)
         {
-            if (Input.IsActionJustPressed("attack1"))
-                JackhammerCharging = true;
+            if (Input.IsActionJustPressed("attack1") || _jackhammerHoldQueued)
+            {
+                JackhammerCharging    = true;
+                _jackhammerHoldQueued = false;
+            }
             return;
         }
 
@@ -228,6 +247,25 @@ public partial class Player : Entity
         List<Entity> targets  = FindJackhammerEntities();
         if (!hitBlock && targets.Count == 0) return;
 
+        float scaledImpulse = targets.Count > 0
+            ? EffectiveSpeedTier switch { 2 => JackhammerImpulseHard, 1 => JackhammerImpulseMed, _ => JackhammerImpulseWeak }
+            : JackhammerImpulseWeak;
+
+        float hitstop = targets.Count > 0
+            ? EffectiveSpeedTier switch { 2 => 1.0f, 1 => 0.5f, _ => 0f }
+            : 0f;
+        if (hitstop > 0f)
+        {
+            Global.Instance.TriggerHitstop(hitstop);
+            _pendingJackhammerImpulse = scaledImpulse;
+            Velocity = Vector3.Zero; // freeze; impulse fires opposite look dir when hitstop ends
+        }
+        else
+        {
+            Velocity = Camera.GlobalTransform.Basis.Z.Normalized() * scaledImpulse;
+        }
+        _airJumps = 1;
+
         // Use coyote-aware effective tier — ProcessSpeedTier already ran this frame.
         int damage = EffectiveSpeedTier switch
         {
@@ -237,13 +275,11 @@ public partial class Player : Entity
         };
 
         var lookDir = -Camera.GlobalTransform.Basis.Z.Normalized();
-        Velocity    = -lookDir * JackhammerImpulse;
-        _airJumps   = 1;
 
         if (hitBlock)
             Global.CubeManager.explode(blockPos, JackhammerRadius, 1f);
 
-        var knockback = -lookDir * JackhammerImpulse * 0.5f;
+        var knockback = -lookDir * scaledImpulse * 0.5f;
         foreach (var entity in targets)
             entity.TakeDamage(damage, knockback);
 
@@ -323,7 +359,7 @@ public partial class Player : Entity
                 if (_laserBeam != null) _laserBeam.Visible = false;
             }
         }
-        else if (Input.IsActionJustPressed("attack2") && LaserCooldown <= 0f)
+        else if (IsJustPressedOrBuffered("attack2") && LaserCooldown <= 0f)
         {
             LaserActive = true;
             LaserTimer  = LaserDuration;
@@ -397,13 +433,7 @@ public partial class Player : Entity
             cyl.BottomRadius = LaserBeamRadius;
             cyl.Height       = 1f;
 
-            var mat = new StandardMaterial3D();
-            mat.ShadingMode          = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            mat.AlbedoColor          = new Color(1f, 0.05f, 0.05f);
-            mat.EmissionEnabled      = true;
-            mat.Emission             = new Color(1f, 0f, 0f);
-            mat.EmissionEnergyMultiplier = 3f;
-            cyl.SurfaceSetMaterial(0, mat);
+            cyl.SurfaceSetMaterial(0, GD.Load<StandardMaterial3D>("res://Materials/LaserMaterial.tres"));
 
             _laserBeam            = new MeshInstance3D { Mesh = cyl };
             _laserBeam.Layers     = 32768;
@@ -528,12 +558,12 @@ public partial class Player : Entity
         switch (CurrentGrappleState)
         {
             case GrappleState.Idle:
-                if (Input.IsActionJustPressed("grapple_send") && _grappleCooldown <= 0f)
+                if (_grappleCooldown <= 0f && IsJustPressedOrBuffered("grapple_send"))
                     FireGrapple();
                 break;
 
             case GrappleState.Sent:
-                if (Input.IsActionJustPressed("grapple_send"))
+                if (IsJustPressedOrBuffered("grapple_send"))
                 {
                     CancelGrapple();
                     FireGrapple();
@@ -556,7 +586,7 @@ public partial class Player : Entity
                 if (_grappledEntity != null)
                     GrappleAnchor = _grappledEntity.GetCenter();
 
-                if (Input.IsActionJustPressed("grapple_send"))
+                if (IsJustPressedOrBuffered("grapple_send"))
                 {
                     CancelGrapple();
                 }
@@ -607,7 +637,7 @@ public partial class Player : Entity
                 {
                     // Jump escape — directional lunge if movement keys held, straight up if not.
                     // ApplyMovement already applied the Y jump this frame, so we only override XZ.
-                    if (Input.IsActionJustPressed("jump") && _grappledEntity == null)
+                    if (_grappledEntity == null && IsJustPressedOrBuffered("jump"))
                     {
                         CancelGrapple();
                         var lungeDir = Vector3.Zero;
@@ -828,13 +858,7 @@ public partial class Player : Entity
             cylinder.BottomRadius = 0.025f;
             cylinder.Height       = 1f;
 
-            var ropeMat = new StandardMaterial3D();
-            ropeMat.ShadingMode          = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            ropeMat.AlbedoColor          = new Color(0f, 0.4f, 0.1f);
-            ropeMat.EmissionEnabled      = true;
-            ropeMat.Emission             = new Color(0f, 0.3f, 0.05f);
-            ropeMat.EmissionEnergyMultiplier = 1.5f;
-            cylinder.SurfaceSetMaterial(0, ropeMat);
+            cylinder.SurfaceSetMaterial(0, GD.Load<StandardMaterial3D>("res://Materials/GrappleMaterial.tres"));
 
             _ropeNode            = new MeshInstance3D { Mesh = cylinder };
             _ropeNode.Layers     = 32768;
@@ -882,11 +906,24 @@ public partial class Player : Entity
 
     // ── Arm blend shapes ─────────────────────────────────────────────────────
 
+    private MeshInstance3D _jackhammerHardMesh;
+    private float          _jackhammerHardBlend = 1f;
+
     public void UpdateArmBlendShapes(float delta)
     {
         // Right arm: jackhammer charge mapped directly to blend shape (0 = idle, 1 = full charge)
         if (RightArmMesh != null)
             RightArmMesh.SetBlendShapeValue(0, JackhammerCharge / JackhammerMaxCharge);
+
+        // JackhammerHard sibling: blend shape 0 = visible (hard tier), 1 = hidden
+        if (_jackhammerHardMesh == null && RightArmMesh != null)
+            _jackhammerHardMesh = RightArmMesh.GetParent()?.GetNodeOrNull<MeshInstance3D>("JackhammerHard");
+        if (_jackhammerHardMesh != null)
+        {
+            float target = EffectiveSpeedTier == 2 ? 0f : 1f;
+            _jackhammerHardBlend = Mathf.MoveToward(_jackhammerHardBlend, target, 6f * delta);
+            _jackhammerHardMesh.SetBlendShapeValue(0, _jackhammerHardBlend);
+        }
 
         // Left arm: 1 = ready, 0 = thrown. Fast retract on throw, slower return when grapple lands back.
         if (LeftArmMesh != null)
@@ -939,7 +976,7 @@ public partial class Player : Entity
     private void ProcessDash(float delta)
     {
         DashCooldown = Mathf.Max(DashCooldown - delta, 0f);
-        if (!Input.IsActionJustPressed("dash") || DashCooldown > 0f) return;
+        if (!IsJustPressedOrBuffered("dash") || DashCooldown > 0f) return;
 
         // Direction built only from keys held at the moment of the dash press
         var dashDir = Vector3.Zero;
