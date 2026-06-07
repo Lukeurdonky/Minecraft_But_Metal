@@ -248,7 +248,7 @@ size = Vector3(0.75, 1.9, 0.75)
 
 [sub_resource type="BoxMesh" id="BoxMesh_x5jwr"]
 
-[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "GrappleArmTip", "LaserTip", "RightArmMesh", "LeftArmMesh")]
+[node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "GrappleArmTip", "LaserTip", "RightArmMesh", "LeftArmMesh", "LaserOutlineMesh")]
 script = ExtResource("1_x5jwr")
 Camera = NodePath("Camera3D")
 CollisionShape = NodePath("CollisionShape3D")
@@ -263,6 +263,7 @@ GrappleArmTip = NodePath("SubViewportContainer/SubViewport/left_arm/grapple tip"
 LaserTip = NodePath("SubViewportContainer/SubViewport/right_arm/laser tip")
 RightArmMesh = NodePath("SubViewportContainer/SubViewport/right_arm/Jackhammer")
 LeftArmMesh = NodePath("SubViewportContainer/SubViewport/left_arm/Tentacle")
+LaserOutlineMesh = NodePath("SubViewportContainer/SubViewport/right_arm/LaserOutline")
 offset = Vector2(0, -0.1)
 width = 0.9
 

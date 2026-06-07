@@ -21,6 +21,9 @@
 - [ ] ~~Dash trail / directional feedback~~ — dash deprioritized, grapple covers mobility
 - [x] Ability cooldown HUD — laser bar: blue when ready/firing, gray + fills while recharging
 - [x] Speed tier HUD (temp) — 3 colored segments, active tier bright, coyote tier flashes
+- [x] LaserOutline arm animation — state machine: Extended (slow idle spin, poles=0.65, triangle=0) → Spinning (fast spin, both=0) → FoldPoles → FoldTriangle → Retracted → UnfoldPoles → UnfoldTriangle → Extended
+- [x] Laser beam color — red emissive unshaded material
+- [x] Grapple rope + hook color — dark green emissive unshaded material
 - [ ] Speed threshold VFX — particles or screen shake when bulldozing terrain at high speed
 
 ---

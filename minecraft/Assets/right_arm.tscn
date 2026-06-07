@@ -1,8 +1,20 @@
-[gd_scene load_steps=2 format=3 uid="uid://bghnugice8y2l"]
+[gd_scene load_steps=3 format=3 uid="uid://bghnugice8y2l"]
 
 [ext_resource type="PackedScene" uid="uid://cnybxggnu48cq" path="res://Assets/JackhammerArm1.glb" id="1_5w4po"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_5w4po"]
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(1, 0, 0, 1)
 
 [node name="right_arm" instance=ExtResource("1_5w4po")]
 
 [node name="Jackhammer" parent="." index="0"]
 layers = 32768
+
+[node name="LaserOutline" parent="." index="1"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.0008802414, -4.4267826, -0.00050103664)
+layers = 32768
+lod_bias = 0.001
+blend_shapes/PolesExtrude = 0.65
+surface_material_override/0 = SubResource("StandardMaterial3D_5w4po")

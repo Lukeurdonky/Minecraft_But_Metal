@@ -83,7 +83,7 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
 
 ### Player Abilities
 - **Jackhammer** (`attack1` press-to-commit) — press once to commit a 0.5s charge; charge runs automatically to full. Holding the button at full charge holds the pose; release fires. Explosion at targeted block (full radius). Damage determined by speed at fire time — 3 tiers: weak (<15 u/s, 20 dmg), medium (15–30 u/s, 50 dmg), hard (>30 u/s, 100 dmg). Player bounced opposite camera look at full impulse. A 0.5s coyote window keeps the effective tier active after speed drops, so grapple/laser momentum can be cashed in even as you decelerate.
-- **Laser** (`attack2`) — 1.5s persistent beam of mass destruction, 7s cooldown. Obliterates terrain via rate-limited `explode()` calls, shreds entities with high DPS, and blasts the player backward with continuous knockback — designed to be a chaotic momentum tool as much as a weapon. Beam VFX in SubViewport space using right arm material.
+- **Laser** (`attack2`) — 1.5s persistent beam of mass destruction, 7s cooldown. Obliterates terrain via rate-limited `explode()` calls, shreds entities with high DPS, and blasts the player backward with continuous knockback — designed to be a chaotic momentum tool as much as a weapon. Red emissive beam VFX in SubViewport space. LaserOutline arm animation: state machine with Extended (poles at 0.65, triangle at 0, slow idle spin) → Spinning (both fully extruded, fast spin) → FoldPoles → FoldTriangle → Retracted → UnfoldPoles → UnfoldTriangle → back to Extended.
 - **Grapple** (`grapple_send`) — hook at 300 u/s, max 220 units. Attaches to blocks OR entities. 0.1s cooldown between fires.
   - *Block*: Quake-style pull (72 u/s accel, 50 u/s cap). Release = lunge at 50 u/s (Quake-capped, won't slow you if already faster).
   - *Heavy entity*: toggle-latch — stays attached until re-press or block crosses the line. Player pulled at 35 u/s. Arrival boosts player up. Line-of-sight blocked = auto-cancel.
@@ -91,7 +91,8 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
   - Jump while attached to entity = breaks grapple and uses air jump to launch away.
   - Jackhammer hit on the grappled entity = ungrapple (knockback not overridden).
   - Enemy soft-aim: cone dot > 0.96, LOS ray march, blocks selection through walls.
-  - Rope: cylinder mesh in SubViewport using tentacle material + layer 32768.
+  - Rope: dark green emissive cylinder in SubViewport, layer 32768.
+  - Hook projectile: dark green emissive box mesh (material set at runtime in GrappleHook._Ready()).
   - Arm tracks grapple target in 3D (LookAt in SubViewport space).
 - **Dash** (`dash`) — horizontal burst in held-key direction, fallback to camera forward. 1s cooldown.
 

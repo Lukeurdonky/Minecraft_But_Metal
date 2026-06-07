@@ -16,7 +16,7 @@ public partial class Player : Entity
     private const float JackhammerMaxCharge  = .5f;
     private const float JackhammerImpulse    = 35f;
     private const float JackhammerConeRange  = 6f;
-    private const float JackhammerConeAngle  = 0.75f; // ~41° half-angle
+    private const float JackhammerConeAngle  = 0.65f; // ~41° half-angle
 
     // Speed-based damage tiers (player speed sampled at fire time)
     private const float JackhammerMedThreshold  = 15f;
@@ -44,6 +44,19 @@ public partial class Player : Entity
     private CapsuleShape3D _laserShape;
     private float          _laserExplodeCooldown = 0f;
 
+    // LaserOutline animation state machine — driven by LaserOutlineMesh export
+    // Extended = ready or firing (shapes out). Spinning = firing + rotating.
+    // Retraction only happens during cooldown; extends back when full again.
+    private enum LaserOutlineState { Extended, Spinning, FoldTriangle, FoldPoles, Retracted, UnfoldPoles, UnfoldTriangle }
+    private LaserOutlineState _laserOutlineState = LaserOutlineState.Extended;
+    private float _outlineTriangle        = 0f;    // blend shape index 0 — 0=extruded, 1=hidden
+    private float _outlinePoles           = 0.65f; // blend shape index 1 — 0=fully extruded, 0.75=ready, 1=hidden
+    private bool  _laserOutlineInitialized = false;
+    private float _outlineYaw      = 0f; // accumulated Y degrees while spinning
+    private const float OutlineFoldSpeed = 3.5f; // blend units per second
+    private const float OutlineSpinSpeed     = 360f; // degrees per second while firing
+    private const float OutlineIdleSpinSpeed =  25f; // degrees per second while charged/ready
+
     // ── Grapple ──────────────────────────────────────────────────────────────
     // Press grapple_send: instant raycast attach if something is in range.
     // Miss (nothing in range): physical hook fires out, snaps back on release.
@@ -58,10 +71,11 @@ public partial class Player : Entity
     [Export] public bool           CanGrappleLunge  { get; set; } = false;
     // Optional: assign a Node3D child of the Camera in character.tscn for exact arm-tip origin.
     // If left unassigned, the rope starts from a computed left-side camera offset.
-    [Export] public Node3D         GrappleArmTip { get; set; }
-    [Export] public Node3D         LaserTip      { get; set; }
-    [Export] public MeshInstance3D RightArmMesh  { get; set; }
-    [Export] public MeshInstance3D LeftArmMesh   { get; set; }
+    [Export] public Node3D         GrappleArmTip  { get; set; }
+    [Export] public Node3D         LaserTip       { get; set; }
+    [Export] public MeshInstance3D RightArmMesh   { get; set; }
+    [Export] public MeshInstance3D LeftArmMesh    { get; set; }
+    [Export] public MeshInstance3D LaserOutlineMesh { get; set; }
 
     private GrappleHook _activeHook;
     private Entity      _grappledEntity = null;
@@ -314,6 +328,8 @@ public partial class Player : Entity
             LaserActive = true;
             LaserTimer  = LaserDuration;
         }
+
+        UpdateLaserOutline(delta);
     }
 
     private void TickLaser(float delta)
@@ -381,9 +397,13 @@ public partial class Player : Entity
             cyl.BottomRadius = LaserBeamRadius;
             cyl.Height       = 1f;
 
-            var mat = RightArmMesh?.GetActiveMaterial(0);
-            if (mat != null)
-                cyl.SurfaceSetMaterial(0, mat);
+            var mat = new StandardMaterial3D();
+            mat.ShadingMode          = BaseMaterial3D.ShadingModeEnum.Unshaded;
+            mat.AlbedoColor          = new Color(1f, 0.05f, 0.05f);
+            mat.EmissionEnabled      = true;
+            mat.Emission             = new Color(1f, 0f, 0f);
+            mat.EmissionEnergyMultiplier = 3f;
+            cyl.SurfaceSetMaterial(0, mat);
 
             _laserBeam            = new MeshInstance3D { Mesh = cyl };
             _laserBeam.Layers     = 32768;
@@ -412,6 +432,88 @@ public partial class Player : Entity
         var xAxis = (Mathf.Abs(dir.Dot(Vector3.Up)) < 0.99f ? Vector3.Up : Vector3.Forward).Cross(dir).Normalized();
         var zAxis = xAxis.Cross(dir).Normalized();
         _laserBeam.GlobalTransform = new Transform3D(new Basis(xAxis, dir * length, zAxis), tipPos + diff * 0.5f);
+    }
+
+    private void UpdateLaserOutline(float delta)
+    {
+        var outline = LaserOutlineMesh;
+        if (outline == null) return;
+
+        if (!_laserOutlineInitialized)
+        {
+            outline.SetBlendShapeValue(0, 0f);    // triangle: fully extruded
+            outline.SetBlendShapeValue(1, 0.65f); // poles: ready state
+            _laserOutlineInitialized = true;
+        }
+
+        switch (_laserOutlineState)
+        {
+            case LaserOutlineState.Extended:
+                // Triangle at 0 (fully extruded, index 0), poles at 0.75 (partial, index 1), slow idle spin
+                _outlineTriangle = 0f;
+                _outlinePoles    = 0.65f;
+                outline.SetBlendShapeValue(0, 0f);    // triangle
+                outline.SetBlendShapeValue(1, 0.65f); // poles
+                _outlineYaw = (_outlineYaw + OutlineIdleSpinSpeed * delta) % 360f;
+                outline.Rotation = new Vector3(outline.Rotation.X, Mathf.DegToRad(_outlineYaw), outline.Rotation.Z);
+                if (LaserActive)
+                {
+                    _outlinePoles = 0f;
+                    outline.SetBlendShapeValue(1, 0f); // poles fully extruded while firing
+                    _laserOutlineState = LaserOutlineState.Spinning;
+                }
+                break;
+
+            case LaserOutlineState.Spinning:
+                // Both shapes fully extruded, rotate while laser fires
+                _outlineYaw = (_outlineYaw + OutlineSpinSpeed * delta) % 360f;
+                var spinRot = outline.Rotation;
+                spinRot.Y   = Mathf.DegToRad(_outlineYaw);
+                outline.Rotation = spinRot;
+                if (!LaserActive)
+                {
+                    var r = outline.Rotation;
+                    r.Y              = 0f;
+                    outline.Rotation = r;
+                    _outlineYaw        = 0f;
+                    _laserOutlineState = LaserOutlineState.FoldPoles;
+                }
+                break;
+
+            case LaserOutlineState.FoldPoles:
+                _outlinePoles = Mathf.MoveToward(_outlinePoles, 1f, OutlineFoldSpeed * delta);
+                outline.SetBlendShapeValue(1, _outlinePoles); // index 1 = poles
+                if (_outlinePoles >= 1f)
+                    _laserOutlineState = LaserOutlineState.FoldTriangle;
+                break;
+
+            case LaserOutlineState.FoldTriangle:
+                _outlineTriangle = Mathf.MoveToward(_outlineTriangle, 1f, OutlineFoldSpeed * delta);
+                outline.SetBlendShapeValue(0, _outlineTriangle); // index 0 = triangle
+                if (_outlineTriangle >= 1f)
+                    _laserOutlineState = LaserOutlineState.Retracted;
+                break;
+
+            case LaserOutlineState.Retracted:
+                // Hold hidden for the full cooldown, then extend when ready
+                if (LaserCooldown <= 0f)
+                    _laserOutlineState = LaserOutlineState.UnfoldPoles;
+                break;
+
+            case LaserOutlineState.UnfoldPoles:
+                _outlinePoles = Mathf.MoveToward(_outlinePoles, 0.65f, OutlineFoldSpeed * delta);
+                outline.SetBlendShapeValue(1, _outlinePoles); // index 1 = poles
+                if (_outlinePoles <= 0.65f)
+                    _laserOutlineState = LaserOutlineState.UnfoldTriangle;
+                break;
+
+            case LaserOutlineState.UnfoldTriangle:
+                _outlineTriangle = Mathf.MoveToward(_outlineTriangle, 0f, OutlineFoldSpeed * delta);
+                outline.SetBlendShapeValue(0, _outlineTriangle); // index 0 = triangle
+                if (_outlineTriangle <= 0f)
+                    _laserOutlineState = LaserOutlineState.Extended;
+                break;
+        }
     }
 
     // ── Grapple ──────────────────────────────────────────────────────────────
@@ -726,9 +828,13 @@ public partial class Player : Entity
             cylinder.BottomRadius = 0.025f;
             cylinder.Height       = 1f;
 
-            var mat = LeftArmMesh?.GetActiveMaterial(0);
-            if (mat != null)
-                cylinder.SurfaceSetMaterial(0, mat);
+            var ropeMat = new StandardMaterial3D();
+            ropeMat.ShadingMode          = BaseMaterial3D.ShadingModeEnum.Unshaded;
+            ropeMat.AlbedoColor          = new Color(0f, 0.4f, 0.1f);
+            ropeMat.EmissionEnabled      = true;
+            ropeMat.Emission             = new Color(0f, 0.3f, 0.05f);
+            ropeMat.EmissionEnergyMultiplier = 1.5f;
+            cylinder.SurfaceSetMaterial(0, ropeMat);
 
             _ropeNode            = new MeshInstance3D { Mesh = cylinder };
             _ropeNode.Layers     = 32768;

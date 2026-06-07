@@ -25,6 +25,18 @@ public partial class GrappleHook : Node3D
         var hitArea = GetNodeOrNull<Area3D>("HitArea");
         if (hitArea != null)
             hitArea.BodyEntered += OnBodyEntered;
+
+        var mesh = GetNodeOrNull<MeshInstance3D>("MeshInstance3D");
+        if (mesh != null)
+        {
+            var mat = new StandardMaterial3D();
+            mat.ShadingMode              = BaseMaterial3D.ShadingModeEnum.Unshaded;
+            mat.AlbedoColor              = new Color(0f, 0.4f, 0.1f);
+            mat.EmissionEnabled          = true;
+            mat.Emission                 = new Color(0f, 0.3f, 0.05f);
+            mat.EmissionEnergyMultiplier = 1.5f;
+            mesh.SetSurfaceOverrideMaterial(0, mat);
+        }
     }
 
     private void OnBodyEntered(Node3D body)
