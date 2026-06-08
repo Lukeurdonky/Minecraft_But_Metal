@@ -25,6 +25,13 @@ public partial class GrappleHook : Node3D
         var hitArea = GetNodeOrNull<Area3D>("HitArea");
         if (hitArea != null)
             hitArea.BodyEntered += OnBodyEntered;
+
+        var mesh = GetNodeOrNull<MeshInstance3D>("MeshInstance3D");
+        if (mesh != null)
+        {
+            var mat = GD.Load<StandardMaterial3D>("res://Materials/GrappleMaterial.tres");
+            mesh.SetSurfaceOverrideMaterial(0, mat);
+        }
     }
 
     private void OnBodyEntered(Node3D body)

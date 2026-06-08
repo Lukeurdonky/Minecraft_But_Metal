@@ -102,7 +102,7 @@ Partial class of Player — shares all private fields. All abilities here:
 | Ability | Input action | Key state |
 |---|---|---|
 | Jackhammer | `attack1` hold/release | `JackhammerCharging`, `JackhammerCharge` |
-| Laser | `attack2` press | `LaserActive`, `LaserTimer`, `LaserCooldown` |
+| Laser | `attack2` press — mass destruction beam: obliterates terrain, high entity DPS, blasts player backward for momentum | `LaserActive`, `LaserTimer`, `LaserCooldown` |
 | Grapple | `grapple_send` | `CurrentGrappleState` (Idle/Sent/Attached), `GrappleAnchor` |
 | Dash | `dash` press | `DashCooldown` |
 

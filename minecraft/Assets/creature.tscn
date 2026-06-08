@@ -12,6 +12,7 @@ motion_mode = 1
 script = ExtResource("1_8m8vt")
 WalkSpeed = 1.0
 ChaseSpeed = 3.0
+DetectionRange = 200.0
 offset = Vector2(0, -0.1)
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]

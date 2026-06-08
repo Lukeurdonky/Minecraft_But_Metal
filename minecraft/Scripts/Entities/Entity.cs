@@ -38,17 +38,20 @@ public partial class Entity : CharacterBody3D
 		ImHere();
 	}
 
+	// Override to false on entities that should keep processing inputs during hitstop (i.e. Player).
+	protected virtual bool FreezeDuringHitstop => true;
+
 	public override void _PhysicsProcess(double delta)
 	{
 		// _frameTimer.Restart();
-		
+
 		// // Detect frame time spikes (jitter in delta)
 		// if (_lastDelta > 0)
 		// {
 		// 	double deltaMs = delta * 1000.0;
 		// 	double lastDeltaMs = _lastDelta * 1000.0;
 		// 	double jitter = Math.Abs(deltaMs - lastDeltaMs);
-			
+
 		// 	// Log if frame time varies significantly (>2ms jitter)
 		// 	if (jitter > 2.0)
 		// 	{
@@ -56,10 +59,14 @@ public partial class Entity : CharacterBody3D
 		// 	}
 		// }
 		// _lastDelta = delta;
-		
-		if (!Grappled)
+
+		// Enemies freeze completely. Player still processes inputs (abilities, jump) but
+		// physics simulation (gravity, friction, MoveAndSlide) is skipped — see ApplyMovement.
+		if (!Grappled && (Global?.HitstopActive != true || !FreezeDuringHitstop))
 			ApplyMovementFromInput(delta);
-		
+
+		if (Global?.HitstopActive == true) return;
+
 		HandleWorldCollisions(Velocity * (float)delta);
 		MoveAndSlide();
 		

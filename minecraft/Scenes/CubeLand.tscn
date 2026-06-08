@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=3 uid="uid://dsq2766vhek4b"]
+[gd_scene load_steps=8 format=3 uid="uid://dsq2766vhek4b"]
 
 [ext_resource type="Script" uid="uid://cdiksh4gbjy6j" path="res://Scripts/Handlers/level.gd" id="1_a802x"]
 [ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/The World/Chunk_Manager.cs" id="2_tia5y"]
 [ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/block_texture_atlas.tres" id="3_a802x"]
 [ext_resource type="Texture2D" uid="uid://dwam68po60hgu" path="res://Sprites/block breaking.png" id="4_om2ps"]
 [ext_resource type="PackedScene" uid="uid://ddghs13iu0otv" path="res://Assets/creature.tscn" id="5_n2v53"]
+[ext_resource type="Script" uid="uid://b7w2jsfdn7cvi" path="res://Scripts/Entities/EnemySpawner.cs" id="6_2d6dh"]
 
 [sub_resource type="Environment" id="Environment_akwl5"]
 fog_enabled = true
@@ -31,8 +32,24 @@ environment = SubResource("Environment_akwl5")
 
 [node name="Players" type="Node" parent="Game"]
 
+[node name="Creature3" parent="Game" instance=ExtResource("5_n2v53")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 45, 0)
+Flying = true
+
+[node name="Creature2" parent="Game" instance=ExtResource("5_n2v53")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 30, 0)
+WalkSpeed = 5.0
+ChaseSpeed = 15.0
+ChaseAccel = 35.0
+Flying = true
+
 [node name="Creature" parent="Game" instance=ExtResource("5_n2v53")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 15, 0)
+Flying = true
+
+[node name="EnemySpawner" type="Node" parent="Game"]
+script = ExtResource("6_2d6dh")
+CreatureScene = ExtResource("5_n2v53")
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://du771gwxm45or")

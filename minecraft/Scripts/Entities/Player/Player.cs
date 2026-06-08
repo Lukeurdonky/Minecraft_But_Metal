@@ -44,9 +44,12 @@ public partial class Player : Entity
 
 	public int SelectedCube { get; set; }
 	public Vector3I SelectedCubePosition { get; set; }
-	public bool IsSprinting { get; set; } = false;
-	public bool MouseVisible { get; set; } = false;
+	public bool IsSprinting  { get; set; } = false;
+	public bool MouseVisible  { get; set; } = false;
 	public bool SpectatorMode { get; set; } = false;
+	public bool IsDead        { get; private set; } = false;
+
+	[Export] public Control DeathScreen { get; set; }
 
 	private Vector3 forwardDirection = Vector3.Zero;
 	private Vector3 rightDirection   = Vector3.Zero;
@@ -64,7 +67,7 @@ public partial class Player : Entity
 	public bool   HasGrappleTarget  { get; private set; }
 
 	private SphereShape3D _enemySelectShape;
-	private const float EnemySelectCone = 0.96f; // ~20° half-angle
+	private const float EnemySelectCone = 0.98f;
 
 	// ── Step-up traversal state ──────────────────────────────────────────────
 	// When the player steps onto a block we record how much vertical distance
@@ -72,6 +75,8 @@ public partial class Player : Entity
 	private float stepRemainder = 0f;
 	private const float STEP_HEIGHT    = 1.0f;
 	private const float STEP_THRESHOLD = 0.001f;
+
+	private bool _wasInHitstop = false;
 
 	public override void ImHere()
 	{
@@ -87,6 +92,38 @@ public partial class Player : Entity
 
 	public override void _Process(double delta)
 	{
+		if (IsDead)
+		{
+			if (Input.IsActionJustPressed("jump"))
+				GetTree().ReloadCurrentScene();
+			return;
+		}
+		bool hitstopNow = Global?.HitstopActive == true;
+		if (hitstopNow)
+		{
+			foreach (var action in _bufferableActions)
+				if (Input.IsActionJustPressed(action))
+					_inputBuffer.Add(action);
+		}
+		if (_wasInHitstop && !hitstopNow)
+		{
+			if (_pendingJackhammerImpulse > 0f)
+			{
+				Velocity = Camera.GlobalTransform.Basis.Z.Normalized() * _pendingJackhammerImpulse;
+				_pendingJackhammerImpulse = 0f;
+			}
+			if (Input.IsActionPressed("attack1"))
+				_jackhammerHoldQueued = true;
+			if (Input.IsActionPressed("jump"))
+				_inputBuffer.Add("jump");
+			if (Input.IsActionPressed("grapple_send"))
+			{
+				_inputBuffer.Add("grapple_send");
+				_grappleCooldown = 0f;
+			}
+		}
+		_wasInHitstop = hitstopNow;
+
 		RotateCamera();
 		UpdateEnemySelection();
 		UpdateGrappleTargetCheck();
@@ -290,6 +327,7 @@ public partial class Player : Entity
 
 	public override void ApplyMovementFromInput(double delta)
 	{
+		if (IsDead) return;
 		timeSinceLeftGround += (float)delta;
 		ApplyMovement(delta);
 		ProcessAbilities((float)delta);
@@ -362,7 +400,25 @@ public partial class Player : Entity
 
 		if ((isOnFloor || SpectatorMode) && Input.IsActionPressed("jump") && vel.Y <= 0.25f)
 			vel.Y = JumpStrength;
-		else if (!isOnFloor && !SpectatorMode && Input.IsActionJustPressed("jump") && _airJumps > 0)
+		else if (!isOnFloor && !SpectatorMode
+			&& CurrentGrappleState == GrappleState.Attached && _grappledEntity != null
+			&& _grappleJumpCooldown <= 0f && IsJustPressedOrBuffered("jump"))
+		{
+			vel.Y                = JumpStrength;
+			_grappleJumpCooldown = 0.1f;
+			_airJumps            = 0;
+			var lungeDir = Vector3.Zero;
+			if (Input.IsActionPressed("move_back"))  lungeDir -= forwardDirection;
+			if (Input.IsActionPressed("move_left"))  lungeDir -= rightDirection;
+			if (Input.IsActionPressed("move_right")) lungeDir += rightDirection;
+			if (lungeDir.LengthSquared() > 0.01f)
+			{
+				lungeDir = lungeDir.Normalized();
+				vel.X    = lungeDir.X * DashStrength;
+				vel.Z    = lungeDir.Z * DashStrength;
+			}
+		}
+		else if (!isOnFloor && !SpectatorMode && _airJumps > 0 && IsJustPressedOrBuffered("jump"))
 		{
 			_airJumps--;
 			vel.Y = JumpStrength;
@@ -378,7 +434,10 @@ public partial class Player : Entity
 	public void RotateCamera()
 	{
 		if (Camera == null) return;
-		Camera.RotationDegrees = new Vector3(pitch, yaw, 0);
+		float shake = Global.Instance?.CurrentShake ?? 0f;
+		float sp    = shake > 0f ? (GD.Randf() - 0.5f) * 2f * shake : 0f;
+		float sy    = shake > 0f ? (GD.Randf() - 0.5f) * 2f * shake : 0f;
+		Camera.RotationDegrees = new Vector3(pitch + sp, yaw + sy, 0);
 	}
 
 	private void UpdateFacingDirections()
@@ -417,15 +476,30 @@ public partial class Player : Entity
 
 	public override void TakeDamage(int amount)
 	{
+		if (IsDead) return;
 		CurrentHealth -= amount;
 		if (CurrentHealth <= 0)
 			Die();
+	}
+
+	public override void TakeDamage(int amount, Vector3 knockback)
+	{
+		if (IsDead) return;
+		Velocity += knockback;
+		Global.Instance?.ShakeCamera(0.8f, 0.3f);
+		TakeDamage(amount);
 	}
 
 	// ARCHIVED: OnPickupAreaEntered / OnPickupAreaExited removed — item pickup system archived.
 
 	public override void Die()
 	{
-		QueueFree();
+		IsDead = true;
+		Input.MouseMode = Input.MouseModeEnum.Visible;
+		CancelGrapple();
+		if (DeathScreen != null)
+			DeathScreen.Visible = true;
+		else
+			GetNodeOrNull<Control>("CanvasLayer/DeathScreen")?.Show();
 	}
 }
