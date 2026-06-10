@@ -1,0 +1,63 @@
+[gd_scene load_steps=2 format=3 uid="uid://dy12rewfcjtwl"]
+
+[ext_resource type="PackedScene" uid="uid://be0y84vxrmykb" path="res://Assets/TentacleCreature.glb" id="1_6pjhc"]
+
+[node name="TentacleCreature" instance=ExtResource("1_6pjhc")]
+
+[node name="Cube_001" parent="." index="0"]
+visible = false
+layers = 0
+
+[node name="Cube_002" parent="." index="1"]
+visible = false
+layers = 0
+
+[node name="base" parent="Hubert" index="0"]
+layers = 3
+
+[node name="Icosphere" parent="Hubert" index="2"]
+layers = 3
+
+[node name="Skeleton3D" parent="Hubert/Left Arm" index="0"]
+bones/0/rotation = Quaternion(-0.2933744, 0.27788797, -0.66299224, 0.6301992)
+bones/1/rotation = Quaternion(0.14936079, 5.7191754e-09, -0.15185337, 0.9770527)
+bones/2/rotation = Quaternion(0.20772281, -7.800692e-09, -0.2111894, 0.95511794)
+bones/3/rotation = Quaternion(0.22111166, 3.9255497e-09, -0.22480169, 0.9489857)
+bones/4/rotation = Quaternion(0.19167423, 4.260052e-08, -0.194873, 0.96191764)
+bones/5/rotation = Quaternion(0.1337403, -2.8462126e-09, -0.13597223, 0.9816441)
+bones/6/rotation = Quaternion(0.059779085, 7.01044e-09, -0.060776714, 0.9963597)
+bones/7/position = Vector3(7.714493, -10.53685, 6.93571)
+bones/7/rotation = Quaternion(0, 0, -0.7071068, 0.7071067)
+bones/8/rotation = Quaternion(-0.3019539, 0.30195388, -0.63939345, 0.63939327)
+
+[node name="LeftArmModel" parent="Hubert/Left Arm/Skeleton3D" index="0"]
+layers = 3
+
+[node name="power" parent="Hubert" index="4"]
+layers = 3
+
+[node name="Skeleton3D" parent="Hubert/Right Arm" index="0"]
+bones/0/rotation = Quaternion(-0.3719871, -0.3926845, 0.57728845, 0.61168826)
+bones/1/rotation = Quaternion(0.18121043, -2.0199156e-08, 0.1722219, 0.9682471)
+bones/2/rotation = Quaternion(0.2965062, -3.6742204e-08, 0.28179866, 0.9125095)
+bones/3/rotation = Quaternion(0.3304288, -2.9298251e-08, 0.31403866, 0.8900542)
+bones/4/rotation = Quaternion(0.07528601, 8.895676e-09, 0.071551606, 0.9945916)
+bones/5/rotation = Quaternion(0.051192943, 4.7849764e-09, 0.04865361, 0.997503)
+bones/6/rotation = Quaternion(0.08936032, 1.5015702e-08, 0.084927775, 0.9923719)
+bones/7/position = Vector3(-7.5024166, -9.387314, 6.93571)
+bones/8/rotation = Quaternion(-0.3645478, -0.3645478, 0.6058918, 0.6058918)
+
+[node name="RightArmModel" parent="Hubert/Right Arm/Skeleton3D" index="0"]
+layers = 3
+
+[node name="thrust" parent="Hubert" index="6"]
+layers = 3
+
+[node name="wire" parent="Hubert" index="7"]
+layers = 3
+
+[node name="wire_001" parent="Hubert" index="8"]
+layers = 3
+
+[node name="wire_002" parent="Hubert" index="9"]
+layers = 3

@@ -13,6 +13,9 @@ public partial class Player : Entity
     public float JackhammerCharge   { get; private set; } = 0f;
     public float JackhammerRadius   { get; private set; } = 3f;
 
+    [Export] public float HitstopMed  { get; set; } = 0.25f;
+    [Export] public float HitstopHard { get; set; } = 0.5f;
+
     private const float JackhammerMaxCharge  = .5f;
     private const float JackhammerImpulseWeak = 35f;
     private const float JackhammerImpulseMed  = 50f;
@@ -252,7 +255,7 @@ public partial class Player : Entity
             : JackhammerImpulseWeak;
 
         float hitstop = targets.Count > 0
-            ? EffectiveSpeedTier switch { 2 => 1.0f, 1 => 0.5f, _ => 0f }
+            ? EffectiveSpeedTier switch { 2 => HitstopHard, 1 => HitstopMed, _ => 0f }
             : 0f;
         if (hitstop > 0f)
         {

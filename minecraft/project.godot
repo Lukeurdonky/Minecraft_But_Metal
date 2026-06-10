@@ -34,7 +34,7 @@ project/assembly_name="Minecraft"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/godot_ai/plugin.cfg")
+enabled=PackedStringArray("res://addons/UniParticles3D/plugin.cfg", "res://addons/godot_ai/plugin.cfg")
 
 [input]
 

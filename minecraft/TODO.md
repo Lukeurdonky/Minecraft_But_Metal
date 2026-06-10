@@ -55,6 +55,7 @@
   - [ ] Assign scenes to EnemySpawner once models are built
 - [x] Wall navigation — ground enemies auto-jump over 1-block walls when chasing
 - [x] Improve Creature.cs AI — attack behavior (deal `AttackDamage` on contact), not just chase
+- [x] Creature rework — LOS-triggered grab attack, idle Y-rotate toward player, damage gated to grab animation window, TentacleCreature.glb model with Idle + Grab animations
 - [x] Mark some creatures as `heavy = true` (pulled toward instead of reeled in when grappled)
 - [x] Enemy spawning system (tied to terrain + difficulty)
 - [ ] Enemy drops (upgrade currency)

@@ -1,10 +1,20 @@
-[gd_scene load_steps=4 format=3 uid="uid://ddghs13iu0otv"]
+[gd_scene load_steps=7 format=3 uid="uid://ddghs13iu0otv"]
 
 [ext_resource type="Script" uid="uid://ba6r1xf176cjl" path="res://Scripts/Entities/Creature.cs" id="1_8m8vt"]
-
-[sub_resource type="CapsuleMesh" id="CapsuleMesh_y7sn2"]
+[ext_resource type="PackedScene" uid="uid://dy12rewfcjtwl" path="res://Assets/tentacle_creature.tscn" id="2_y7sn2"]
+[ext_resource type="Script" uid="uid://c2ja1eugyxfeq" path="res://addons/UniParticles3D/UniParticles3D.gd" id="3_7gn67"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_7gn67"]
+radius = 0.8911133
+height = 2.4782715
+
+[sub_resource type="Curve" id="Curve_r8wjk"]
+_data = [Vector2(0, 1), 0.0, -1.0, 0, 1, Vector2(1, 0), -1.0, 0.0, 1, 0]
+point_count = 2
+
+[sub_resource type="Curve" id="Curve_1sye5"]
+_data = [Vector2(0, 1), 0.0, -1.0038023, 0, 1, Vector2(0.9962121, 0), -1.0038023, 0.0, 1, 0]
+point_count = 2
 
 [node name="Creature" type="CharacterBody3D"]
 collision_layer = 3
@@ -15,9 +25,31 @@ ChaseSpeed = 3.0
 DetectionRange = 200.0
 offset = Vector2(0, -0.1)
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
-layers = 3
-mesh = SubResource("CapsuleMesh_y7sn2")
+[node name="TentacleCreature" parent="." instance=ExtResource("2_y7sn2")]
+transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0, 0)
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.27557373, 0)
 shape = SubResource("CapsuleShape3D_7gn67")
+
+[node name="UniParticles3D" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.99302006, 0)
+script = ExtResource("3_7gn67")
+start_lifetime_mode = 1
+start_lifetime_constant = 0.2
+start_lifetime_random = Vector2(0.3, 0.5)
+start_size_mode = 3
+start_size_random = Vector4(0.15, 0.15, 0.25, 0.25)
+enable_play_behavior = Vector2i(1, 1)
+enable_emission = Vector2i(1, 1)
+rate_over_time = 25.0
+enable_shape = Vector2i(1, 1)
+radius = 0.5
+rotation_offset = Vector3(180, 0, 0)
+enable_size_over_lifetime = Vector2i(1, 0)
+size_over_lifetime = SubResource("Curve_r8wjk")
+enable_velocity_over_lifetime = Vector2i(1, 1)
+velocity_over_lifetime = SubResource("Curve_1sye5")
+enable_rendering = Vector2i(1, 1)
+tint_color = Color(1.3654299, 0.8549019, 0.63353497, 1)
+metadata/_custom_type_script = "uid://c2ja1eugyxfeq"
