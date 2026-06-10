@@ -33,8 +33,8 @@ public partial class Player : Entity
         => Input.IsActionJustPressed(action) || _inputBuffer.Remove(action);
 
     // Speed-based damage tiers (player speed sampled at fire time)
-    private const float JackhammerMedThreshold  = 15f;
-    private const float JackhammerFastThreshold = 30f;
+    private const float JackhammerMedThreshold  = 20f;
+    private const float JackhammerFastThreshold = 40f;
     private const int   JackhammerDamageWeak    = 20;
     private const int   JackhammerDamageMed     = 50;
     private const int   JackhammerDamageHard    = 100;
@@ -48,7 +48,7 @@ public partial class Player : Entity
     private const float LaserDuration           = 1.5f;
     private const float LaserCooldownMax        = 7.0f;
     private const float LaserRange              = 100f;
-    private const float LaserDamagePerSecond    = 200f;
+    private const float LaserDamagePerSecond    = 600f;
     private const float LaserKnockbackPerSecond = 55f;
     private const float LaserTunnelRadius       = 4f;
     private const float LaserBeamRadius         = .35f;

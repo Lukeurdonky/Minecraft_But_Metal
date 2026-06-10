@@ -18,10 +18,15 @@ public partial class Enemy : Entity
     private const float BarWidth  = 1.2f;
     private const float BarHeight = 0.1f;
 
+    private Godot.Collections.Array<Node> _particles;
+    private Godot.Collections.Array<Node> _animPlayers;
+
     public override void ImHere()
     {
         base.ImHere();
         BuildHealthBar();
+        _particles   = FindChildren("*", "UniParticles3D",  true, false);
+        _animPlayers = FindChildren("*", "AnimationPlayer", true, false);
         if (Global.Instance != null) Global.Instance.EnemyCount++;
     }
 
@@ -33,6 +38,13 @@ public partial class Enemy : Entity
 
     public override void _Process(double delta)
     {
+        bool hitstop = Global?.HitstopActive == true;
+        foreach (var node in _particles)
+            node.Set("paused", hitstop);
+        foreach (var node in _animPlayers)
+            if (node is AnimationPlayer ap)
+                ap.SpeedScale = hitstop ? 0f : 1f;
+
         if (_healthBarRoot == null) return;
         var cam = Global.Instance?.Player?.Camera;
         if (cam == null) return;
