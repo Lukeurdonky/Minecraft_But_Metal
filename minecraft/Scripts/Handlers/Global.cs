@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 public partial class Global : Node
 {
@@ -21,7 +22,7 @@ public partial class Global : Node
 	[Export]
 	public float MinPitch { get; set; } = -90.0f; // Limit the camera's up/down rotation
 
-	public Vector3I WorldSpawn { get; set; } = new Vector3I(0, 5, 70);
+	public Vector3I WorldSpawn { get; set; } = new Vector3I(512, 20, 512);
 	public const int SurfaceLevel = 0;
 	public static readonly Vector2 AbyssCenter = new Vector2(0, 0); // x,z center
 	public const float AbyssRadius = 120;
@@ -115,6 +116,29 @@ public partial class Global : Node
 	//     }
 	//     return default(Variant);  // Return null or a default value
 	// }
+
+	// --------------------- planet wrapping ---------------------------
+
+	// Planet size in chunks. Clamped at startup by Chunk_Manager to satisfy
+	// PlanetChunksX > RenderDistance * 2 (one-node guarantee).
+	public static int PlanetChunksX = 64;
+	public static int PlanetChunksZ = 64;
+
+	public static int PlanetWidth => PlanetChunksX * 16;
+	public static int PlanetDepth => PlanetChunksZ * 16;
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static int CanonicalChunkX(int cx) => ((cx % PlanetChunksX) + PlanetChunksX) % PlanetChunksX;
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static int CanonicalChunkZ(int cz) => ((cz % PlanetChunksZ) + PlanetChunksZ) % PlanetChunksZ;
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static int CanonicalBlockX(int bx) => ((bx % PlanetWidth)   + PlanetWidth)   % PlanetWidth;
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static int CanonicalBlockZ(int bz) => ((bz % PlanetDepth)   + PlanetDepth)   % PlanetDepth;
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static Vector3I CanonicalChunkPos(Vector3I cp) =>
+		new Vector3I(CanonicalChunkX(cp.X), cp.Y, CanonicalChunkZ(cp.Z));
 
 	// --------------------- the abyss ---------------------------
 

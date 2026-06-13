@@ -68,13 +68,14 @@
 
 > The loop is an illusion of generation, not teleportation. Player and entities move freely in raw world space forever. The chunk manager maps any raw chunk coord to canonical data via modulo — dirty chunks reload their saved state at the new offset, clean chunks regenerate identically from the same seed. Nothing moves, everything repeats.
 
-- [ ] `PlanetChunksX` / `PlanetChunksZ` constants in `Global.cs`; derive `PlanetWidth` / `PlanetDepth` from them (never hardcode block counts)
-- [ ] At startup, hard-clamp: `PlanetChunksX = max(PlanetChunksX, RenderDistanceChunks * 2 + 1)` (same for Z); print warning if clamped
-- [ ] Canonical coord utilities in `Global.cs`: `CanonicalBlockX`, `CanonicalBlockZ`, `CanonicalChunkX`, `CanonicalChunkZ`
-- [ ] Split `Chunk_Manager` into `_canonicalData` (canonical coord → block array + dirty flag + spawn descriptors, permanent per run) and `_activeNodes` (raw physical coord → scene node, freed on unload)
-- [ ] `ChunkData.Dirty` flag — set on any block modification; dirty chunks never regenerate from `World_Generator`, existing block array rebuilds the mesh directly
-- [ ] Apply canonical mapping in all block read/write paths (`get_block`, `break_block`, `damage_block`, `explode`)
-- [ ] Physical chunk node positioned at raw world offset (`rawChunkX * 16`) — same canonical data can render at x=16 and x=1040 on separate visits without any position tricks
+- [x] `PlanetChunksX` / `PlanetChunksZ` constants in `Global.cs`; derive `PlanetWidth` / `PlanetDepth` from them (never hardcode block counts)
+- [x] At startup, hard-clamp: `PlanetChunksX = max(PlanetChunksX, RenderDistanceChunks * 2 + 1)` (same for Z); print warning if clamped
+- [x] Canonical coord utilities in `Global.cs`: `CanonicalBlockX`, `CanonicalBlockZ`, `CanonicalChunkX`, `CanonicalChunkZ`, `CanonicalChunkPos`
+- [x] Split `Chunk_Manager` into `_canonicalStore` (canonical coord → `ChunkData` with voxels + WasEdited, permanent per run) and `chunks` (raw physical coord → scene node, always freed on unload)
+- [x] `ChunkData.WasEdited` flag — edited canonical chunks persist in `_canonicalStore` across unloads; unedited canonical data is dropped on unload and regenerates identically from seed
+- [x] `generate_data` checks `_canonicalStore` first; uses canonical position for `create_chunk_data` so terrain repeats across laps
+- [x] `set_block` / `set_blocks_batch` mark canonical `WasEdited` so damage survives future unloads
+- [x] Physical chunk node always removed from `chunks` on unload; canonical store owns the voxel array
 
 ---
 
@@ -91,9 +92,10 @@
 
 ## World Generation
 
-- [ ] Wire `World_Generator.cs` into `Chunk_Manager` (replace raw FastNoise2D)
+- [x] Seamless terrain via 4D simplex noise on flat torus (`Simplex4D.cs`) — replaces FastNoiseLite; `NoiseScale` and `HeightAmplitude` exported on Chunk_Manager for per-planet tuning
+- [ ] Wire `World_Generator.cs` into `Chunk_Manager` (replace temp generation in `create_chunk_data`)
 - [ ] `TerrainStage` — planet surface height map
-- [ ] `CaveStage` — cave carving
+- [x] `CaveStage` — cave carving (Y-phase torus sampling, Option B — live in `create_chunk_data`; move to `CaveStage.Generate()` when WorldGenerator is wired)
 - [ ] `FeatureStage` — enemy spawn markers, points of interest
 - [ ] Finite planet-shaped world (not infinite flat terrain)
 - [ ] Per-planet gravity setting
@@ -104,6 +106,7 @@
 
 ## Run Structure
 
+- [ ] Planet creation sets `Global.PlanetChunksX/Z` and `Chunk_Manager.NoiseScale` together — `NoiseScale = PlanetWidth / (2π × targetFeatureBlocks)` keeps feature density consistent across different planet sizes
 - [ ] Planet selection screen (3 choices, difficulty shown)
 - [ ] Planet map HUD visible during run
 - [ ] Post-planet upgrade screen (choose 1 of 3)

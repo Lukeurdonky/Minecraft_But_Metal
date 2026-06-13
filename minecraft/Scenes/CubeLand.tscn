@@ -22,6 +22,8 @@ script = ExtResource("2_tia5y")
 Mat = ExtResource("3_a802x")
 RenderDistance = 15
 DamageTexture = ExtResource("4_om2ps")
+CaveScale = 1.0
+CaveThreshold = 0.1
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="Game"]
 transform = Transform3D(1, 0, 0, 0, -0.5, 0.866025, 0, -0.866025, -0.5, 0, 0, 0)
@@ -38,8 +40,6 @@ Flying = true
 
 [node name="Creature2" parent="Game" instance=ExtResource("5_n2v53")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 30, 0)
-WalkSpeed = 5.0
-ChaseSpeed = 15.0
 ChaseAccel = 35.0
 Flying = true
 

@@ -83,6 +83,30 @@ A chunk node at raw world chunk `(70, 2, 3)` on a 64-chunk-wide planet fetches i
 
 When the render window straddles the seam (player near `x = PlanetWidth`), physical nodes at raw positions `64, 65, 66...` are spawned and wrap to canonical `0, 1, 2...`. The nodes on the other side (`62, 63`) have already been unloaded before the new ones come into range, guaranteed by the planet size constraint.
 
+### Per-Planet NoiseScale
+
+`NoiseScale` on `Chunk_Manager` controls terrain feature size:
+
+```
+featureBlocks ≈ PlanetWidth / (2π × NoiseScale)
+```
+
+Because `PlanetWidth` is baked into the torus mapping at generation time, a fixed `NoiseScale` produces features that are proportional to planet size — a 32-chunk planet gets smaller features than a 128-chunk planet with the same value. When planet creation sets a new planet size, it should also set `NoiseScale` to keep feature density consistent:
+
+```csharp
+// Target a specific feature size regardless of planet width
+ChunkManager.NoiseScale = Global.PlanetWidth / (2f * Mathf.Pi * targetFeatureBlocks);
+```
+
+Typical reference values for a 1024-block (64-chunk) planet:
+
+| NoiseScale | Feature size |
+|---|---|
+| 1.0 | ~163 blocks — sweeping, open |
+| 1.5 | ~108 blocks — default terrain |
+| 3.0 | ~54 blocks — dense, varied |
+| 6.0 | ~27 blocks — tight caves |
+
 ### Dirty Chunk Reload
 
 A dirty canonical chunk is **never regenerated from the WorldGenerator pipeline** on reload. If `ChunkData` exists (dirty or not), its existing block array is used directly to rebuild the mesh. Fresh generation only runs when no `ChunkData` exists yet for that canonical coord.
