@@ -64,6 +64,31 @@
 
 ---
 
+## World Wrapping
+
+> The loop is an illusion of generation, not teleportation. Player and entities move freely in raw world space forever. The chunk manager maps any raw chunk coord to canonical data via modulo — dirty chunks reload their saved state at the new offset, clean chunks regenerate identically from the same seed. Nothing moves, everything repeats.
+
+- [ ] `PlanetChunksX` / `PlanetChunksZ` constants in `Global.cs`; derive `PlanetWidth` / `PlanetDepth` from them (never hardcode block counts)
+- [ ] At startup, hard-clamp: `PlanetChunksX = max(PlanetChunksX, RenderDistanceChunks * 2 + 1)` (same for Z); print warning if clamped
+- [ ] Canonical coord utilities in `Global.cs`: `CanonicalBlockX`, `CanonicalBlockZ`, `CanonicalChunkX`, `CanonicalChunkZ`
+- [ ] Split `Chunk_Manager` into `_canonicalData` (canonical coord → block array + dirty flag + spawn descriptors, permanent per run) and `_activeNodes` (raw physical coord → scene node, freed on unload)
+- [ ] `ChunkData.Dirty` flag — set on any block modification; dirty chunks never regenerate from `World_Generator`, existing block array rebuilds the mesh directly
+- [ ] Apply canonical mapping in all block read/write paths (`get_block`, `break_block`, `damage_block`, `explode`)
+- [ ] Physical chunk node positioned at raw world offset (`rawChunkX * 16`) — same canonical data can render at x=16 and x=1040 on separate visits without any position tricks
+
+---
+
+## Enemy Spawning (chunk-based)
+
+- [ ] `EnemySpawnDescriptor` struct (`LocalPosition`, `EnemyType`) in `Chunk.cs` or shared types file
+- [ ] `SpawnDescriptors` list on `ChunkData` — not on the physical chunk node, which gets freed on unload
+- [ ] `FeatureStage` populates `SpawnDescriptors` using canonical chunk seed (same seed = same layout every time)
+- [ ] `EnemySpawner` reads `SpawnDescriptors` on chunk load and instantiates enemy nodes (Creature is reference)
+- [ ] `OwnerChunkPos` field on `Entity.cs` — set at spawn to the **raw** chunk coord; unload sweep matches directly against the unloading node's raw coord, no canonicalization needed
+- [ ] Chunk manager sweeps live enemies on unload and frees those matching the raw coord (no persistence — enemies respawn fresh on next load)
+
+---
+
 ## World Generation
 
 - [ ] Wire `World_Generator.cs` into `Chunk_Manager` (replace raw FastNoise2D)
@@ -84,6 +109,18 @@
 - [ ] Post-planet upgrade screen (choose 1 of 3)
 - [ ] Boss encounter trigger
 - [ ] Run win / lose states
+
+---
+
+## Boss
+
+- [ ] `BossState` struct (`WorldPosition`, `CurrentHealth`, `PhaseIndex`, `HasBeenEngaged`)
+- [ ] `BossState?` + arena position on `RunManager` (null = not yet spawned this run)
+- [ ] `RunManager.OnBossChunkLoaded()` — spawn or hydrate boss from `BossState`
+- [ ] Boss node serializes to `BossState` on tree exit (position, health, phase only — animation state not saved)
+- [ ] Boss node hydrates from `BossState` on spawn; resumes from start of current phase
+- [ ] `HasBeenEngaged` engagement zone check — latches true, never resets; AI activates immediately on all subsequent loads
+- [ ] Arena spawn point blocked clear in `FeatureStage` (no terrain generation in arena footprint)
 
 ---
 
