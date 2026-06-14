@@ -6,9 +6,35 @@ using System.Runtime.CompilerServices;
 public partial class Global : Node
 {
 	public static Global Instance { get; private set; }
-	
+
 	public Player Player      { get; set; }
 	public int    EnemyCount  { get; set; } = 0;
+
+	// Active planet configuration — persists across scene reloads.
+	public PlanetParams ActivePlanet { get; set; } = PlanetParams.MakeField();
+
+	// Called from PlanetConfigMenu (GDScript) before reloading the scene.
+	public void SetPlanetConfig(Godot.Collections.Dictionary config)
+	{
+		var p = new PlanetParams();
+		if (config.ContainsKey("template"))        p.Template        = config["template"].AsString();
+		if (config.ContainsKey("fill_solid"))       p.FillSolid       = config["fill_solid"].AsBool();
+		if (config.ContainsKey("surface_block"))    p.SurfaceBlock    = (byte)config["surface_block"].AsInt32();
+		if (config.ContainsKey("noise_scale"))      p.NoiseScale      = config["noise_scale"].AsSingle();
+		if (config.ContainsKey("height_amp"))       p.HeightAmplitude = config["height_amp"].AsSingle();
+		if (config.ContainsKey("spawn_y"))          p.SpawnY          = config["spawn_y"].AsInt32();
+		if (config.ContainsKey("caves_enabled"))    p.CavesEnabled    = config["caves_enabled"].AsBool();
+		if (config.ContainsKey("cave_full_range"))  p.CaveFullRange   = config["cave_full_range"].AsBool();
+		if (config.ContainsKey("cave_scale"))       p.CaveScale       = config["cave_scale"].AsSingle();
+		if (config.ContainsKey("cave_y_freq"))      p.CaveYFrequency  = config["cave_y_freq"].AsSingle();
+		if (config.ContainsKey("cave_threshold"))   p.CaveThreshold   = config["cave_threshold"].AsSingle();
+		if (config.ContainsKey("chasm_enabled"))       p.ChasmEnabled       = config["chasm_enabled"].AsBool();
+		if (config.ContainsKey("chasm_radius"))        p.ChasmRadius        = config["chasm_radius"].AsSingle();
+		if (config.ContainsKey("chasm_drift"))         p.ChasmDriftScale    = config["chasm_drift"].AsSingle();
+		if (config.ContainsKey("spawn_clear_enabled")) p.SpawnClearEnabled  = config["spawn_clear_enabled"].AsBool();
+		ActivePlanet = p;
+		WorldSpawn = new Vector3I(WorldSpawn.X, p.SpawnY, WorldSpawn.Z);
+	}
 	
 	[Export]
 	public float SensitivityX { get; set; } = 0.3f;

@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 Global="*res://Scripts/Handlers/Global.cs"
 Item_Registry="*res://Scripts/Datasets/Item_Registry.cs"
 Block_Registry="*res://Scripts/Datasets/Block_Registry.cs"
+PlanetConfigMenu="*res://Scripts/Handlers/PlanetConfigMenu.gd"
 _mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
 
 [display]

@@ -25,7 +25,16 @@ public partial class Block_Registry : Node
 		Blocks[1] = new Block_Definition { Id = 1, Name = "Grass", Hardness = 1f, DropId = "grass", DropCount = 1, faceUVs = GenerateFaceUVs(0, atlas_width, atlas_height), Model = GetModel("Cube") }; // grass
 		Blocks[2] = new Block_Definition { Id = 2, Name = "Dirt", Hardness = 2f, DropId = "dirt", DropCount = 1, faceUVs = GenerateFaceUVs(1, atlas_width, atlas_height), Model = GetModel("Cube") }; // dirt
 		Blocks[3] = new Block_Definition { Id = 3, Name = "Stone", Hardness = 5f, DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(2, atlas_width, atlas_height), Model = GetModel("Cube") }; // stone
-		
+		Blocks[4] = new Block_Definition { Id = 4, Name = "Blue",  Hardness = 5f, DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(3, atlas_width, atlas_height), Model = GetModel("Cube") }; // blue
+		Blocks[5] = new Block_Definition { Id = 5, Name = "Red",   Hardness = 5f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(4, atlas_width, atlas_height), Model = GetModel("Cube") }; // red
+		Blocks[6] = new Block_Definition { Id = 6, Name = "Steel", Hardness = 10f, DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(5, atlas_width, atlas_height), Model = GetModel("Cube") }; // steel
+		Blocks[7] = new Block_Definition { Id = 7, Name = "Wire",         Hardness = 3f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(6,  atlas_width, atlas_height), Model = GetModel("Cube") };
+		Blocks[8] = new Block_Definition { Id = 8, Name = "Cloud",        Hardness = 1f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(7,  atlas_width, atlas_height), Model = GetModel("Cube") };
+		Blocks[9] = new Block_Definition { Id = 9, Name = "Smaug",        Hardness = 2f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(8,  atlas_width, atlas_height), Model = GetModel("Cube") };
+		Blocks[10] = new Block_Definition { Id = 10, Name = "Crystal",     Hardness = 2f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(9,  atlas_width, atlas_height), Model = GetModel("Cube") };
+		Blocks[11] = new Block_Definition { Id = 11, Name = "LightCrystal",Hardness = 1f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(10, atlas_width, atlas_height), Model = GetModel("Cube") };
+		Blocks[12] = new Block_Definition { Id = 12, Name = "Brick",       Hardness = 5f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(11, atlas_width, atlas_height), Model = GetModel("Cube") };
+
 	}
 
 	public static Block_Model CreateBlockModel(string name, Block_Model.Type type, string datapath)

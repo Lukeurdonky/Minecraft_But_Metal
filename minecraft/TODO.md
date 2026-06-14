@@ -92,11 +92,18 @@
 
 ## World Generation
 
-- [x] Seamless terrain via 4D simplex noise on flat torus (`Simplex4D.cs`) — replaces FastNoiseLite; `NoiseScale` and `HeightAmplitude` exported on Chunk_Manager for per-planet tuning
-- [ ] Wire `World_Generator.cs` into `Chunk_Manager` (replace temp generation in `create_chunk_data`)
-- [ ] `TerrainStage` — planet surface height map
-- [x] `CaveStage` — cave carving (Y-phase torus sampling, Option B — live in `create_chunk_data`; move to `CaveStage.Generate()` when WorldGenerator is wired)
-- [ ] `FeatureStage` — enemy spawn markers, points of interest
+- [x] Seamless terrain via 4D simplex noise on flat torus (`Simplex4D.cs`) — replaces FastNoiseLite
+- [x] `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load; `MakeField()`, `MakeCave()`, `MakeChasm()` presets
+- [x] Removed all generation `[Export]` fields from `Chunk_Manager`; `create_chunk_data` reads `Global.Instance.ActivePlanet`
+- [x] `PlanetConfigMenu.gd` — F3 debug UI: template selector pre-fills presets; SpinBox/CheckButton rows for all params; Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`
+- [x] New blocks: Cloud (1), Smaug (2), Crystal (2), LightCrystal (1), Brick (5) — hardness values in parens; IDs 8–12 in `Block_Registry.cs`
+- [x] `CaveStage` — true 3D two-octave density field: Y encoded as additive torus phase offsets, not worm rotation. Preserves X/Z seam seamlessness. Lives in `create_chunk_data`; move to `CaveStage.Generate()` when WorldGenerator is wired
+- [ ] `TerrainStage` — port height-map fill from `create_chunk_data` into `World_Generator.cs` stage
+- [ ] `CaveStage` migration — move cave carver from `create_chunk_data` into `CaveStage.Generate()`; gate on `CavesEnabled` / `CaveFullRange`
+- [ ] `ChasmStage` — sinusoidal shaft carver; already live in `create_chunk_data`, port to stage
+- [ ] `FeatureStage` — crash-site carve-out (guaranteed open ellipsoid near Cave spawn), enemy spawn markers, points of interest
+- [ ] Wire `World_Generator.cs` into `Chunk_Manager` (shrink `create_chunk_data` as each stage absorbs its piece)
+- [ ] `PlanetDescriptor` class — gameplay layer (difficulty, win condition, enemy density) distinct from `PlanetParams` (generation layer)
 - [ ] Finite planet-shaped world (not infinite flat terrain)
 - [ ] Per-planet gravity setting
 - [ ] Difficulty modifiers (terrain hostility, enemy density)
@@ -106,10 +113,14 @@
 
 ## Run Structure
 
-- [ ] Planet creation sets `Global.PlanetChunksX/Z` and `Chunk_Manager.NoiseScale` together — `NoiseScale = PlanetWidth / (2π × targetFeatureBlocks)` keeps feature density consistent across different planet sizes
-- [ ] Planet selection screen (3 choices, difficulty shown)
+- [x] Debug planet config menu (F3) — interim stand-in for planet selection; lets you configure any PlanetParams manually and regenerate
+- [ ] `RunManager` singleton — tracks current planet index, total kills, run score; drives the planet → upgrade → boss → win flow
+- [ ] Kill counter per planet fed into `RunManager` (Exploration win condition)
+- [ ] Survival timer per planet (Survival win condition)
+- [ ] Planet creation sets `Global.PlanetChunksX/Z` — `NoiseScale = PlanetWidth / (2π × targetFeatureBlocks)` keeps density consistent
+- [ ] Planet selection screen (3 choices, difficulty shown, pre-generated random params under constraints)
 - [ ] Planet map HUD visible during run
-- [ ] Post-planet upgrade screen (choose 1 of 3)
+- [ ] Post-planet upgrade screen (choose 1 of 3 accessories)
 - [ ] Boss encounter trigger
 - [ ] Run win / lose states
 
