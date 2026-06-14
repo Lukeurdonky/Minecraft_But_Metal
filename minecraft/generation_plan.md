@@ -230,9 +230,71 @@ No surface. Full volume solid, caves carve everywhere via a true 3D two-octave d
 
 ---
 
+## Biome System
+
+Each template has 3 hardcoded biomes. A biome is a constrained variation on its parent template — same fundamental generation path, but with a specific block palette, terrain parameter range, and optional generation features that give it a distinct feel.
+
+### Structure
+
+```
+Template (Field / Cave / Chasm)
+  └── Biome A  — specific block set, param range, optional features
+  └── Biome B
+  └── Biome C
+```
+
+A biome is defined by a `BiomeDescriptor`:
+
+```csharp
+public class BiomeDescriptor
+{
+    public string  Name;
+    public string  Template;          // which template it runs on
+
+    // Block palette
+    public byte    SurfaceBlock;      // top solid block
+    public byte    SubSurfaceBlock;   // 1–3 blocks below surface (optional)
+    public byte    DepthBlock;        // everything below sub-surface
+
+    // Terrain parameter ranges (randomised within on generation)
+    public float   NoiseScaleMin,   NoiseScaleMax;
+    public float   HeightAmpMin,    HeightAmpMax;
+
+    // Cave overrides (Cave template only)
+    public float   CaveScaleMin,    CaveScaleMax;
+    public float   CaveThresholdMin,CaveThresholdMax;
+
+    // Chasm overrides (Chasm template only)
+    public float   ChasmRadiusMin,  ChasmRadiusMax;
+}
+```
+
+`PlanetParams` stays the same — when a biome is selected, its randomised values populate `PlanetParams` before generation runs.
+
+### Proposed biome slots (names/themes TBD)
+
+| Template | Biome A | Biome B | Biome C |
+|---|---|---|---|
+| Field | Metallic Mountains | Sandy Desert | ??? |
+| Cave | ??? | ??? | ??? |
+| Chasm | ??? | ??? | ??? |
+
+### Open design questions (see below)
+
+---
+
 ## Open Questions
 
 - **Chasm seamlessness** — drift amplitude (currently 60 blocks) must stay within `PlanetWidth/2 - ChasmRadius` to avoid shaft exiting the edge. Verify at playtest with default planet size.
 - **Enemy spawning** — deferred entirely, FeatureStage handles it when the spawn descriptor system is built.
-- **Block accent layers** — FeatureStage concern, deferred until palette expands further.
 - **Crash ship scene** — open ellipsoid is guaranteed at spawn; the actual ship prop + visual goes here when art is ready.
+
+### Biome design questions (pending answers)
+
+1. **Spatial vs per-planet** — Do biomes divide the planet spatially (walk north, enter a different biome) or does each generated planet have exactly one biome chosen by RunManager? Spatial gives variety on one planet; per-planet gives each planet a cleaner identity and makes the roguelike "next planet = new biome" loop cleaner.
+
+2. **What fills the 7 unnamed biome slots?** Field has Metallic Mountains + Sandy Desert confirmed. Need themes for Field slot 3, all 3 Cave biomes, and all 3 Chasm biomes.
+
+3. **What varies per biome?** Currently assumed: block palette + terrain param ranges. Should biomes also affect gameplay params (enemy density/types, gravity modifier, fog density)? Or is that PlanetDescriptor territory set separately by RunManager?
+
+4. **Sub-surface layering** — does each biome have a distinct sub-surface block 1–3 blocks under the top (e.g. Metallic Mountains: steel surface → wire beneath → stone bedrock)? Or just a uniform fill below the top block?

@@ -32,6 +32,11 @@ public partial class Global : Node
 		if (config.ContainsKey("chasm_radius"))        p.ChasmRadius        = config["chasm_radius"].AsSingle();
 		if (config.ContainsKey("chasm_drift"))         p.ChasmDriftScale    = config["chasm_drift"].AsSingle();
 		if (config.ContainsKey("spawn_clear_enabled")) p.SpawnClearEnabled  = config["spawn_clear_enabled"].AsBool();
+		if (config.ContainsKey("planet_chunks")) {
+			int sz = config["planet_chunks"].AsInt32();
+			PlanetChunksX = sz;
+			PlanetChunksZ = sz;
+		}
 		ActivePlanet = p;
 		WorldSpawn = new Vector3I(WorldSpawn.X, p.SpawnY, WorldSpawn.Z);
 	}
@@ -147,8 +152,8 @@ public partial class Global : Node
 
 	// Planet size in chunks. Clamped at startup by Chunk_Manager to satisfy
 	// PlanetChunksX > RenderDistance * 2 (one-node guarantee).
-	public static int PlanetChunksX = 64;
-	public static int PlanetChunksZ = 64;
+	public static int PlanetChunksX = 32;
+	public static int PlanetChunksZ = 32;
 
 	public static int PlanetWidth => PlanetChunksX * 16;
 	public static int PlanetDepth => PlanetChunksZ * 16;

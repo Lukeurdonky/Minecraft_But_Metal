@@ -12,21 +12,21 @@ const PRESETS := {
 		"spawn_y": 20,       "caves_enabled": false, "cave_full_range": false,
 		"cave_scale": 3.0,   "cave_y_freq": 0.05, "cave_threshold": 0.25,
 		"chasm_enabled": false, "chasm_radius": 18.0, "chasm_drift": 0.006,
-		"spawn_clear_enabled": false,
+		"spawn_clear_enabled": false, "planet_chunks": 32,
 	},
 	"Cave": {
 		"fill_solid": true,  "surface_block": 10, "noise_scale": 0.0,  "height_amp": 0.0,
 		"spawn_y": 0,        "caves_enabled": true, "cave_full_range": true,
 		"cave_scale": 2.0,   "cave_y_freq": 1.0,  "cave_threshold": 0.3,
 		"chasm_enabled": false, "chasm_radius": 18.0, "chasm_drift": 0.006,
-		"spawn_clear_enabled": true,
+		"spawn_clear_enabled": true, "planet_chunks": 32,
 	},
 	"Chasm": {
 		"fill_solid": false, "surface_block": 6,  "noise_scale": 1.5,  "height_amp": 8.0,
 		"spawn_y": 20,       "caves_enabled": false, "cave_full_range": false,
 		"cave_scale": 3.0,   "cave_y_freq": 0.05, "cave_threshold": 0.25,
 		"chasm_enabled": true, "chasm_radius": 18.0, "chasm_drift": 0.006,
-		"spawn_clear_enabled": false,
+		"spawn_clear_enabled": false, "planet_chunks": 32,
 	},
 }
 
@@ -81,6 +81,7 @@ func _build_ui() -> void:
 	vbox.add_child(HSeparator.new())
 
 	# Param rows
+	_add_int_row(vbox,   "planet_chunks",  "World Size (chunks)", 12, 256, 1, 32)
 	_add_int_row(vbox,   "surface_block",  "Surface Block",   1,    255,   1,    8)
 	_add_float_row(vbox, "noise_scale",    "Noise Scale",     0.0,  20.0,  0.001, 1.5)
 	_add_float_row(vbox, "height_amp",     "Height Amplitude",0.0,  300.0, 1.0,  10.0)

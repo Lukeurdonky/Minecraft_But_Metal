@@ -8,11 +8,14 @@
 [ext_resource type="Script" uid="uid://b7w2jsfdn7cvi" path="res://Scripts/Entities/EnemySpawner.cs" id="6_2d6dh"]
 
 [sub_resource type="Environment" id="Environment_akwl5"]
+background_mode = 1
 fog_enabled = true
-fog_light_color = Color(0.32915837, 0.3291584, 0.3291584, 1)
+fog_mode = 1
+fog_light_color = Color(0, 0, 0, 1)
 fog_light_energy = 0.15
-fog_density = 0.015
+fog_density = 1.0
 fog_sky_affect = 0.0
+fog_depth_end = 240.0
 
 [node name="GameHandler" type="Node3D"]
 script = ExtResource("1_a802x")
@@ -22,8 +25,6 @@ script = ExtResource("2_tia5y")
 Mat = ExtResource("3_a802x")
 RenderDistance = 15
 DamageTexture = ExtResource("4_om2ps")
-CaveScale = 1.0
-CaveThreshold = 0.0
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="Game"]
 transform = Transform3D(1, 0, 0, 0, -0.5, 0.866025, 0, -0.866025, -0.5, 0, 0, 0)
