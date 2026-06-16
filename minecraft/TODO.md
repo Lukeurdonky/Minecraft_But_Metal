@@ -55,6 +55,7 @@
   - [ ] Assign scenes to EnemySpawner once models are built
 - [x] Wall navigation — ground enemies auto-jump over 1-block walls when chasing
 - [x] Improve Creature.cs AI — attack behavior (deal `AttackDamage` on contact), not just chase
+- [x] Creature rework — 3-state AI (Idle/Chase/Grab), range-based detection, Idle animation during chase, Grab animation only on attack, 3-phase lunge (charge/impulse/recovery), forward-direction lunge, GrabHitbox Area3D in scene, upward knockback factor, pitch tracked on mesh child, BoxShape3D collider, hitstop freezes particles + animations via auto-scan in Enemy
 - [x] Mark some creatures as `heavy = true` (pulled toward instead of reeled in when grappled)
 - [x] Enemy spawning system (tied to terrain + difficulty)
 - [ ] Enemy drops (upgrade currency)
@@ -63,12 +64,46 @@
 
 ---
 
+## World Wrapping
+
+> The loop is an illusion of generation, not teleportation. Player and entities move freely in raw world space forever. The chunk manager maps any raw chunk coord to canonical data via modulo — dirty chunks reload their saved state at the new offset, clean chunks regenerate identically from the same seed. Nothing moves, everything repeats.
+
+- [x] `PlanetChunksX` / `PlanetChunksZ` constants in `Global.cs`; derive `PlanetWidth` / `PlanetDepth` from them (never hardcode block counts)
+- [x] At startup, hard-clamp: `PlanetChunksX = max(PlanetChunksX, RenderDistanceChunks * 2 + 1)` (same for Z); print warning if clamped
+- [x] Canonical coord utilities in `Global.cs`: `CanonicalBlockX`, `CanonicalBlockZ`, `CanonicalChunkX`, `CanonicalChunkZ`, `CanonicalChunkPos`
+- [x] Split `Chunk_Manager` into `_canonicalStore` (canonical coord → `ChunkData` with voxels + WasEdited, permanent per run) and `chunks` (raw physical coord → scene node, always freed on unload)
+- [x] `ChunkData.WasEdited` flag — edited canonical chunks persist in `_canonicalStore` across unloads; unedited canonical data is dropped on unload and regenerates identically from seed
+- [x] `generate_data` checks `_canonicalStore` first; uses canonical position for `create_chunk_data` so terrain repeats across laps
+- [x] `set_block` / `set_blocks_batch` mark canonical `WasEdited` so damage survives future unloads
+- [x] Physical chunk node always removed from `chunks` on unload; canonical store owns the voxel array
+
+---
+
+## Enemy Spawning (chunk-based)
+
+- [ ] `EnemySpawnDescriptor` struct (`LocalPosition`, `EnemyType`) in `Chunk.cs` or shared types file
+- [ ] `SpawnDescriptors` list on `ChunkData` — not on the physical chunk node, which gets freed on unload
+- [ ] `FeatureStage` populates `SpawnDescriptors` using canonical chunk seed (same seed = same layout every time)
+- [ ] `EnemySpawner` reads `SpawnDescriptors` on chunk load and instantiates enemy nodes (Creature is reference)
+- [ ] `OwnerChunkPos` field on `Entity.cs` — set at spawn to the **raw** chunk coord; unload sweep matches directly against the unloading node's raw coord, no canonicalization needed
+- [ ] Chunk manager sweeps live enemies on unload and frees those matching the raw coord (no persistence — enemies respawn fresh on next load)
+
+---
+
 ## World Generation
 
-- [ ] Wire `World_Generator.cs` into `Chunk_Manager` (replace raw FastNoise2D)
-- [ ] `TerrainStage` — planet surface height map
-- [ ] `CaveStage` — cave carving
-- [ ] `FeatureStage` — enemy spawn markers, points of interest
+- [x] Seamless terrain via 4D simplex noise on flat torus (`Simplex4D.cs`) — replaces FastNoiseLite
+- [x] `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load; `MakeField()`, `MakeCave()`, `MakeChasm()` presets
+- [x] Removed all generation `[Export]` fields from `Chunk_Manager`; `create_chunk_data` reads `Global.Instance.ActivePlanet`
+- [x] `PlanetConfigMenu.gd` — F3 debug UI: template selector pre-fills presets; SpinBox/CheckButton rows for all params; Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`
+- [x] New blocks: Cloud (1), Smaug (2), Crystal (2), LightCrystal (1), Brick (5) — hardness values in parens; IDs 8–12 in `Block_Registry.cs`
+- [x] `CaveStage` — true 3D two-octave density field: Y encoded as additive torus phase offsets, not worm rotation. Preserves X/Z seam seamlessness. Lives in `create_chunk_data`; move to `CaveStage.Generate()` when WorldGenerator is wired
+- [ ] `TerrainStage` — port height-map fill from `create_chunk_data` into `World_Generator.cs` stage
+- [ ] `CaveStage` migration — move cave carver from `create_chunk_data` into `CaveStage.Generate()`; gate on `CavesEnabled` / `CaveFullRange`
+- [ ] `ChasmStage` — sinusoidal shaft carver; already live in `create_chunk_data`, port to stage
+- [ ] `FeatureStage` — crash-site carve-out (guaranteed open ellipsoid near Cave spawn), enemy spawn markers, points of interest
+- [ ] Wire `World_Generator.cs` into `Chunk_Manager` (shrink `create_chunk_data` as each stage absorbs its piece)
+- [ ] `PlanetDescriptor` class — gameplay layer (difficulty, win condition, enemy density) distinct from `PlanetParams` (generation layer)
 - [ ] Finite planet-shaped world (not infinite flat terrain)
 - [ ] Per-planet gravity setting
 - [ ] Difficulty modifiers (terrain hostility, enemy density)
@@ -78,11 +113,28 @@
 
 ## Run Structure
 
-- [ ] Planet selection screen (3 choices, difficulty shown)
+- [x] Debug planet config menu (F3) — interim stand-in for planet selection; lets you configure any PlanetParams manually and regenerate
+- [ ] `RunManager` singleton — tracks current planet index, total kills, run score; drives the planet → upgrade → boss → win flow
+- [ ] Kill counter per planet fed into `RunManager` (Exploration win condition)
+- [ ] Survival timer per planet (Survival win condition)
+- [ ] Planet creation sets `Global.PlanetChunksX/Z` — `NoiseScale = PlanetWidth / (2π × targetFeatureBlocks)` keeps density consistent
+- [ ] Planet selection screen (3 choices, difficulty shown, pre-generated random params under constraints)
 - [ ] Planet map HUD visible during run
-- [ ] Post-planet upgrade screen (choose 1 of 3)
+- [ ] Post-planet upgrade screen (choose 1 of 3 accessories)
 - [ ] Boss encounter trigger
 - [ ] Run win / lose states
+
+---
+
+## Boss
+
+- [ ] `BossState` struct (`WorldPosition`, `CurrentHealth`, `PhaseIndex`, `HasBeenEngaged`)
+- [ ] `BossState?` + arena position on `RunManager` (null = not yet spawned this run)
+- [ ] `RunManager.OnBossChunkLoaded()` — spawn or hydrate boss from `BossState`
+- [ ] Boss node serializes to `BossState` on tree exit (position, health, phase only — animation state not saved)
+- [ ] Boss node hydrates from `BossState` on spawn; resumes from start of current phase
+- [ ] `HasBeenEngaged` engagement zone check — latches true, never resets; AI activates immediately on all subsequent loads
+- [ ] Arena spawn point blocked clear in `FeatureStage` (no terrain generation in arena footprint)
 
 ---
 

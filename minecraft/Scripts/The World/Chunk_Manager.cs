@@ -41,31 +41,28 @@ public partial class Chunk_Manager : Node
 
 	private void EvictColdEditedChunks(Vector3I playerChunkPos)
 	{
-		// Collect edited but unloaded chunks
-		var cold = new List<KeyValuePair<Vector3I, Chunk>>();
-		foreach (var kv in chunks)
+		// Collect edited canonical entries
+		List<Vector3I> edited;
+		lock (_canonicalLock)
 		{
-			if (kv.Value.WasEdited && !kv.Value.Loaded)
-				cold.Add(kv);
+			edited = new List<Vector3I>();
+			foreach (var kv in _canonicalStore)
+				if (kv.Value.WasEdited) edited.Add(kv.Key);
 		}
 
-		if (cold.Count <= MaxColdEditedChunks) return;
+		if (edited.Count <= MaxColdEditedChunks) return;
 
-		// Sort by distance from player (farthest first) and evict extras
-		var playerWorld = chunk_to_world(playerChunkPos);
-		var toEvict = cold.OrderByDescending(kv => (chunk_to_world(kv.Key) - playerWorld).LengthSquared())
-						  .Take(cold.Count - MaxColdEditedChunks)
-						  .ToList();
+		// Sort farthest-first from player canonical position and evict extras
+		var playerWorld = chunk_to_world(Global.CanonicalChunkPos(playerChunkPos));
+		var toEvict = edited
+			.OrderByDescending(cp => (chunk_to_world(cp) - playerWorld).LengthSquared())
+			.Take(edited.Count - MaxColdEditedChunks)
+			.ToList();
 
-		foreach (var kv in toEvict)
+		lock (_canonicalLock)
 		{
-			var pos = kv.Key;
-			// Clear damage and pending buffers
-			ClearDamageInChunk(pos);
-			pendingBuffers.TryRemove(pos, out _);
-			generationQueue.TryRemove(pos, out _);
-			loadingQueue.TryRemove(pos, out _);
-			chunks.Remove(pos);
+			foreach (var cp in toEvict)
+				_canonicalStore.Remove(cp);
 		}
 	}
 	[Export] public RenderMode RenderModeType = RenderMode.Sphere;
@@ -76,13 +73,16 @@ public partial class Chunk_Manager : Node
 	[Export] public bool DebugDamageUseSolidMaterial = false;
 	[Export] public bool DebugDamageNoDepthTest = false;
 
-	private FastNoiseLite noise;
+	// noiseScale: feature size = PlanetWidth / (2π * noiseScale).
+	// At 1.5 on a 1024-block planet that's ~108 blocks per feature.
+	// Generation parameters live in Global.Instance.ActivePlanet (PlanetParams).
+	// Do not add generation exports here — single source of truth is PlanetParams.
 
 	// Block damage system
 	private Dictionary<Vector3I, BlockHealth> damagedBlocks = new();
 	private Dictionary<int, MultiMeshInstance3D> damageOverlaysByBlock = new();
 	private Dictionary<int, MultiMesh> damageMultiMeshByBlock = new();
-	private Dictionary<int, List<Vector3I>> damagePositionsByBlock = new();
+	private Dictionary<int, HashSet<Vector3I>> damagePositionsByBlock = new();
 	private HashSet<int> _dirtyDamageTypes = new();
 	private LinkedList<Vector3I> _damageInsertionOrder = new LinkedList<Vector3I>();
 
@@ -97,6 +97,17 @@ public partial class Chunk_Manager : Node
 		public int blockType = 0;
 		public LinkedListNode<Vector3I> insertionNode;
 	}
+
+	// Persistent voxel data keyed by canonical chunk coord.
+	// Survives chunk node unloads; edited entries persist for the whole run.
+	private class ChunkData
+	{
+		public byte[] Voxels;
+		public bool   IsFullySolid;
+		public bool   WasEdited;
+	}
+	private readonly Dictionary<Vector3I, ChunkData> _canonicalStore = new();
+	private readonly object _canonicalLock = new object();
 
 	private Thread generationThread;
 	private Thread loadingThread;
@@ -122,6 +133,7 @@ public partial class Chunk_Manager : Node
 	private HashSet<Vector3I> cachedActiveSet = new HashSet<Vector3I>();
 	private List<Vector3I> chunksToUnload = new List<Vector3I>();
 	private List<Vector3I> dirtyChunksList = new List<Vector3I>();
+
 
 	[Export]
 	public int MaxColdEditedChunks = 2000;
@@ -162,11 +174,23 @@ public partial class Chunk_Manager : Node
 
 		surfaceLevel = Global.SurfaceLevel;
 
-		noise = new FastNoiseLite();
-		noise.Seed = noiseSeed;
+		Simplex4D.Reseed(noiseSeed);
 
 		InitializeDamageSystem();
 		RecalculateChunkOffsets();
+
+		// Enforce one-node guarantee: planet must be wider than render window
+		int minChunks = RenderDistance * 2 + 1;
+		if (Global.PlanetChunksX <= RenderDistance * 2)
+		{
+			GD.PrintErr($"[ChunkManager] PlanetChunksX ({Global.PlanetChunksX}) too small for RenderDistance ({RenderDistance}). Clamping to {minChunks}.");
+			Global.PlanetChunksX = minChunks;
+		}
+		if (Global.PlanetChunksZ <= RenderDistance * 2)
+		{
+			GD.PrintErr($"[ChunkManager] PlanetChunksZ ({Global.PlanetChunksZ}) too small for RenderDistance ({RenderDistance}). Clamping to {minChunks}.");
+			Global.PlanetChunksZ = minChunks;
+		}
 
 		generationThread = new Thread(GenerationWorkerLoop);
 		generationThread.Name = "ChunkGeneration";
@@ -192,7 +216,6 @@ public partial class Chunk_Manager : Node
 		if (timeElapsed >= TIME_HANDLE)
 		{
 			timeElapsed -= TIME_HANDLE;
-
 			handle_chunks_art();
 			handle_dirties();
 		}
@@ -210,21 +233,16 @@ public partial class Chunk_Manager : Node
 			lastPlayerChunkPos = playerPos;
 			cachedActiveSet.Clear();
 			foreach (var offset in cachedChunkOffsets)
-			{
 				cachedActiveSet.Add(playerPos + offset);
-			}
-			// Remove stale queue entries outside the new active set to avoid backlog
+
+			// Prune stale queue entries.
 			foreach (var kp in generationQueue.Keys.ToList())
-			{
-				if (!cachedActiveSet.Contains(kp))
-					generationQueue.TryRemove(kp, out _);
-			}
+				if (!cachedActiveSet.Contains(kp)) generationQueue.TryRemove(kp, out _);
+
 			foreach (var kp in loadingQueue.Keys.ToList())
-			{
-				if (!cachedActiveSet.Contains(kp))
-					loadingQueue.TryRemove(kp, out _);
-			}
-			// Clear and reprioritize queues with new closest-first order
+				if (!cachedActiveSet.Contains(kp)) loadingQueue.TryRemove(kp, out _);
+
+			// Reprioritize worker queues closest-first.
 			lock (generationLock)
 			{
 				generationWorkQueue.Clear();
@@ -236,7 +254,6 @@ public partial class Chunk_Manager : Node
 				}
 				Monitor.Pulse(generationLock);
 			}
-
 			lock (loadingLock)
 			{
 				loadingWorkQueue.Clear();
@@ -249,8 +266,25 @@ public partial class Chunk_Manager : Node
 				Monitor.Pulse(loadingLock);
 			}
 
-			// Evict distant edited chunks if we have too many cold edited chunks
 			EvictColdEditedChunks(playerPos);
+
+			// Unload out-of-range chunks — only needed when active set changes.
+			chunksToUnload.Clear();
+			foreach (var chunkPos in chunks.Keys)
+			{
+				if (!cachedActiveSet.Contains(chunkPos))
+					chunksToUnload.Add(chunkPos);
+			}
+			foreach (var chunkPos in chunksToUnload)
+			{
+				unload(chunkPos);
+				lock (queueLock)
+				{
+					activeChunks.Remove(chunkPos);
+					loadingQueue.TryRemove(chunkPos, out _);
+				}
+			}
+
 		}
 
 		foreach (var offset in cachedChunkOffsets)
@@ -260,7 +294,6 @@ public partial class Chunk_Manager : Node
 
 			if (chunks.TryGetValue(chunkPos, out var chunk))
 			{
-				// If the chunk exists but hasn't been generated yet, ensure it's queued
 				if (!chunk.Generated && !generationQueue.ContainsKey(chunkPos))
 				{
 					generationQueue[chunkPos] = 1;
@@ -276,27 +309,23 @@ public partial class Chunk_Manager : Node
 					bool allNeighborsExist = true;
 					for (int i = 0; i < 6; i++)
 					{
-						Vector3I neighborPos = chunkPos + FaceOffsets[i];
-						if (!chunks.ContainsKey(neighborPos))
+						if (!chunks.ContainsKey(chunkPos + FaceOffsets[i]))
 						{
 							allNeighborsExist = false;
 							break;
 						}
 					}
-
 					if (allNeighborsExist)
 					{
 						bool allGenerated = true;
 						for (int i = 0; i < 6; i++)
 						{
-							Vector3I neighborPos = chunkPos + FaceOffsets[i];
-							if (!chunks[neighborPos].Generated)
+							if (!chunks[chunkPos + FaceOffsets[i]].Generated)
 							{
 								allGenerated = false;
 								break;
 							}
 						}
-
 						if (allGenerated && !loadingQueue.ContainsKey(chunkPos))
 						{
 							loadingQueue[chunkPos] = 1;
@@ -321,23 +350,6 @@ public partial class Chunk_Manager : Node
 						Monitor.Pulse(generationLock);
 					}
 				}
-			}
-		}
-
-		chunksToUnload.Clear();
-		foreach (var chunkPos in chunks.Keys)
-		{
-			if (!cachedActiveSet.Contains(chunkPos))
-				chunksToUnload.Add(chunkPos);
-		}
-
-		foreach (var chunkPos in chunksToUnload)
-		{
-			unload(chunkPos);
-			lock (queueLock)
-			{
-				activeChunks.Remove(chunkPos);
-				loadingQueue.TryRemove(chunkPos, out _);
 			}
 		}
 	}
@@ -423,7 +435,6 @@ public partial class Chunk_Manager : Node
 		if (!chunks.TryGetValue(position, out var chunk))
 			return;
 
-		// Clear damage in this chunk and free any pending buffers
 		ClearDamageInChunk(position);
 		pendingBuffers.TryRemove(position, out _);
 
@@ -434,18 +445,25 @@ public partial class Chunk_Manager : Node
 			chunk.MeshInstance.QueueFree();
 		}
 
-		// Free mesh instance but keep voxel data only for edited chunks.
+		// Canonical store holds the voxel array reference for edited chunks.
+		// Drop the raw chunk's ref so the array isn't kept alive redundantly.
+		chunk.Voxels      = null;
 		chunk.MeshInstance = null;
-		chunk.Loaded = false;
+		chunk.Loaded      = false;
 
-		if (!chunk.WasEdited)
+		// Drop unedited canonical data — it regenerates identically next time.
+		var canonicalPos = Global.CanonicalChunkPos(position);
+		lock (_canonicalLock)
 		{
-			// Not edited by player: safe to evict entirely to save memory.
-			generationQueue.TryRemove(position, out _);
-			loadingQueue.TryRemove(position, out _);
-			pendingBuffers.TryRemove(position, out _);
-			chunks.Remove(position);
+			if (_canonicalStore.TryGetValue(canonicalPos, out var cd) && !cd.WasEdited)
+				_canonicalStore.Remove(canonicalPos);
 		}
+
+		// Always remove the raw chunk entry; canonical store is the persistent owner.
+		generationQueue.TryRemove(position, out _);
+		loadingQueue.TryRemove(position, out _);
+		pendingBuffers.TryRemove(position, out _);
+		chunks.Remove(position);
 	}
 
 	private void GenerationWorkerLoop()
@@ -491,19 +509,41 @@ public partial class Chunk_Manager : Node
 		if (!chunks.TryGetValue(position, out var chunk))
 			return;
 
-		// Generate voxels using one RNG per-chunk (move Random creation out of inner loops)
-		chunk.Voxels = create_chunk_data(position);
+		var canonicalPos = Global.CanonicalChunkPos(position);
+
+		// Check canonical store first — reuse edited (or previously generated) data
+		ChunkData cd;
+		lock (_canonicalLock)
+			_canonicalStore.TryGetValue(canonicalPos, out cd);
+
+		if (cd != null)
+		{
+			chunk.Voxels      = cd.Voxels;
+			chunk.IsFullySolid = cd.IsFullySolid;
+			chunk.WasEdited   = cd.WasEdited;
+			CallDeferred("generate_ready_chunk", position);
+			return;
+		}
+
+		// Fresh generation — use canonical position so terrain repeats across laps
+		byte[] data = create_chunk_data(canonicalPos);
 
 		bool isFullySolid = true;
-		for (int i = 0; i < chunk.Voxels.Length; i++)
+		for (int i = 0; i < data.Length; i++)
 		{
-			if (chunk.Voxels[i] == 0)
-			{
-				isFullySolid = false;
-				break;
-			}
+			if (data[i] == 0) { isFullySolid = false; break; }
 		}
+
+		chunk.Voxels       = data;
 		chunk.IsFullySolid = isFullySolid;
+
+		// Store in canonical cache (another thread could race on the same canonical pos
+		// only if planet size constraint is violated — guarded by the startup clamp)
+		lock (_canonicalLock)
+		{
+			if (!_canonicalStore.ContainsKey(canonicalPos))
+				_canonicalStore[canonicalPos] = new ChunkData { Voxels = data, IsFullySolid = isFullySolid };
+		}
 
 		CallDeferred("generate_ready_chunk", position);
 	}
@@ -526,7 +566,6 @@ public partial class Chunk_Manager : Node
 
 		if (chunk.IsFullySolid && adjacent_chunks_solid(position))
 			{
-				// No geometry to upload; defer a load_ready_chunk with zero counts
 				CallDeferred("load_ready_chunk", position, 0, 0, 0);
 				return;
 			}
@@ -813,35 +852,89 @@ public partial class Chunk_Manager : Node
 
 	public byte[] create_chunk_data(Vector3I chunkPos)
 	{
+		var p = Global.Instance.ActivePlanet;
 		byte[] data = new byte[CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE];
 
-		// Create one deterministic RNG per chunk for efficiency
-		int seed = noiseSeed ^ (chunkPos.X * 73856093) ^ (chunkPos.Y * 19349663) ^ (chunkPos.Z * 83492791);
-		var rng = new Random(seed);
+		float twoPi = 2f * Mathf.Pi;
+		float invW  = twoPi / Global.PlanetWidth;
+		float invD  = twoPi / Global.PlanetDepth;
+
+		// Chasm shaft anchor: planet center in canonical space, drifts via sin so entrance is at anchor.
+		float chasmOriginX = Global.PlanetWidth  / 2f;
+		float chasmOriginZ = Global.PlanetDepth  / 2f;
 
 		for (int x = 0; x < CHUNK_SIZE; x++)
 		{
-			for (int y = 0; y < CHUNK_SIZE; y++)
+			int   worldX = chunkPos.X * CHUNK_SIZE + x;
+			float thetaX = worldX * invW;
+			float cosX   = Mathf.Cos(thetaX);
+			float sinX   = Mathf.Sin(thetaX);
+
+			for (int z = 0; z < CHUNK_SIZE; z++)
 			{
-				for (int z = 0; z < CHUNK_SIZE; z++)
+				int   worldZ = chunkPos.Z * CHUNK_SIZE + z;
+				float thetaZ = worldZ * invD;
+				float cosZ   = Mathf.Cos(thetaZ);
+				float sinZ   = Mathf.Sin(thetaZ);
+
+				float height = p.FillSolid ? 0f : Simplex4D.Sample(
+					cosX * p.NoiseScale, sinX * p.NoiseScale,
+					cosZ * p.NoiseScale, sinZ * p.NoiseScale)
+					* p.HeightAmplitude + surfaceLevel;
+
+				for (int y = 0; y < CHUNK_SIZE; y++)
 				{
-					int worldX = chunkPos.X * CHUNK_SIZE + x;
 					int worldY = chunkPos.Y * CHUNK_SIZE + y;
-					int worldZ = chunkPos.Z * CHUNK_SIZE + z;
 
-					float height = noise.GetNoise2D(worldX, worldZ) * 10 + surfaceLevel;
+					bool solid = p.FillSolid ? true : worldY <= height;
 
-					int index = voxel_index(x, y, z);
-					float abyssStrength = Global.AbyssStrength(worldX, worldZ, worldY);
-
-					if (worldY <= height && abyssStrength < 0.5f)
+					// Cave carving — true 3D density field.
+					// Y is encoded as a phase offset to both torus axes so the density field
+					// genuinely varies in all three dimensions while X/Z remain seam-seamless.
+					// Two octaves: large chambers (base) + connecting passages (×2 freq, ×0.5 amp).
+					// Cave where combined density > CaveThreshold.
+					if (solid && p.CavesEnabled && (p.CaveFullRange || worldY < Global.SurfaceLevel))
 					{
-						data[index] = 1; // stone
+						float s  = p.CaveScale;
+						// Phase offsets grow linearly with depth; different ratios per axis
+						// so the pattern doesn't repeat symmetrically.
+						float phX = worldY * invW * p.CaveYFrequency;
+						float phZ = worldY * invD * p.CaveYFrequency * 0.71f;
+
+						float d1 = Simplex4D.Sample(cosX * s + phX, sinX * s,  cosZ * s + phZ, sinZ * s);
+						float d2 = Simplex4D.Sample(cosX * s * 2f + phZ, sinX * s * 2f,
+						                            cosZ * s * 2f - phX, sinZ * s * 2f) * 0.5f;
+
+						if (d1 + d2 > p.CaveThreshold)
+							solid = false;
 					}
-					else
+
+					// Chasm carving — sinusoidal shaft anchored at planet center
+					if (solid && p.ChasmEnabled)
 					{
-						data[index] = 0;
+						float cx = chasmOriginX + Mathf.Sin(worldY * p.ChasmDriftScale)        * 60f;
+						float cz = chasmOriginZ + Mathf.Sin(worldY * p.ChasmDriftScale * 0.7f) * 60f;
+						float dx = worldX - cx;
+						float dz = worldZ - cz;
+						if (dx * dx + dz * dz < p.ChasmRadius * p.ChasmRadius)
+							solid = false;
 					}
+
+					// Crash site — guaranteed open ellipsoid near spawn (Cave template).
+					// Runs last so it can't be re-filled by any earlier carver.
+					if (solid && p.SpawnClearEnabled)
+					{
+						int   sx = Global.Instance.WorldSpawn.X;
+						int   sy = Global.Instance.WorldSpawn.Y;
+						int   sz = Global.Instance.WorldSpawn.Z;
+						float ex = (worldX - sx) / p.SpawnClearRadiusXZ;
+						float ey = (worldY - sy) / p.SpawnClearRadiusY;
+						float ez = (worldZ - sz) / p.SpawnClearRadiusXZ;
+						if (ex * ex + ey * ey + ez * ez <= 1f)
+							solid = false;
+					}
+
+					data[voxel_index(x, y, z)] = solid ? p.SurfaceBlock : (byte)0;
 				}
 			}
 		}
@@ -909,6 +1002,13 @@ public partial class Chunk_Manager : Node
 		// Mark that this chunk has been edited by the player
 		chunks[chunkPos].WasEdited = true;
 
+		// Persist the edit in canonical store so it survives unload and shows on future laps
+		lock (_canonicalLock)
+		{
+			if (_canonicalStore.TryGetValue(Global.CanonicalChunkPos(chunkPos), out var cd))
+				cd.WasEdited = true;
+		}
+
 		if (!chunks[chunkPos].Dirty)
 		{
 			chunks[chunkPos].Dirty = true;
@@ -968,6 +1068,12 @@ public partial class Chunk_Manager : Node
 			chunk.IsFullySolid = false;
 			chunk.Dirty = true;
 			dirtySet.Add(chunkPos);
+
+			lock (_canonicalLock)
+			{
+				if (_canonicalStore.TryGetValue(Global.CanonicalChunkPos(chunkPos), out var cd))
+					cd.WasEdited = true;
+			}
 
 			if (localPos.X == 0) dirtySet.Add(chunkPos + new Vector3I(-1, 0, 0));
 			if (localPos.X == CHUNK_SIZE - 1) dirtySet.Add(chunkPos + new Vector3I(1, 0, 0));
@@ -1086,12 +1192,15 @@ public partial class Chunk_Manager : Node
 		multiMesh.VisibleInstanceCount = 0;            // nothing visible yet
 
 		MultiMeshInstance3D instance = new MultiMeshInstance3D();
-		float worldRange = (RenderDistance + 4) * CHUNK_SIZE;
+		// Large enough to never be frustum-culled regardless of player position.
+		// The node sits at world origin (TopLevel=true), so a fixed AABB would exit
+		// the camera frustum as the player walks away and cull the entire MultiMesh.
+		const float HalfExtent = 1e6f;
 		instance.CustomAabb = new Aabb(
-			new Vector3(-worldRange, -worldRange, -worldRange),
-			new Vector3(worldRange * 2f, worldRange * 2f, worldRange * 2f)
+			new Vector3(-HalfExtent, -HalfExtent, -HalfExtent),
+			new Vector3(HalfExtent * 2f, HalfExtent * 2f, HalfExtent * 2f)
 		);
-		instance.ExtraCullMargin = CHUNK_SIZE * 2f;
+		instance.ExtraCullMargin = 0f;
 		instance.VisibilityRangeBegin = 0f;
 		instance.VisibilityRangeEnd = 0f;
 		instance.TopLevel = true;
@@ -1108,7 +1217,7 @@ public partial class Chunk_Manager : Node
 		damageMultiMeshByBlock[blockType] = multiMesh;
 
 		if (!damagePositionsByBlock.ContainsKey(blockType))
-			damagePositionsByBlock[blockType] = new List<Vector3I>();
+			damagePositionsByBlock[blockType] = new HashSet<Vector3I>();
 
 		return instance;
 	}
@@ -1158,34 +1267,40 @@ public partial class Chunk_Manager : Node
 		return mesh;
 	}
 
+	private static float GetHardness(int blockType)
+	{
+		var def = Block_Registry.Blocks[blockType];
+		return (def != null && def.Hardness > 0f) ? def.Hardness : 1f;
+	}
+
 	public void damage_block(Vector3I position, float damage)
 	{
 		int blockType = get_block(position);
 		if (blockType == 0) return;
 
+		float effective = damage / GetHardness(blockType);
+
 		lock (damageLock)
 		{
 			if (!damagedBlocks.ContainsKey(position))
 			{
-				// At cap: evict the oldest tracked block to make room
-				if (damagedBlocks.Count >= MAX_DAMAGED_BLOCKS && _damageInsertionOrder.Count > 0)
+				bool hasOverlay = effective >= MinDamageForOverlay;
+
+				// Only count visible (overlay) blocks against the FIFO cap so soft fringe
+				// hits don't evict blocks that have actual visible damage.
+				if (hasOverlay && _damageInsertionOrder.Count >= MAX_DAMAGED_BLOCKS && _damageInsertionOrder.Count > 0)
 				{
 					Vector3I oldest = _damageInsertionOrder.First.Value;
 					RemoveBlockDamage(oldest);
 				}
 
-				var node = _damageInsertionOrder.AddLast(position);
-				damagedBlocks[position] = new BlockHealth { health = 1.0f - damage, blockType = blockType, insertionNode = node };
+				LinkedListNode<Vector3I> node = hasOverlay ? _damageInsertionOrder.AddLast(position) : null;
+				damagedBlocks[position] = new BlockHealth { health = 1.0f - effective, blockType = blockType, insertionNode = node };
 
-				if (damage >= MinDamageForOverlay)
+				if (hasOverlay)
 				{
 					GetOrCreateDamageOverlay(blockType);
-					if (!damagePositionsByBlock.TryGetValue(blockType, out var posList))
-					{
-						posList = new List<Vector3I>();
-						damagePositionsByBlock[blockType] = posList;
-					}
-					posList.Add(position);
+					damagePositionsByBlock[blockType].Add(position);
 					_dirtyDamageTypes.Add(blockType);
 				}
 			}
@@ -1199,12 +1314,28 @@ public partial class Chunk_Manager : Node
 					return;
 				}
 
-				block.health -= damage;
+				block.health -= effective;
 				if (block.health <= 0)
 				{
 					RemoveBlockDamage(position);
 					break_block(position);
 					return;
+				}
+
+				// Block may have been first registered below MinDamageForOverlay — add it
+				// to the overlay list now that it has accumulated more damage.
+				if (!damagePositionsByBlock.TryGetValue(blockType, out var existingSet) || !existingSet.Contains(position))
+				{
+					// Enforce cap before growing the insertion order.
+					if (block.insertionNode == null && _damageInsertionOrder.Count >= MAX_DAMAGED_BLOCKS && _damageInsertionOrder.Count > 0)
+					{
+						Vector3I oldest = _damageInsertionOrder.First.Value;
+						RemoveBlockDamage(oldest);
+					}
+					GetOrCreateDamageOverlay(blockType);
+					damagePositionsByBlock[blockType].Add(position);
+					if (block.insertionNode == null)
+						block.insertionNode = _damageInsertionOrder.AddLast(position);
 				}
 
 				_dirtyDamageTypes.Add(blockType);
@@ -1217,18 +1348,20 @@ public partial class Chunk_Manager : Node
 		int blockType = get_block(position);
 		if (blockType == 0) return false;
 
+		float effective = damage / GetHardness(blockType);
+
 		lock (damageLock)
 		{
 			if (damagedBlocks.TryGetValue(position, out BlockHealth block))
 			{
-				if (block.health - damage <= 0)
+				if (block.health - effective <= 0)
 				{
 					RemoveBlockDamage(position);
 					break_block(position);
 					return true;
 				}
 			}
-			else if (damage >= 1.0f)
+			else if (effective >= 1.0f)
 			{
 				break_block(position);
 				return true;
@@ -1267,15 +1400,18 @@ public partial class Chunk_Manager : Node
 			foreach (int bt in _dirtyDamageTypes)
 			{
 				if (!damageMultiMeshByBlock.TryGetValue(bt, out var mm)) continue;
-				if (!damagePositionsByBlock.TryGetValue(bt, out var posList)) continue;
+				if (!damagePositionsByBlock.TryGetValue(bt, out var posSet)) continue;
 
-				for (int i = 0; i < posList.Count; i++)
+				int i = 0;
+				foreach (var pos in posSet)
 				{
-					if (!damagedBlocks.TryGetValue(posList[i], out var bh)) continue;
-					mm.SetInstanceTransform(i, new Transform3D(Basis.Identity, posList[i] + new Vector3(0.5f, 0.5f, 0.5f)));
+					if (i >= MAX_DAMAGED_BLOCKS) break;
+					if (!damagedBlocks.TryGetValue(pos, out var bh)) continue;
+					mm.SetInstanceTransform(i, new Transform3D(Basis.Identity, pos + new Vector3(0.5f, 0.5f, 0.5f)));
 					mm.SetInstanceCustomData(i, new Color(1f - bh.health, 0f, 0f, 1f));
+					i++;
 				}
-				mm.VisibleInstanceCount = posList.Count;
+				mm.VisibleInstanceCount = i;
 			}
 			_dirtyDamageTypes.Clear();
 		}

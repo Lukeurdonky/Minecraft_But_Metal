@@ -67,11 +67,22 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
 ## What's Implemented
 
 ### World & Rendering
-- 16×16×16 chunk system, threaded generation + mesh building
+- 16×16×16 chunk system, threaded generation + mesh building, `CallDeferred` pipeline for cross-thread mesh upload (implicit per-frame backpressure — do not replace with manual queue)
 - Greedy face culling, sphere/cylinder render distance, chunk eviction
 - Block damage overlay (MultiMesh + shader), up to 1500 simultaneously damaged blocks
 - Explosion system (`explode()` in Chunk_Manager) — damage = 1 required to instant-kill center block
 - `damage_check()` — instant break when accumulated damage would be lethal
+
+### Planet Generation
+- `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load. Three presets: `MakeField()`, `MakeCave()`, `MakeChasm()`
+- `PlanetConfigMenu.gd` — F3 debug UI (CanvasLayer autoload): template selector pre-fills presets, SpinBox/CheckButton rows for all params, Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`
+- Three planet templates in `create_chunk_data`:
+  - **Field** — height-map surface via 4D simplex torus noise. Block: Cloud (8). `NoiseScale=1.5`, `HeightAmplitude=10`.
+  - **Chasm** — Field + sinusoidal shaft from planet center. Block: Steel (6). `ChasmRadius=18`, drift amplitude 60 blocks.
+  - **Cave** — fully solid mass, all-Y cave carving, no surface. Block: Crystal (10). `FillSolid=true`, `CaveFullRange=true`.
+- Cave carving: true 3D two-octave density field. Y encoded as additive phase offsets to torus coords (`phX = worldY * invW * CaveYFreq`). Preserves X/Z seam seamlessness while varying in all three spatial dimensions. Two octaves: large chambers (base) + connecting passages (×2 freq, ×0.5 amp). Cave where `d1+d2 > CaveThreshold`.
+- Spawn clear: `SpawnClearEnabled` carves a guaranteed open ellipsoid (`SpawnClearRadiusXZ=10`, `SpawnClearRadiusY=6`) centered at `WorldSpawn`, runs last in `create_chunk_data` so it cannot be re-filled. Required for Cave template.
+- Block palette (IDs 1–12 in `Block_Registry.cs`). Notable new blocks: Cloud (1), Smaug (2), Crystal (2), LightCrystal (1), Brick (5) — hardness in parens.
 
 ### Player Movement
 - WASD, mouse-look FPS camera, sprint, spectator mode (V)
@@ -82,7 +93,7 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
 - `PhysicallyOnFloor()` / `OnFloor()` split for correct coyote behavior
 
 ### Player Abilities
-- **Jackhammer** (`attack1` press-to-commit) — press once to commit a 0.5s charge; charge runs automatically to full. Holding the button at full charge holds the pose; release fires. Explosion at targeted block (full radius). Damage determined by speed at fire time — 3 tiers: weak (<15 u/s, 20 dmg), medium (15–30 u/s, 50 dmg), hard (>30 u/s, 100 dmg). Player bounced opposite camera look at full impulse. A 0.5s coyote window keeps the effective tier active after speed drops, so grapple/laser momentum can be cashed in even as you decelerate.
+- **Jackhammer** (`attack1` press-to-commit) — press once to commit a 0.5s charge; charge runs automatically to full. Holding the button at full charge holds the pose; release fires. Explosion at targeted block (full radius). Damage determined by speed at fire time — 3 tiers: weak (<15 u/s, 20 dmg), medium (15–30 u/s, 50 dmg), hard (>30 u/s, 100 dmg). Player bounced opposite camera look at full impulse. A 0.5s coyote window keeps the effective tier active after speed drops, so grapple/laser momentum can be cashed in even as you decelerate. Hitstop durations are `[Export]` on Player: `HitstopMed` (0.25s), `HitstopHard` (0.5s).
 - **Laser** (`attack2`) — 1.5s persistent beam of mass destruction, 7s cooldown. Obliterates terrain via rate-limited `explode()` calls, shreds entities with high DPS, and blasts the player backward with continuous knockback — designed to be a chaotic momentum tool as much as a weapon. Red emissive beam VFX in SubViewport space. LaserOutline arm animation: state machine with Extended (poles at 0.65, triangle at 0, slow idle spin) → Spinning (both fully extruded, fast spin) → FoldPoles → FoldTriangle → Retracted → UnfoldPoles → UnfoldTriangle → back to Extended.
 - **Grapple** (`grapple_send`) — hook at 300 u/s, max 220 units. Attaches to blocks OR entities. 0.1s cooldown between fires.
   - *Block*: Quake-style pull (72 u/s accel, 50 u/s cap). Release = lunge at 50 u/s (Quake-capped, won't slow you if already faster).
@@ -122,7 +133,7 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 - Stone-only generation (temp — full palette wired once World_Generator pipeline is built)
 - `Entity.cs` base: health, AABB physics, `heavy` bool, `Grappled` bool (suppresses movement during reel)
 - `Enemy.cs` (extends Entity): `AttackDamage`, `DetectionRange`, `Flying`, procedural world-space health bar (green→red, camera-facing billboard, damage flash, hidden at full health). Tracks `EnemyCount` in Global on spawn/death.
-- `Creature.cs` (extends Enemy): 3D flying chase AI, accelerates toward player up to `ChaseSpeed`, respects `MaxFallSpeed` when not flying. Deals `AttackDamage` on AABB contact (1s cooldown) with directional knockback.
+- `Creature.cs` (extends Enemy): flying 3-state AI. **Idle** — hovers in place, Y-rotates and pitch-tracks toward player, loops Idle animation. Transitions to Chase when player enters `DetectionRange`. **Chase** — flies toward player (Idle animation still playing), pitch-tracks player vertically. Transitions to Grab when within `AttackRange` (default 6u). **Grab** — 3-phase lunge: charge (bleeds velocity to stop over `GrabDamageStart`), lunge impulse (single velocity burst = `LungeSpeed` in the creature's forward direction at animation start), recovery (decelerates after `GrabDamageEnd`). Damage window `GrabDamageStart`–`GrabDamageEnd`, once per grab, checked against a scene-placed `GrabHitbox` Area3D (BoxShape3D) — editor-positionable hitbox in front of the creature, read as an AABB in code. Knockback has an upward component: `KnockbackStrength * KnockbackUpFactor` added to Y. Uses `TentacleCreature.glb` model. Pitch rotation applied to `TentacleCreature` mesh child only (root stays upright for clean physics); collision shape is BoxShape3D (replaced capsule). Lunge direction = `GlobalTransform.Basis * _mesh.Transform.Basis.Z`. `Enemy._Process` auto-scans for `UniParticles3D` and `AnimationPlayer` descendants on spawn and freezes them (SpeedScale/paused) during hitstop — zero per-enemy setup required.
 - `SwarmEnemy.cs` (extends Enemy): fast (12 u/s), small (0.6×0.7), flying, `heavy=false`. Random jitter each 0.4s prevents all swarm members taking identical paths. Short attack cooldown (0.6s). Needs model + scene.
 - `HeavyEnemy.cs` (extends Enemy): slow (3.5 u/s), large (1.4×2.2), ground, `heavy=true`. Charge attack (18 u/s burst, 0.4s, 4s cooldown) at range > 12. Auto-jumps 1-block walls via `OnBlockCollision`. Needs model + scene.
 - `RangedEnemy.cs` (extends Enemy): medium (4.5 u/s), ground, `heavy=false`. Maintains 20-unit ideal range, strafes perpendicular to player. Fires `EnemyBolt` every 2.5s when in LOS. LOS via block ray march. Auto-jumps walls. Needs model + scene.
@@ -139,7 +150,7 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 
 | System | Notes |
 |---|---|
-| World generation | `World_Generator.cs` 5-stage pipeline is empty. Chunk_Manager uses raw FastNoise2D directly. |
+| World generation | Three templates (Field/Cave/Chasm) live inline in `create_chunk_data`. `World_Generator.cs` 5-stage pipeline is empty — stages need to absorb the inline code. |
 | Enemy AI | 3 enemy type skeletons (Swarm/Heavy/Ranged) coded, waiting on models. EnemySpawner active. A* pathfinding not yet implemented — ground enemies auto-jump 1-block walls for now. |
 | Combat | Enemies take damage and die. Player deals damage via jackhammer/laser/grapple. No player health UI yet. |
 | Run structure | No planet select, no upgrade screen, no boss trigger. |

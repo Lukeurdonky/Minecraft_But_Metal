@@ -14,25 +14,61 @@ public partial class Enemy : Entity
     private StandardMaterial3D _healthBarFgMat;
     private float              _flashTimer = 0f;
     private const float        FlashDuration = 0.12f;
+    private const float        DespawnRadius = 160f;
 
     private const float BarWidth  = 1.2f;
     private const float BarHeight = 0.1f;
+
+    private Godot.Collections.Array<Node> _particles;
+    private Godot.Collections.Array<Node> _animPlayers;
+    private bool _counted = false;
 
     public override void ImHere()
     {
         base.ImHere();
         BuildHealthBar();
-        if (Global.Instance != null) Global.Instance.EnemyCount++;
+        _particles   = FindChildren("*", "UniParticles3D",  true, false);
+        _animPlayers = FindChildren("*", "AnimationPlayer", true, false);
+        if (Global.Instance != null) { Global.Instance.EnemyCount++; _counted = true; }
     }
 
     public override void Die()
     {
-        if (Global.Instance != null) Global.Instance.EnemyCount--;
+        DecrementCount();
         base.Die();
+    }
+
+    public override void _ExitTree()
+    {
+        DecrementCount();
+        base._ExitTree();
+    }
+
+    private void DecrementCount()
+    {
+        if (_counted && Global.Instance != null)
+        {
+            Global.Instance.EnemyCount--;
+            _counted = false;
+        }
     }
 
     public override void _Process(double delta)
     {
+        var player = Global.Instance?.Player;
+        if (player != null && GlobalPosition.DistanceSquaredTo(player.GlobalPosition) > DespawnRadius * DespawnRadius)
+        {
+            QueueFree();
+            return;
+        }
+
+        bool hitstop = Global?.HitstopActive == true;
+        foreach (var node in _particles)
+            node.Set("paused", hitstop);
+        foreach (var node in _animPlayers)
+            if (node is AnimationPlayer ap)
+                ap.SpeedScale = hitstop ? 0f : 1f;
+
         if (_healthBarRoot == null) return;
         var cam = Global.Instance?.Player?.Camera;
         if (cam == null) return;

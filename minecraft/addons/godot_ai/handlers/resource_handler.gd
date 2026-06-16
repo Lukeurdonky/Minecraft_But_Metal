@@ -2,6 +2,7 @@
 extends RefCounted
 
 const ErrorCodes := preload("res://addons/godot_ai/utils/error_codes.gd")
+const ClassIntrospection := preload("res://addons/godot_ai/utils/class_introspection.gd")
 
 ## Handles resource search, inspection, and assignment to nodes.
 
@@ -64,8 +65,9 @@ func load_resource(params: Dictionary) -> Dictionary:
 	if path.is_empty():
 		return ErrorCodes.make(ErrorCodes.MISSING_REQUIRED_PARAM, "Missing required param: path")
 
-	if not path.begins_with("res://"):
-		return ErrorCodes.make(ErrorCodes.VALUE_OUT_OF_RANGE, "Path must start with res://")
+	var path_err = McpPathValidator.loadable_error(path, "path")
+	if path_err != null:
+		return path_err
 
 	if not ResourceLoader.exists(path):
 		return ErrorCodes.make(ErrorCodes.RESOURCE_NOT_FOUND, "Resource not found: %s" % path)
@@ -111,6 +113,10 @@ func assign_resource(params: Dictionary) -> Dictionary:
 
 	if resource_path.is_empty():
 		return ErrorCodes.make(ErrorCodes.MISSING_REQUIRED_PARAM, "Missing required param: resource_path")
+
+	var rpath_err = McpPathValidator.loadable_error(resource_path, "resource_path")
+	if rpath_err != null:
+		return rpath_err
 
 	var _resolved := McpNodeValidator.resolve_or_error(node_path, "node_path")
 	if _resolved.has("error"):
@@ -248,6 +254,9 @@ static func _apply_resource_properties(res: Resource, properties: Dictionary) ->
 			if v == "":
 				v = null
 			else:
+				var vpath_err = McpPathValidator.loadable_error(v, "property '%s'" % key)
+				if vpath_err != null:
+					return vpath_err
 				var loaded := ResourceLoader.load(v)
 				if loaded == null:
 					return ErrorCodes.make(
@@ -365,37 +374,25 @@ func get_resource_info(params: Dictionary) -> Dictionary:
 			"%s is not a Resource type (extends %s)" % [type_str, parent]
 		)
 
-	var properties: Array[Dictionary] = []
-	for prop in ClassDB.class_get_property_list(type_str):
-		var usage: int = prop.get("usage", 0)
-		if not (usage & PROPERTY_USAGE_EDITOR):
-			continue
-		properties.append({
-			"name": prop.name,
-			"type": type_string(prop.type),
-			"hint": prop.get("hint", 0),
-			"usage": usage,
-		})
-	properties.sort_custom(func(a, b): return a.name < b.name)
-
 	var can_instantiate: bool = ClassDB.can_instantiate(type_str)
+	var class_info := ClassIntrospection.build(type_str, {
+		"sections": ["properties"],
+		"include_inherited": true,
+		"include_inheritors": not can_instantiate,
+		"limit": 0,
+	})
 	var data: Dictionary = {
 		"type": type_str,
-		"parent_class": ClassDB.get_parent_class(type_str),
+		"parent_class": class_info.parent_class,
 		"can_instantiate": can_instantiate,
 		"is_abstract": not can_instantiate,
-		"properties": properties,
-		"property_count": properties.size(),
+		"properties": class_info.properties,
+		"property_count": class_info.property_count,
 	}
 
 	# For abstract bases (Shape3D, Material, Texture, StyleBox, ...) surface
 	# the concrete Resource subclasses an agent could try next.
 	if not can_instantiate:
-		var subclasses: Array[String] = []
-		for cls in ClassDB.get_inheriters_from_class(type_str):
-			if ClassDB.can_instantiate(cls) and ClassDB.is_parent_class(cls, "Resource"):
-				subclasses.append(cls)
-		subclasses.sort()
-		data["concrete_subclasses"] = subclasses
+		data["concrete_subclasses"] = class_info.concrete_inheritors
 
 	return {"data": data}

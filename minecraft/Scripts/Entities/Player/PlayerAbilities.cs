@@ -13,6 +13,9 @@ public partial class Player : Entity
     public float JackhammerCharge   { get; private set; } = 0f;
     public float JackhammerRadius   { get; private set; } = 3f;
 
+    [Export] public float HitstopMed  { get; set; } = 0.25f;
+    [Export] public float HitstopHard { get; set; } = 0.5f;
+
     private const float JackhammerMaxCharge  = .5f;
     private const float JackhammerImpulseWeak = 35f;
     private const float JackhammerImpulseMed  = 50f;
@@ -30,8 +33,8 @@ public partial class Player : Entity
         => Input.IsActionJustPressed(action) || _inputBuffer.Remove(action);
 
     // Speed-based damage tiers (player speed sampled at fire time)
-    private const float JackhammerMedThreshold  = 15f;
-    private const float JackhammerFastThreshold = 30f;
+    private const float JackhammerMedThreshold  = 20f;
+    private const float JackhammerFastThreshold = 40f;
     private const int   JackhammerDamageWeak    = 20;
     private const int   JackhammerDamageMed     = 50;
     private const int   JackhammerDamageHard    = 100;
@@ -45,7 +48,7 @@ public partial class Player : Entity
     private const float LaserDuration           = 1.5f;
     private const float LaserCooldownMax        = 7.0f;
     private const float LaserRange              = 100f;
-    private const float LaserDamagePerSecond    = 200f;
+    private const float LaserDamagePerSecond    = 600f;
     private const float LaserKnockbackPerSecond = 55f;
     private const float LaserTunnelRadius       = 4f;
     private const float LaserBeamRadius         = .35f;
@@ -252,7 +255,7 @@ public partial class Player : Entity
             : JackhammerImpulseWeak;
 
         float hitstop = targets.Count > 0
-            ? EffectiveSpeedTier switch { 2 => 1.0f, 1 => 0.5f, _ => 0f }
+            ? EffectiveSpeedTier switch { 2 => HitstopHard, 1 => HitstopMed, _ => 0f }
             : 0f;
         if (hitstop > 0f)
         {
