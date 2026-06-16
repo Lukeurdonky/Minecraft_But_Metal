@@ -1,6 +1,160 @@
 # Planet Generation Plan
 
-> Framework for producing planets with distinct atmospheres, vibes, and gameplay feel. Three templates to start: **Field**, **Cave**, **Chasm**. Adding a new planet type should be a matter of filling in a new descriptor, not restructuring code.
+> Framework for producing planets with distinct atmospheres, vibes, and gameplay feel. Three templates to start: **Field**, **Cave**, **Abyss**. Adding a new planet type should be a matter of filling in a new descriptor, not restructuring code.
+
+---
+
+## Full System Architecture
+
+### Miro diagram (paste into Miro → Apps → Mermaid)
+
+```mermaid
+flowchart TD
+    subgraph static["Static Data (hardcoded)"]
+        BR["Biome_Registry\n9 hardcoded biomes\nField · Cave · Abyss"]
+    end
+
+    subgraph meta["Meta-Game"]
+        RM["RunManager\npicks biome + seed\napplies difficulty modifiers"]
+    end
+
+    subgraph descriptors["Planet Setup — built once before scene load"]
+        PP["PlanetParams\nNoiseScale · CaveScale · SurfaceBlock\nCavesEnabled · ChasmEnabled · SpawnY · etc."]
+        PD["PlanetDescriptor\nSkyColor · FogColor · FogDensity\nGravity · EnemyDensity · EnemyHostility\nEnemy type tags"]
+    end
+
+    subgraph storage["Global — persists across scene reload"]
+        GL["Global.ActivePlanet\nGlobal.ActiveDescriptor"]
+    end
+
+    subgraph scene["Scene Systems — read only"]
+        CM["ChunkManager + Stage Pipeline\nTerrainStage · CaveStage · AbyssStage · FeatureStage\nproduces voxel world"]
+        AT["AtmosphereSystem\nsets sky color · fog · ambient light"]
+        ES["EnemySpawner\nspawns typed enemies\nscaled by density + hostility"]
+    end
+
+    BR -->|"RunManager selects one"| RM
+    RM -->|"biome.MakePlanetParams(seed)"| PP
+    RM -->|"biome atmosphere values +\nown difficulty state"| PD
+    PP --> GL
+    PD --> GL
+    GL -->|"reads PlanetParams"| CM
+    GL -->|"reads PlanetDescriptor"| AT
+    GL -->|"reads PlanetDescriptor"| ES
+```
+
+---
+
+### ASCII reference
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  RunManager                                                 │
+│  Meta-game: run progression, planet sequencing, rewards.   │
+│  Knows nothing about voxels or rendering.                  │
+│                                                             │
+│  1. Picks a BiomeDescriptor + seed + difficulty modifiers  │
+│  2. Calls biome.MakePlanetParams(seed) → PlanetParams      │
+│  3. Builds PlanetDescriptor (atmosphere + gameplay mods)   │
+│  4. Stores both in Global, reloads scene                   │
+└────────────────┬────────────────────────────────────────────┘
+                 │ sets Global.ActivePlanet + Global.ActiveDescriptor
+                 ▼
+┌─────────────────────────────────────────────────────────────┐
+│  BiomeDescriptor  (Scripts/The World/BiomeDescriptor.cs)   │
+│  One biome = one planet identity.                          │
+│                                                             │
+│  Owns:                                                      │
+│  • Template tag ("Field" / "Cave" / "Abyss")              │
+│  • Surface block                                           │
+│  • Terrain param ranges → randomised by MakePlanetParams  │
+│  • FogColor, SkyColor, AmbientTint (fed to PlanetDesc.)   │
+│  • Future: enemy type tags, structure list                 │
+└──────────┬──────────────────────────────┬───────────────────┘
+           │ MakePlanetParams(seed)        │ atmosphere values
+           ▼                              ▼
+┌──────────────────────┐   ┌──────────────────────────────────┐
+│  PlanetParams        │   │  PlanetDescriptor                │
+│  Pure generation     │   │  Planet identity + modifiers     │
+│  data. No gameplay   │   │                                  │
+│  knowledge.          │   │  • Gravity                       │
+│                      │   │  • EnemyDensity, EnemyHostility  │
+│  • Template flags    │   │  • SkyColor, FogColor, FogDensity│
+│  • FillSolid         │   │  • AmbientLight                  │
+│  • NoiseScale        │   │  • RainEnabled                   │
+│  • HeightAmplitude   │   │  • PlanetChunksX/Z               │
+│  • CaveScale / etc.  │   │                                  │
+│  • SurfaceBlock      │   │  Read by: AtmosphereSystem,      │
+│  • SpawnY            │   │  EnemySpawner, physics           │
+└──────────┬───────────┘   └─────────────┬────────────────────┘
+           │                             │
+           ▼                             ▼
+┌──────────────────────┐   ┌──────────────────────────────────┐
+│  Chunk Generation    │   │  AtmosphereSystem  (not built)   │
+│  (Chunk_Manager.cs)  │   │                                  │
+│                      │   │  Runs on scene load. Reads       │
+│  Stage pipeline:     │   │  PlanetDescriptor and applies    │
+│  TerrainStage        │   │  settings to WorldEnvironment:   │
+│  CaveStage           │   │  sky color, fog, ambient light,  │
+│  AbyssStage (shaft)  │   │  sun angle, etc.                 │
+│  FeatureStage        │   │                                  │
+│    └─ structures     │   │  Peer to ChunkManager — not a    │
+│    └─ biome features │   │  generation stage.               │
+│    └─ enemy markers  │   │                                  │
+└──────────────────────┘   └──────────────────────────────────┘
+```
+
+### PlanetDescriptor — when and how it's created
+
+`PlanetDescriptor` is assembled by RunManager **before** the scene loads. Nothing inside the generation pipeline creates or writes to it — it is pre-generation setup.
+
+RunManager builds it from two sources:
+
+| Source | Contributes |
+|---|---|
+| BiomeDescriptor | SkyColor, FogColor, FogDensity, AmbientTint, enemy type tags |
+| RunManager state | Gravity, EnemyDensity, EnemyHostility, difficulty modifiers |
+
+Once built it's stored in Global and never written again. ChunkManager ignores it entirely (reads only `PlanetParams`). AtmosphereSystem and EnemySpawner read from it on scene load.
+
+### Enemy types and biome
+
+Enemy type belongs to `BiomeDescriptor`. Difficulty is separate.
+
+- **BiomeDescriptor** owns a list of enemy type tags — which enemy archetypes can spawn on this planet. A Crystal Caverns planet always spawns crystal-type enemies; a Metallic Mountains planet always spawns heavy/mechanical ones. This is an environmental identity decision, not a difficulty one.
+- **PlanetDescriptor** (via RunManager) owns `EnemyDensity` and `EnemyHostility` — how many and how lethal. These are difficulty multipliers applied on top of whatever biome decided.
+
+This means RunManager can reuse the same biome at different points in the run at different difficulty settings, without needing separate "hard desert" / "easy desert" biome definitions.
+
+`EnemySpawner` reads both: biome tags to decide *which* enemy scene to pick, PlanetDescriptor to decide *how often* and *how scaled*.
+
+Enemy type wiring is deferred until enemy designs exist. The tag list field on `BiomeDescriptor` is a placeholder for now.
+
+---
+
+### Separation of concerns
+
+| Layer | Knows about | Does not know about |
+|---|---|---|
+| RunManager | BiomeDescriptor, progression state | Voxels, rendering |
+| BiomeDescriptor | Param ranges, atmosphere values | Generation algorithm |
+| PlanetParams | Generation switches and values | Gameplay, rendering |
+| PlanetDescriptor | Gameplay modifiers, atmosphere | Voxels |
+| ChunkManager / stages | PlanetParams only | Biomes, RunManager |
+| AtmosphereSystem | PlanetDescriptor only | Voxels, RunManager |
+
+### What is and isn't built
+
+| System | Status |
+|---|---|
+| BiomeDescriptor + Biome_Registry (9 biomes) | ✓ built |
+| PlanetParams + 3 template presets | ✓ built |
+| Chunk generation (terrain + cave + abyss shaft + spawn clear) | ✓ built |
+| F3 debug menu (replaces RunManager for now) | ✓ built |
+| PlanetDescriptor class | stub only |
+| FeatureStage (structures, biome features) | not started |
+| AtmosphereSystem | not started |
+| RunManager | not started |
 
 ---
 
@@ -45,7 +199,7 @@ Full definition of a planet. Set once at planet load, read by any system that ca
 public class PlanetDescriptor
 {
     public string   Name;
-    public string   Template;          // "Field", "Cave", "Chasm"
+    public string   Template;          // "Field", "Cave", "Abyss"
 
     public PlanetParams GenParams;     // generation config
 
@@ -101,7 +255,7 @@ public class PlanetParams
     // Static presets
     public static PlanetParams MakeField()  { ... }
     public static PlanetParams MakeCave()   { ... }
-    public static PlanetParams MakeChasm()  { ... }
+    public static PlanetParams MakeAbyss()  { ... }
 }
 ```
 
@@ -140,7 +294,7 @@ if (WorldGen != null)
 
 ```
 Height-map path:   Field
-                   Chasm  ← Field + ChasmEnabled = true
+                   Abyss  ← Field + ChasmEnabled = true
 
 Full-solid path:   Cave   ← FillSolid + CaveFullRange + CavesEnabled
 ```
@@ -163,7 +317,7 @@ Full-solid path:   Cave   ← FillSolid + CaveFullRange + CavesEnabled
 
 ---
 
-### Chasm
+### Abyss
 
 Field params plus:
 
@@ -206,7 +360,7 @@ No surface. Full volume solid, caves carve everywhere via a true 3D two-octave d
 | Planet | GenParams delta | PlanetDescriptor modifiers |
 |---|---|---|
 | Low-gravity moon | Field, low HeightAmplitude | Gravity = 0.3 |
-| Rain world | Field or Chasm | RainEnabled = true, FogDensity = 0.6 |
+| Rain world | Field or Abyss | RainEnabled = true, FogDensity = 0.6 |
 | Deep hell | Cave, higher CaveThreshold | AmbientLight = 0.1, EnemyHostility = 2.0 |
 | Crystal spires | Field, large HeightAmplitude | SurfaceBlock = LightCrystal |
 | Lava zone | Field or Cave | (hazards TBD) |
@@ -232,69 +386,64 @@ No surface. Full volume solid, caves carve everywhere via a true 3D two-octave d
 
 ## Biome System
 
-Each template has 3 hardcoded biomes. A biome is a constrained variation on its parent template — same fundamental generation path, but with a specific block palette, terrain parameter range, and optional generation features that give it a distinct feel.
+Each template has 3 hardcoded biomes. A biome is a constrained variation on its parent template — same fundamental generation path, but with a specific block palette, terrain parameter range, and optional generation features (structures, enemy types) that give it a distinct feel. One planet = one biome. RunManager picks the biome; generation randomises within its ranges.
+
+### Design rules
+
+- Biome scope: **block palette + terrain param ranges + structures + enemy type tags + atmosphere fog color.** Not gravity, enemy density, or fog toggle — those are `PlanetDescriptor` concerns.
+- Fog is always present (to mask chunk load boundary). Its color must match the biome's atmosphere.
+- Sub-surface block layering and structure lists are deferred until FeatureStage is built.
+- A single surface block per biome for now.
 
 ### Structure
 
 ```
-Template (Field / Cave / Chasm)
-  └── Biome A  — specific block set, param range, optional features
-  └── Biome B
-  └── Biome C
+Template (Field / Cave / Abyss)
+  └── BiomeDescriptor  — block palette, param ranges, fog color, future: structures + enemy tags
+        └── MakePlanetParams(seed) → PlanetParams  (used by RunManager)
 ```
 
-A biome is defined by a `BiomeDescriptor`:
+`BiomeDescriptor` lives in `Scripts/The World/BiomeDescriptor.cs`.  
+`Biome_Registry` (all 9 instances) lives in `Scripts/Datasets/Biome_Registry.cs`.
 
-```csharp
-public class BiomeDescriptor
-{
-    public string  Name;
-    public string  Template;          // which template it runs on
+The F3 debug menu selects a biome and pre-fills param spinboxes with midpoint values. The user can still tweak individual params before generating.
 
-    // Block palette
-    public byte    SurfaceBlock;      // top solid block
-    public byte    SubSurfaceBlock;   // 1–3 blocks below surface (optional)
-    public byte    DepthBlock;        // everything below sub-surface
+### Biome table
 
-    // Terrain parameter ranges (randomised within on generation)
-    public float   NoiseScaleMin,   NoiseScaleMax;
-    public float   HeightAmpMin,    HeightAmpMax;
-
-    // Cave overrides (Cave template only)
-    public float   CaveScaleMin,    CaveScaleMax;
-    public float   CaveThresholdMin,CaveThresholdMax;
-
-    // Chasm overrides (Chasm template only)
-    public float   ChasmRadiusMin,  ChasmRadiusMax;
-}
-```
-
-`PlanetParams` stays the same — when a biome is selected, its randomised values populate `PlanetParams` before generation runs.
-
-### Proposed biome slots (names/themes TBD)
-
-| Template | Biome A | Biome B | Biome C |
+| Template | Biome | Surface Block | Notes |
 |---|---|---|---|
-| Field | Metallic Mountains | Sandy Desert | ??? |
-| Cave | ??? | ??? | ??? |
-| Chasm | ??? | ??? | ??? |
+| Field | Bouncy Cloud Plains | Cloud (8) | Low amplitude, gentle rolling |
+| Field | Grassy Plains | Grass (1) | Medium amplitude |
+| Field | Metallic Mountains | Steel (6) | High amplitude, jagged |
+| Cave | Tight Stone Tunnels | Stone (3) | High cave scale, high threshold = narrow passages |
+| Cave | Crystal Caverns | LightCrystal (11) | Low threshold = large open chambers |
+| Cave | The Moss Grotto | Moss (14) | Medium caves, organic feel |
+| Abyss | Dark Descent | Stone (3) | Dark, narrow shaft |
+| Abyss | The Virus | Virus (16) | Corrupted terrain, irregular shaft |
+| Abyss | Lava Walls | Lava (15) | Wide shaft, high amplitude walls |
 
-### Open design questions (see below)
+### New blocks added for biomes
+
+| ID | Name | Hardness |
+|---|---|---|
+| 13 | Sand | 1 |
+| 14 | Moss | 2 |
+| 15 | Lava | 3 |
+| 16 | Virus | 2 |
+
+Atlas is now full (16/16 slots used). Expanding block count requires resizing the texture atlas.
 
 ---
 
 ## Open Questions
 
-- **Chasm seamlessness** — drift amplitude (currently 60 blocks) must stay within `PlanetWidth/2 - ChasmRadius` to avoid shaft exiting the edge. Verify at playtest with default planet size.
+- **Abyss shaft seamlessness** — drift amplitude (currently 60 blocks) must stay within `PlanetWidth/2 - ChasmRadius` to avoid shaft exiting the edge. Verify at playtest with default planet size.
 - **Enemy spawning** — deferred entirely, FeatureStage handles it when the spawn descriptor system is built.
 - **Crash ship scene** — open ellipsoid is guaranteed at spawn; the actual ship prop + visual goes here when art is ready.
 
-### Biome design questions (pending answers)
+### Biome open items
 
-1. **Spatial vs per-planet** — Do biomes divide the planet spatially (walk north, enter a different biome) or does each generated planet have exactly one biome chosen by RunManager? Spatial gives variety on one planet; per-planet gives each planet a cleaner identity and makes the roguelike "next planet = new biome" loop cleaner.
-
-2. **What fills the 7 unnamed biome slots?** Field has Metallic Mountains + Sandy Desert confirmed. Need themes for Field slot 3, all 3 Cave biomes, and all 3 Chasm biomes.
-
-3. **What varies per biome?** Currently assumed: block palette + terrain param ranges. Should biomes also affect gameplay params (enemy density/types, gravity modifier, fog density)? Or is that PlanetDescriptor territory set separately by RunManager?
-
-4. **Sub-surface layering** — does each biome have a distinct sub-surface block 1–3 blocks under the top (e.g. Metallic Mountains: steel surface → wire beneath → stone bedrock)? Or just a uniform fill below the top block?
+- **Atlas full** — 16/16 slots used. Any new block requires expanding the texture atlas (`atlas_width` or `atlas_height` in Block_Registry).
+- **Atmosphere fog** — `BiomeDescriptor.FogColor/FogDensity` are stored. Actual Godot `WorldEnvironment` wiring (applying fog color on scene load) is a separate task.
+- **Sub-surface layering** — deferred. Will come with FeatureStage (structures). Single surface block is the current model.
+- **Enemy type tags** — field exists on `BiomeDescriptor`, unused until enemy variety system is built.

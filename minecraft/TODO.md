@@ -93,20 +93,23 @@
 ## World Generation
 
 - [x] Seamless terrain via 4D simplex noise on flat torus (`Simplex4D.cs`) — replaces FastNoiseLite
-- [x] `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load; `MakeField()`, `MakeCave()`, `MakeChasm()` presets
+- [x] `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load; `MakeField()`, `MakeCave()`, `MakeAbyss()` presets
 - [x] Removed all generation `[Export]` fields from `Chunk_Manager`; `create_chunk_data` reads `Global.Instance.ActivePlanet`
-- [x] `PlanetConfigMenu.gd` — F3 debug UI: template selector pre-fills presets; SpinBox/CheckButton rows for all params; Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`
-- [x] New blocks: Cloud (1), Smaug (2), Crystal (2), LightCrystal (1), Brick (5) — hardness values in parens; IDs 8–12 in `Block_Registry.cs`
-- [x] `CaveStage` — true 3D two-octave density field: Y encoded as additive torus phase offsets, not worm rotation. Preserves X/Z seam seamlessness. Lives in `create_chunk_data`; move to `CaveStage.Generate()` when WorldGenerator is wired
+- [x] `PlanetConfigMenu.gd` — F3 debug UI: biome selector pre-fills presets; SpinBox/CheckButton rows for all params; Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`
+- [x] Block palette IDs 1–16 in `Block_Registry.cs`. Notable blocks: Cloud (8), Crystal (10), LightCrystal (11), Sand (13), Moss (14), Lava (15), Virus (16). Atlas is full at 16/16 slots.
+- [x] `CaveStage` — true 3D two-octave density field: Y encoded as additive torus phase offsets, not worm rotation. Lives in `create_chunk_data`; migrate to `CaveStage.Generate()` when WorldGenerator is wired
+- [x] `BiomeDescriptor.cs` + `Biome_Registry.cs` — 9 hardcoded biomes across 3 templates (Field/Cave/Abyss). Each owns surface block, param ranges, fog color. `MakePlanetParams(seed)` randomises within ranges for RunManager use.
+- [x] World size param in F3 menu — `planet_chunks` SpinBox sets `Global.PlanetChunksX/Z` on generate; default 32 chunks (512 blocks)
 - [ ] `TerrainStage` — port height-map fill from `create_chunk_data` into `World_Generator.cs` stage
 - [ ] `CaveStage` migration — move cave carver from `create_chunk_data` into `CaveStage.Generate()`; gate on `CavesEnabled` / `CaveFullRange`
-- [ ] `ChasmStage` — sinusoidal shaft carver; already live in `create_chunk_data`, port to stage
-- [ ] `FeatureStage` — crash-site carve-out (guaranteed open ellipsoid near Cave spawn), enemy spawn markers, points of interest
+- [ ] `AbyssStage` — sinusoidal shaft carver; already live in `create_chunk_data`, port to stage
+- [ ] `FeatureStage` — crash-site carve-out, enemy spawn markers, biome-driven feature placement (see below)
+- [ ] `FeatureStage` biome features — modular self-contained feature classes (`VineFeature`, `SpikeFeature`, `PillarFeature`, `GlowVeinFeature`, etc.); `BiomeDescriptor` holds a feature list; `FeatureStage` iterates and places. Each feature has `Place(chunkData, chunkPos, rng, density)`.
 - [ ] Wire `World_Generator.cs` into `Chunk_Manager` (shrink `create_chunk_data` as each stage absorbs its piece)
-- [ ] `PlanetDescriptor` class — gameplay layer (difficulty, win condition, enemy density) distinct from `PlanetParams` (generation layer)
+- [ ] Surface block palette on `BiomeDescriptor` — replace single `SurfaceBlock` with a small list (2–3 natural candidates per biome); `MakePlanetParams` picks one via seed
+- [ ] Atlas expansion — `atlas_width`/`atlas_height` in `Block_Registry.cs` must be resized before any new blocks can be added (currently full at 16/16 slots)
+- [ ] Enemy type tags on `BiomeDescriptor` — list of enemy archetypes valid for this biome; wired to `EnemySpawner` once enemy variety designs exist (deferred)
 - [ ] Finite planet-shaped world (not infinite flat terrain)
-- [ ] Per-planet gravity setting
-- [ ] Difficulty modifiers (terrain hostility, enemy density)
 - [ ] Underground depth zones (Underground Forest −10 to −300, Purple Crystal −310 to −600)
 
 ---
@@ -114,10 +117,13 @@
 ## Run Structure
 
 - [x] Debug planet config menu (F3) — interim stand-in for planet selection; lets you configure any PlanetParams manually and regenerate
-- [ ] `RunManager` singleton — tracks current planet index, total kills, run score; drives the planet → upgrade → boss → win flow
+- [ ] `PlanetDescriptor` class — full implementation; holds atmosphere (SkyColor, FogColor, FogDensity, AmbientLight) + gameplay modifiers (Gravity, EnemyDensity, EnemyHostility, enemy type tags); assembled by RunManager from biome values + difficulty state before scene load
+- [ ] `AtmosphereSystem` — reads `PlanetDescriptor` on scene load; applies fog color, sky color, ambient light to Godot `WorldEnvironment`; peer to ChunkManager (not a generation stage)
+- [ ] RunManager modifier system — framework for run-level modifiers applied on top of biome after `MakePlanetParams`; modifiers include: Low Gravity, Heavy Fog, Alien Surface, and others TBD
+- [ ] RunManager modifier: **Alien Surface** — weighted table across all registered blocks; overrides the biome's natural surface block pick; makes familiar biomes feel visually alien on certain runs
+- [ ] `RunManager` singleton — tracks current planet index, total kills, run score; drives the planet → upgrade → boss → win flow; picks biome + seed + modifiers; calls `biome.MakePlanetParams(seed)` and builds `PlanetDescriptor`
 - [ ] Kill counter per planet fed into `RunManager` (Exploration win condition)
 - [ ] Survival timer per planet (Survival win condition)
-- [ ] Planet creation sets `Global.PlanetChunksX/Z` — `NoiseScale = PlanetWidth / (2π × targetFeatureBlocks)` keeps density consistent
 - [ ] Planet selection screen (3 choices, difficulty shown, pre-generated random params under constraints)
 - [ ] Planet map HUD visible during run
 - [ ] Post-planet upgrade screen (choose 1 of 3 accessories)

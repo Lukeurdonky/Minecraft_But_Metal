@@ -17,6 +17,7 @@ public partial class Global : Node
 	public void SetPlanetConfig(Godot.Collections.Dictionary config)
 	{
 		var p = new PlanetParams();
+		if (config.ContainsKey("biome"))           p.Biome           = config["biome"].AsString();
 		if (config.ContainsKey("template"))        p.Template        = config["template"].AsString();
 		if (config.ContainsKey("fill_solid"))       p.FillSolid       = config["fill_solid"].AsBool();
 		if (config.ContainsKey("surface_block"))    p.SurfaceBlock    = (byte)config["surface_block"].AsInt32();

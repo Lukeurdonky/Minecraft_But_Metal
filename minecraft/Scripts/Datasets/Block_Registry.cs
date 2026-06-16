@@ -35,6 +35,9 @@ public partial class Block_Registry : Node
 		Blocks[11] = new Block_Definition { Id = 11, Name = "LightCrystal",Hardness = 1f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(10, atlas_width, atlas_height), Model = GetModel("Cube") };
 		Blocks[12] = new Block_Definition { Id = 12, Name = "Brick",       Hardness = 5f,  DropId = "stone", DropCount = 5, faceUVs = GenerateFaceUVs(11, atlas_width, atlas_height), Model = GetModel("Cube") };
 		Blocks[13] = new Block_Definition { Id = 13, Name = "Sand",        Hardness = 1f,  DropId = "stone", DropCount = 1, faceUVs = GenerateFaceUVs(12, atlas_width, atlas_height), Model = GetModel("Cube") };
+		Blocks[14] = new Block_Definition { Id = 14, Name = "Moss",        Hardness = 2f,  DropId = "stone", DropCount = 1, faceUVs = GenerateFaceUVs(13, atlas_width, atlas_height), Model = GetModel("Cube") };
+		Blocks[15] = new Block_Definition { Id = 15, Name = "Lava",        Hardness = 3f,  DropId = "stone", DropCount = 1, faceUVs = GenerateFaceUVs(14, atlas_width, atlas_height), Model = GetModel("Cube") };
+		Blocks[16] = new Block_Definition { Id = 16, Name = "Virus",       Hardness = 2f,  DropId = "stone", DropCount = 1, faceUVs = GenerateFaceUVs(15, atlas_width, atlas_height), Model = GetModel("Cube") };
 
 	}
 

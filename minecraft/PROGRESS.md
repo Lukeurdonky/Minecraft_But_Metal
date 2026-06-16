@@ -74,15 +74,20 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
 - `damage_check()` — instant break when accumulated damage would be lethal
 
 ### Planet Generation
-- `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load. Three presets: `MakeField()`, `MakeCave()`, `MakeChasm()`
-- `PlanetConfigMenu.gd` — F3 debug UI (CanvasLayer autoload): template selector pre-fills presets, SpinBox/CheckButton rows for all params, Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`
+- `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load. Three presets: `MakeField()`, `MakeCave()`, `MakeAbyss()`
+- `PlanetConfigMenu.gd` — F3 debug UI (CanvasLayer autoload): biome selector (9 biomes) pre-fills all param spinboxes; Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`. World size (chunks) configurable; default 32 chunks (512-block planet).
 - Three planet templates in `create_chunk_data`:
-  - **Field** — height-map surface via 4D simplex torus noise. Block: Cloud (8). `NoiseScale=1.5`, `HeightAmplitude=10`.
-  - **Chasm** — Field + sinusoidal shaft from planet center. Block: Steel (6). `ChasmRadius=18`, drift amplitude 60 blocks.
-  - **Cave** — fully solid mass, all-Y cave carving, no surface. Block: Crystal (10). `FillSolid=true`, `CaveFullRange=true`.
+  - **Field** — height-map surface via 4D simplex torus noise. Block: Cloud (8) default. `NoiseScale=1.5`, `HeightAmplitude=10`.
+  - **Abyss** — Field + sinusoidal shaft from planet center. Block: Steel (6) default. `ChasmRadius=18`, drift amplitude 60 blocks.
+  - **Cave** — fully solid mass, all-Y cave carving, no surface. Block: Crystal (10) default. `FillSolid=true`, `CaveFullRange=true`.
 - Cave carving: true 3D two-octave density field. Y encoded as additive phase offsets to torus coords (`phX = worldY * invW * CaveYFreq`). Preserves X/Z seam seamlessness while varying in all three spatial dimensions. Two octaves: large chambers (base) + connecting passages (×2 freq, ×0.5 amp). Cave where `d1+d2 > CaveThreshold`.
 - Spawn clear: `SpawnClearEnabled` carves a guaranteed open ellipsoid (`SpawnClearRadiusXZ=10`, `SpawnClearRadiusY=6`) centered at `WorldSpawn`, runs last in `create_chunk_data` so it cannot be re-filled. Required for Cave template.
-- Block palette (IDs 1–12 in `Block_Registry.cs`). Notable new blocks: Cloud (1), Smaug (2), Crystal (2), LightCrystal (1), Brick (5) — hardness in parens.
+- Block palette IDs 1–16 in `Block_Registry.cs`. Atlas is full at 16/16 slots — expanding blocks requires resizing atlas. Key blocks: Grass(1), Stone(3), Steel(6), Cloud(8), Crystal(10), LightCrystal(11), Sand(13), Moss(14), Lava(15), Virus(16).
+- **Biome system** — `BiomeDescriptor.cs` + `Biome_Registry.cs`. 9 hardcoded biomes across 3 templates. Each biome owns: template tag, surface block, terrain param ranges, fog color. `MakePlanetParams(seed)` randomises within ranges for RunManager. F3 menu biome selector pre-fills spinboxes with midpoint values.
+  - Field: Bouncy Cloud Plains · Grassy Plains · Metallic Mountains
+  - Cave: Tight Stone Tunnels · Crystal Caverns · The Moss Grotto
+  - Abyss: Dark Descent · The Virus · Lava Walls
+- Enemy unload fix: `Enemy._ExitTree` decrements `EnemyCount` via `_counted` guard (idempotent with `Die()`). Distance despawn at 160 units keeps counter accurate as player loads new chunks.
 
 ### Player Movement
 - WASD, mouse-look FPS camera, sprint, spectator mode (V)
@@ -150,12 +155,17 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 
 | System | Notes |
 |---|---|
-| World generation | Three templates (Field/Cave/Chasm) live inline in `create_chunk_data`. `World_Generator.cs` 5-stage pipeline is empty — stages need to absorb the inline code. |
-| Enemy AI | 3 enemy type skeletons (Swarm/Heavy/Ranged) coded, waiting on models. EnemySpawner active. A* pathfinding not yet implemented — ground enemies auto-jump 1-block walls for now. |
-| Combat | Enemies take damage and die. Player deals damage via jackhammer/laser/grapple. No player health UI yet. |
+| World_Generator pipeline | Three templates (Field/Cave/Abyss) live inline in `create_chunk_data`. `World_Generator.cs` 5-stage pipeline is empty — TerrainStage, CaveStage, AbyssStage, FeatureStage need to absorb the inline code. |
+| FeatureStage | Biome-driven feature placement (vines, spikes, pillars, glow veins, etc.). Modular feature classes, biome holds a feature list. |
+| AtmosphereSystem | Reads `PlanetDescriptor` on scene load, applies fog/sky/ambient to WorldEnvironment. `BiomeDescriptor` already stores FogColor/FogDensity — needs Godot wiring. |
+| PlanetDescriptor | Doc-only stub. Needs full C# implementation: atmosphere fields + gameplay modifiers (gravity, enemy density/hostility). |
+| RunManager | No planet select, no upgrade screen, no boss trigger, no modifier system. Biome + seed + modifier pipeline is architected but unbuilt. |
+| RunManager modifier system | Low Gravity, Heavy Fog, Alien Surface (weighted block table override), others TBD. |
+| Enemy AI | 3 enemy type skeletons (Swarm/Heavy/Ranged) coded, waiting on models. EnemySpawner active. A* pathfinding not yet implemented. |
+| Enemy type tags | `BiomeDescriptor` has placeholder field. Wiring deferred until enemy designs exist. |
 | Run structure | No planet select, no upgrade screen, no boss trigger. |
 | Accessories | All 10 defined in NEW_VISION.md. None implemented. |
-| VFX | Laser beam ✅ done. No dash trail, no block break particles. Grapple rope ✅ done. |
+| VFX | Laser beam ✅. Grapple rope ✅. No dash trail, no block break particles, no enemy death particles. |
 | Sound | Nothing. |
 | World save/load | Explicitly removed. Roguelike — no persistence between runs. |
 

@@ -57,12 +57,16 @@ public partial class Player : Entity
 
 	// All movement operates on Velocity directly. Friction only applied when steering.
 
-	// Air jump state — shared with PlayerAbilities via partial class.
-	// _airJumps is set to 1 on leaving ground and incremented by grapple attach.
-	private int  _airJumps       = 0;
-	private bool _wasPhysOnFloor = true;
+	// Jump meter — float 0..JumpMeterMax. Recharges over time; spending costs 1.
+	private float _jumpMeter     = JumpMeterMax;
+	private bool  _wasPhysOnFloor = true;
+	private bool  _grappleHeldThroughHitstop = false;
+	private bool  _usedAirJumpThisFrame      = false;
 
-	public int    AirJumpsAvailable => _airJumps;
+	public const float JumpMeterMax = 3f;
+	[Export] public float JumpRechargeRate { get; set; } = 0.5f;
+
+	public float JumpMeter => _jumpMeter;
 	public Entity SelectedEnemy     { get; private set; }
 	public bool   HasGrappleTarget  { get; private set; }
 
@@ -99,12 +103,25 @@ public partial class Player : Entity
 			return;
 		}
 		bool hitstopNow = Global?.HitstopActive == true;
+
+		// Detect hitstop start — record whether grapple is held on an entity
+		if (!_wasInHitstop && hitstopNow)
+		{
+			_grappleHeldThroughHitstop = CurrentGrappleState == GrappleState.Attached
+										 && _grappledEntity != null
+										 && Input.IsActionPressed("grapple_send");
+		}
+
 		if (hitstopNow)
 		{
 			foreach (var action in _bufferableActions)
 				if (Input.IsActionJustPressed(action))
 					_inputBuffer.Add(action);
+			// If grapple was released during hitstop, clear the held flag
+			if (_grappleHeldThroughHitstop && Input.IsActionJustReleased("grapple_send"))
+				_grappleHeldThroughHitstop = false;
 		}
+
 		if (_wasInHitstop && !hitstopNow)
 		{
 			if (_pendingJackhammerImpulse > 0f)
@@ -118,8 +135,22 @@ public partial class Player : Entity
 				_inputBuffer.Add("jump");
 			if (Input.IsActionPressed("grapple_send"))
 			{
-				_inputBuffer.Add("grapple_send");
-				_grappleCooldown = 0f;
+				if (_grappleHeldThroughHitstop)
+				{
+					// Held the whole time — stay attached, do nothing
+				}
+				else if (CurrentGrappleState == GrappleState.Attached && _grappledEntity != null)
+				{
+					// Released + repressed while grappling entity — cancel and refire at new target
+					CancelGrapple();
+					_grappleCooldown = 0f;
+					FireGrapple();
+				}
+				else
+				{
+					_inputBuffer.Add("grapple_send");
+					_grappleCooldown = 0f;
+				}
 			}
 		}
 		_wasInHitstop = hitstopNow;
@@ -335,11 +366,10 @@ public partial class Player : Entity
 
 	private void ApplyMovement(double delta)
 	{
+		_usedAirJumpThisFrame = false;
 		bool isOnFloor     = OnFloor();
 		bool isPhysOnFloor = PhysicallyOnFloor();
 
-		if (!_wasPhysOnFloor && isPhysOnFloor) _airJumps = 0;
-		if (_wasPhysOnFloor && !isPhysOnFloor) _airJumps = Mathf.Max(_airJumps, 1);
 		_wasPhysOnFloor = isPhysOnFloor;
 		float dt = (float)delta;
 
@@ -402,11 +432,12 @@ public partial class Player : Entity
 			vel.Y = JumpStrength;
 		else if (!isOnFloor && !SpectatorMode
 			&& CurrentGrappleState == GrappleState.Attached && _grappledEntity != null
-			&& _grappleJumpCooldown <= 0f && IsJustPressedOrBuffered("jump"))
+			&& _grappleJumpCooldown <= 0f && _jumpMeter >= 1f && IsJustPressedOrBuffered("jump"))
 		{
+			_jumpMeter           -= 1f;
 			vel.Y                = JumpStrength;
 			_grappleJumpCooldown = 0.1f;
-			_airJumps            = 0;
+			_usedAirJumpThisFrame = true;
 			var lungeDir = Vector3.Zero;
 			if (Input.IsActionPressed("move_back"))  lungeDir -= forwardDirection;
 			if (Input.IsActionPressed("move_left"))  lungeDir -= rightDirection;
@@ -414,14 +445,30 @@ public partial class Player : Entity
 			if (lungeDir.LengthSquared() > 0.01f)
 			{
 				lungeDir = lungeDir.Normalized();
-				vel.X    = lungeDir.X * DashStrength;
-				vel.Z    = lungeDir.Z * DashStrength;
+				var cur2D    = new Vector2(vel.X, vel.Z);
+				var newSpeed = Mathf.Max(cur2D.Length(), DashStrength);
+				vel.X = lungeDir.X * newSpeed;
+				vel.Z = lungeDir.Z * newSpeed;
 			}
 		}
-		else if (!isOnFloor && !SpectatorMode && _airJumps > 0 && IsJustPressedOrBuffered("jump"))
+		else if (!isOnFloor && !SpectatorMode && _jumpMeter >= 1f && IsJustPressedOrBuffered("jump"))
 		{
-			_airJumps--;
+			_jumpMeter -= 1f;
+			_usedAirJumpThisFrame = true;
 			vel.Y = JumpStrength;
+			var lungeDir = Vector3.Zero;
+			if (Input.IsActionPressed("move_forward")) lungeDir += forwardDirection;
+			if (Input.IsActionPressed("move_back"))    lungeDir -= forwardDirection;
+			if (Input.IsActionPressed("move_left"))    lungeDir -= rightDirection;
+			if (Input.IsActionPressed("move_right"))   lungeDir += rightDirection;
+			if (lungeDir.LengthSquared() > 0.01f)
+			{
+				lungeDir = lungeDir.Normalized();
+				var cur2D    = new Vector2(vel.X, vel.Z);
+				var newSpeed = Mathf.Max(cur2D.Length(), DashStrength);
+				vel.X = lungeDir.X * newSpeed;
+				vel.Z = lungeDir.Z * newSpeed;
+			}
 		}
 
 		if (SpectatorMode && Input.IsActionPressed("crouch"))

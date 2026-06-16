@@ -5,27 +5,88 @@ extends CanvasLayer
 var _panel: PanelContainer
 var _fields := {}   # key -> Control (SpinBox or CheckButton)
 
-# Default values per template
-const PRESETS := {
-	"Field": {
-		"fill_solid": false, "surface_block": 8,  "noise_scale": 1.5,  "height_amp": 10.0,
-		"spawn_y": 20,       "caves_enabled": false, "cave_full_range": false,
-		"cave_scale": 3.0,   "cave_y_freq": 0.05, "cave_threshold": 0.25,
+# Per-biome presets. Selecting a biome pre-fills all param spinboxes.
+# Values are midpoints of each biome's valid range.
+const BIOMES := {
+	"Bouncy Cloud Plains": {
+		"biome": "Bouncy Cloud Plains", "template": "Field",
+		"fill_solid": false, "surface_block": 8,
+		"noise_scale": 1.0,  "height_amp": 9.0,   "spawn_y": 20,
+		"caves_enabled": false, "cave_full_range": false,
+		"cave_scale": 3.0, "cave_y_freq": 0.05, "cave_threshold": 0.25,
 		"chasm_enabled": false, "chasm_radius": 18.0, "chasm_drift": 0.006,
 		"spawn_clear_enabled": false, "planet_chunks": 32,
 	},
-	"Cave": {
-		"fill_solid": true,  "surface_block": 10, "noise_scale": 0.0,  "height_amp": 0.0,
-		"spawn_y": 0,        "caves_enabled": true, "cave_full_range": true,
-		"cave_scale": 2.0,   "cave_y_freq": 1.0,  "cave_threshold": 0.3,
+	"Grassy Plains": {
+		"biome": "Grassy Plains", "template": "Field",
+		"fill_solid": false, "surface_block": 1,
+		"noise_scale": 1.25, "height_amp": 10.0,  "spawn_y": 20,
+		"caves_enabled": false, "cave_full_range": false,
+		"cave_scale": 3.0, "cave_y_freq": 0.05, "cave_threshold": 0.25,
+		"chasm_enabled": false, "chasm_radius": 18.0, "chasm_drift": 0.006,
+		"spawn_clear_enabled": false, "planet_chunks": 32,
+	},
+	"Metallic Mountains": {
+		"biome": "Metallic Mountains", "template": "Field",
+		"fill_solid": false, "surface_block": 6,
+		"noise_scale": 2.75, "height_amp": 30.0,  "spawn_y": 20,
+		"caves_enabled": false, "cave_full_range": false,
+		"cave_scale": 3.0, "cave_y_freq": 0.05, "cave_threshold": 0.25,
+		"chasm_enabled": false, "chasm_radius": 18.0, "chasm_drift": 0.006,
+		"spawn_clear_enabled": false, "planet_chunks": 32,
+	},
+	"Tight Stone Tunnels": {
+		"biome": "Tight Stone Tunnels", "template": "Cave",
+		"fill_solid": true, "surface_block": 3,
+		"noise_scale": 0.0,  "height_amp": 0.0,   "spawn_y": 0,
+		"caves_enabled": true, "cave_full_range": true,
+		"cave_scale": 3.75, "cave_y_freq": 1.0, "cave_threshold": 0.40,
 		"chasm_enabled": false, "chasm_radius": 18.0, "chasm_drift": 0.006,
 		"spawn_clear_enabled": true, "planet_chunks": 32,
 	},
-	"Chasm": {
-		"fill_solid": false, "surface_block": 6,  "noise_scale": 1.5,  "height_amp": 8.0,
-		"spawn_y": 20,       "caves_enabled": false, "cave_full_range": false,
-		"cave_scale": 3.0,   "cave_y_freq": 0.05, "cave_threshold": 0.25,
-		"chasm_enabled": true, "chasm_radius": 18.0, "chasm_drift": 0.006,
+	"Crystal Caverns": {
+		"biome": "Crystal Caverns", "template": "Cave",
+		"fill_solid": true, "surface_block": 11,
+		"noise_scale": 0.0,  "height_amp": 0.0,   "spawn_y": 0,
+		"caves_enabled": true, "cave_full_range": true,
+		"cave_scale": 2.0, "cave_y_freq": 1.0, "cave_threshold": 0.285,
+		"chasm_enabled": false, "chasm_radius": 18.0, "chasm_drift": 0.006,
+		"spawn_clear_enabled": true, "planet_chunks": 32,
+	},
+	"The Moss Grotto": {
+		"biome": "The Moss Grotto", "template": "Cave",
+		"fill_solid": true, "surface_block": 14,
+		"noise_scale": 0.0,  "height_amp": 0.0,   "spawn_y": 0,
+		"caves_enabled": true, "cave_full_range": true,
+		"cave_scale": 2.5, "cave_y_freq": 1.0, "cave_threshold": 0.33,
+		"chasm_enabled": false, "chasm_radius": 18.0, "chasm_drift": 0.006,
+		"spawn_clear_enabled": true, "planet_chunks": 32,
+	},
+	"Dark Descent": {
+		"biome": "Dark Descent", "template": "Abyss",
+		"fill_solid": false, "surface_block": 3,
+		"noise_scale": 1.5,  "height_amp": 9.0,   "spawn_y": 20,
+		"caves_enabled": false, "cave_full_range": false,
+		"cave_scale": 3.0, "cave_y_freq": 0.05, "cave_threshold": 0.25,
+		"chasm_enabled": true, "chasm_radius": 16.0, "chasm_drift": 0.006,
+		"spawn_clear_enabled": false, "planet_chunks": 32,
+	},
+	"The Virus": {
+		"biome": "The Virus", "template": "Abyss",
+		"fill_solid": false, "surface_block": 16,
+		"noise_scale": 1.5,  "height_amp": 7.0,   "spawn_y": 20,
+		"caves_enabled": false, "cave_full_range": false,
+		"cave_scale": 3.0, "cave_y_freq": 0.05, "cave_threshold": 0.25,
+		"chasm_enabled": true, "chasm_radius": 12.0, "chasm_drift": 0.006,
+		"spawn_clear_enabled": false, "planet_chunks": 32,
+	},
+	"Lava Walls": {
+		"biome": "Lava Walls", "template": "Abyss",
+		"fill_solid": false, "surface_block": 15,
+		"noise_scale": 1.5,  "height_amp": 13.0,  "spawn_y": 20,
+		"caves_enabled": false, "cave_full_range": false,
+		"cave_scale": 3.0, "cave_y_freq": 0.05, "cave_threshold": 0.25,
+		"chasm_enabled": true, "chasm_radius": 22.0, "chasm_drift": 0.006,
 		"spawn_clear_enabled": false, "planet_chunks": 32,
 	},
 }
@@ -59,7 +120,6 @@ func _build_ui() -> void:
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(vbox)
 
-	# Title
 	var title := Label.new()
 	title.text = "Planet Config  [F3]"
 	title.add_theme_font_size_override("font_size", 16)
@@ -67,16 +127,16 @@ func _build_ui() -> void:
 
 	vbox.add_child(HSeparator.new())
 
-	# Template selector
-	var tmpl_label := Label.new()
-	tmpl_label.text = "Template"
-	vbox.add_child(tmpl_label)
-	var tmpl_btn := OptionButton.new()
-	for t in PRESETS.keys():
-		tmpl_btn.add_item(t)
-	tmpl_btn.selected = 0
-	tmpl_btn.item_selected.connect(_on_template_selected)
-	vbox.add_child(tmpl_btn)
+	# Biome selector
+	var biome_label := Label.new()
+	biome_label.text = "Biome"
+	vbox.add_child(biome_label)
+	var biome_btn := OptionButton.new()
+	for b in BIOMES.keys():
+		biome_btn.add_item(b)
+	biome_btn.selected = 0
+	biome_btn.item_selected.connect(_on_biome_selected)
+	vbox.add_child(biome_btn)
 
 	vbox.add_child(HSeparator.new())
 
@@ -98,10 +158,10 @@ func _build_ui() -> void:
 	_add_bool_row(vbox,  "spawn_clear_enabled","Spawn Clear",         false)
 
 	vbox.add_child(HSeparator.new())
-	var chasm_lbl := Label.new(); chasm_lbl.text = "— Chasm —"; vbox.add_child(chasm_lbl)
-	_add_bool_row(vbox,  "chasm_enabled",  "Chasm Enabled",   false)
-	_add_float_row(vbox, "chasm_radius",   "Chasm Radius",    1.0,   200.0, 1.0,   18.0)
-	_add_float_row(vbox, "chasm_drift",    "Chasm Drift",     0.0001,0.1,   0.0001,0.006)
+	var abyss_lbl := Label.new(); abyss_lbl.text = "— Abyss —"; vbox.add_child(abyss_lbl)
+	_add_bool_row(vbox,  "chasm_enabled",  "Shaft Enabled",   false)
+	_add_float_row(vbox, "chasm_radius",   "Shaft Radius",    1.0,   200.0, 1.0,   18.0)
+	_add_float_row(vbox, "chasm_drift",    "Shaft Drift",     0.0001,0.1,   0.0001,0.006)
 
 	vbox.add_child(HSeparator.new())
 
@@ -109,6 +169,9 @@ func _build_ui() -> void:
 	gen_btn.text = "Generate"
 	gen_btn.pressed.connect(_on_generate)
 	vbox.add_child(gen_btn)
+
+	# Pre-fill with first biome
+	_apply_preset(BIOMES.values()[0])
 
 func _add_float_row(parent: Control, key: String, label: String,
 		mn: float, mx: float, step: float, default_val: float) -> void:
@@ -143,11 +206,13 @@ func _add_bool_row(parent: Control, key: String, label: String, default_val: boo
 	parent.add_child(row)
 	_fields[key] = check
 
-func _on_template_selected(index: int) -> void:
-	var names := PRESETS.keys()
+func _on_biome_selected(index: int) -> void:
+	var names := BIOMES.keys()
 	if index >= names.size():
 		return
-	var preset: Dictionary = PRESETS[names[index]]
+	_apply_preset(BIOMES[names[index]])
+
+func _apply_preset(preset: Dictionary) -> void:
 	for key in preset:
 		if not _fields.has(key):
 			continue
