@@ -26,8 +26,10 @@ script = ExtResource("1_a802x")
 [node name="Game" type="Node3D" parent="."]
 script = ExtResource("2_tia5y")
 Mat = ExtResource("3_a802x")
-RenderDistance = 15
+RenderDistance = 12
 DamageTexture = ExtResource("4_om2ps")
+DebugPerfReadout = true
+ShowDamageOverlays = false
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="Game"]
 transform = Transform3D(1, 0, 0, 0, -0.5, 0.866025, 0, -0.866025, -0.5, 0, 0, 0)

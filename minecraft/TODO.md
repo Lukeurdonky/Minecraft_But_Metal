@@ -160,6 +160,23 @@
 
 ---
 
+## Performance (see PERFORMANCE.md for full detail)
+
+Chunk pipeline pass — DONE this session:
+- [x] Threaded generation pool + mesh-builder pool (sized to core count)
+- [x] `[ThreadStatic]` mesh scratch buffers (fixed LOH-churn frame decay)
+- [x] Mesh promotion via `_readyToPromote` drain queue (fixed orphaned-buffer leak + re-mesh loop) with per-frame time-budget throttle
+- [x] `handle_chunks_art` per-crossing cost cut from ~6 O(active-set) passes to ~1 (static offset-set, small-queue reprioritize, throttled eviction, no per-chunk sqrt)
+- [x] `IsFullySolid` synced to canonical store on edit; damage shader `cull_back`
+
+Remaining:
+- [ ] **Enemy LOD** (highest-impact remaining; enemies are the other major cost — 50 enemies = 25 fps, CPU-bound): animation LOD (pause skeleton when far/off-screen) → particle LOD → AI/collision throttle for distant enemies
+- [ ] **Enemy spawn pooling** — reuse instances instead of instantiating the GLB per spawn (kills the 3–9 fps spawn hitch)
+- [ ] Greedy meshing — cuts destroyed-terrain triangle count (GPU-bound view-dependent dips); requires texture array / custom-UV shader to tile the atlas across merged quads
+- [ ] Incremental unload sweep — only scan the trailing-edge shell on crossing instead of all loaded chunks (reduces remaining moving spikes)
+
+---
+
 ## Polish & Atmosphere
 
 - [ ] Antithesis aesthetic — dark terrain palette, bright electronic enemy materials

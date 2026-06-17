@@ -67,11 +67,13 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
 ## What's Implemented
 
 ### World & Rendering
-- 16×16×16 chunk system, threaded generation + mesh building, `CallDeferred` pipeline for cross-thread mesh upload (implicit per-frame backpressure — do not replace with manual queue)
+- 16×16×16 chunk system, **threaded generation pool + mesh-builder pool** (both sized `Clamp((cores-2)/2, 2, 4)`)
+- **Mesh promotion** (main-thread `ArrayMesh` build + GPU upload) runs via a `_readyToPromote` drain queue in `_Process`, throttled by a per-frame time budget (`MaxPromotionMillisPerFrame`). Generation still signals readiness via `CallDeferred("generate_ready_chunk")`; the **mesh-upload handoff no longer uses `CallDeferred`** (it stranded buffers under multi-threaded bursts — see `PERFORMANCE.md`).
 - Greedy face culling, sphere/cylinder render distance, chunk eviction
-- Block damage overlay (MultiMesh + shader), up to 1500 simultaneously damaged blocks
+- Block damage overlay (MultiMesh + shader, `cull_back`), up to 1500 simultaneously damaged blocks
 - Explosion system (`explode()` in Chunk_Manager) — damage = 1 required to instant-kill center block
 - `damage_check()` — instant break when accumulated damage would be lethal
+- **Performance pass (see `PERFORMANCE.md`)** — fixed LOH-churn frame decay, an orphaned-mesh-buffer leak/re-mesh loop, and per-chunk-crossing O(active-set) spikes in `handle_chunks_art`. Chunk pipeline is now solid (~48–60 fps at RD15). Remaining costs are GPU-bound destroyed-terrain triangles and **enemy per-frame cost** (animation/particles/AI — enemy LOD not yet built).
 
 ### Planet Generation
 - `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load. Three presets: `MakeField()`, `MakeCave()`, `MakeAbyss()`

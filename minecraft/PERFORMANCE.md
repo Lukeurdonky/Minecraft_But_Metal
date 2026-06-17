@@ -4,6 +4,66 @@ Root cause summary: at render distance 15 the chunk manager is handling ~14,147 
 
 ---
 
+## Status (implemented)
+
+Loading throughput and per-frame main-thread work were the felt bottlenecks, not GPU draw cost. Done so far, in the order found:
+
+- **#1 mesh thread pool** — was 1 thread, now a pool sized to core count.
+- **#2 mesh arrays** — sized to the realistic worst case (8192 verts); no resizing in the hot loop. **`[ThreadStatic]` (reused per thread), NOT per-call locals**: at 8192 verts the vertex/normal arrays are ~98 KB, over the .NET Large Object Heap threshold (85 KB). Per-call allocation churns the LOH and causes steadily-worsening frame times the longer you travel. Reused thread-static buffers = zero per-build allocation, still thread-safe.
+- **Generation thread pool** (not in original plan) — generation, not meshing, was the real loading bottleneck: `create_chunk_data` does 8000+ 4D-simplex evals per chunk on what was a single thread feeding the mesh pool. Now pooled, sized `Clamp((cores-2)/2, 2, 4)`. `Simplex4D.Sample` is pure/stateless so concurrent calls are safe.
+- **#8 neighbor-ref caching** — the 6 face-neighbor voxel arrays are resolved once per chunk instead of a `get_block` dictionary lookup per edge block.
+- **Promotion via drain queue, not `CallDeferred`** — the per-chunk `CallDeferred("load_ready_chunk")` handoff was leaving mesh buffers stranded under heavy multi-threaded bursts (thousands of orphaned `pendingBuffers` pinning memory → GC-driven decay, and a re-mesh loop where chunks never reached `Loaded`). Now `MeshBuffers` carries its own counts and worker threads enqueue positions into `_readyToPromote`; `_Process` drains it every frame. Nothing can be stranded.
+- **Mesh promotion throttle (time budget)** — promotion (`create_mesh_from_data` + GPU upload + `AddChild`) runs on the main thread and is what causes movement frame dips. Each frame the drain promotes until `MaxPromotionMillisPerFrame` (≈2.5 ms) is spent, then defers the rest. `MaxPromotionsPerFrame` is a coarse safety ceiling. At least one promotes per frame so loading can't stall. This removed meshing as a spike source (verified: `remeshes/s=232` at 60 fps).
+- **`handle_chunks_art` per-crossing cost** — was ~6 full O(active-set) passes on every chunk-boundary crossing (≈73k entries at RD25 → huge spike). Now: reprioritization iterates the *small* pending queues instead of the full offset sphere; the active-set rebuild is gone (static `cachedOffsetSet` + relative `chunkPos - playerPos` lookup); edited-chunk eviction is throttled to every 3 s. Down to ~1 O(N) pass (the unload sweep). The per-frame scan also dropped its per-chunk `sqrt` (`LengthSquared` compare).
+- **`IsFullySolid` canonical sync** — edits now clear `IsFullySolid` on the canonical entry too, so a reused edited chunk can't wrongly take the solid fast-path and render invisible.
+- **Damage shader `cull_back`** — overlay cubes were double-sided (`cull_disabled`); halved their fragment cost. (Overlays were ultimately ruled out as the bottleneck — `dmg=64` still showed 29 fps.)
+
+Reverted: a canonical-retention experiment (keeping all unedited voxel data resident, ~94 MB) — regeneration is cheap and threaded, so it wasn't worth the memory.
+
+Skipped: **#4** (render-distance clamp — removed at user request). Deferred: **#5 LOD**, **#7 frustum cull**.
+
+### Where it stands
+
+From the leak/decay/permanent-degradation phase the game is now solid: ~48–60 fps typical, with dips to ~26–36 only during heavy simultaneous movement + terrain destruction at RD15 (~17k chunks). The remaining cost is **GPU-bound, not pipeline-bound**:
+
+1. **Rendering player-destroyed jagged terrain** — high triangle count, view-dependent (standing still looking at a carved area drops fps with the chunk pipeline fully idle). The fix is **greedy meshing**, but it's complicated by the texture atlas: merged quads need *tiling* UVs, which standard atlas UVs don't support — it would require a texture array or a custom-data UV shader. High ceiling, high effort.
+2. **Moving at RD15** — regeneration churn (unedited chunks regenerate on re-entry) + the remaining O(N) unload sweep + GPU. Could be reduced with an incremental (trailing-shell only) unload sweep.
+3. **Enemies** — `treeNodes` climbs (~1670 → ~1768) during some idle dips; enemy particles/animation/AI may be contributing. Worth profiling.
+
+Cheapest real lever the user keeps resisting: **RD 12 instead of 15** halves the active set (~8k vs ~17k chunks) for marginal visual loss on a 32-chunk planet.
+
+### #6 mesh merging / chunk MultiMesh — ruled out
+
+Draw calls are **not** the bottleneck: `meshNodes` (≈ draw calls) stays ~1,200 whether fps is 39 or 61, and the game hits the 60 fps vsync cap with all of them present. A chunk MultiMesh would reduce draw calls (not the problem) and make re-meshing/edits more expensive. Do not pursue.
+
+---
+
+## Enemies — the other major cost (per-frame, CPU-bound)
+
+**Test result:** raising the spawn cap to 50 (`EnemySpawner.MaxEnemies`) dropped fps to **25** at RD12 — and identically whether the enemies were on-screen or not. Spawning them in (interval lowered to 0.1 s) dropped fps to **3–9** transiently. (Both values reverted to 5 / 2 s after the test.)
+
+"Same fps whether looking or not" ⇒ the cost is **CPU per-frame work that runs regardless of visibility**, not GPU rendering. Per enemy, every frame:
+
+- **Skeletal `AnimationPlayer`** — each creature animates a full skeleton continuously (the `Idle` clip is manually re-looped and never stops). This is the dominant cost for skinned models at scale.
+- **`UniParticles3D`** — per-creature particle simulation.
+- **`_PhysicsProcess`** (`Entity`) — AI (`Creature.ApplyMovementFromInput`, cheap) + `CheckWorldCollisions` (several `get_block` voxel lookups per tick).
+- **`_Process`** (`Enemy`) — `Set("paused", …)` on each particle node, a `SpeedScale` write per `AnimationPlayer`, and a health-bar `LookAt` billboard.
+
+The 3–9 fps spawn hitch is separate: instantiating the GLB + skeleton scene on the main thread is a heavy per-spawn stall.
+
+### Fix: enemy LOD + pooling (not yet implemented)
+
+For a combat game built around many enemies, each enemy must be cheap at scale. Planned, in priority order:
+
+1. **Animation LOD** — pause / zero `AnimationPlayer` when an enemy is far or off-screen; resume when near/visible. Biggest single win (skeletal animation dominates).
+2. **Particle LOD** — disable `UniParticles3D` emission when far / off-screen.
+3. **AI throttle** — run AI + `CheckWorldCollisions` every few physics ticks for distant enemies, full rate when near.
+4. **Spawn pooling** — reuse a pool of creature instances instead of instantiating the GLB per spawn; removes the 3–9 fps spawn hitch.
+
+Suggested default knobs: full fidelity within ~40 u; animation + particles off beyond that; AI at ~1/4 rate beyond ~80 u. Gate on distance (optionally also a `VisibleOnScreenNotifier3D`). Do 1–3 first (1 alone recovers most of the cost); pooling is a slightly larger follow-up.
+
+---
+
 ## Quick Wins
 
 These are targeted edits with no architectural changes. Combined they should meaningfully raise the floor and eliminate most spikes.
