@@ -46,11 +46,11 @@ public partial class Player : Entity
     public float LaserCooldown { get; private set; } = 0f;
 
     private const float LaserDuration           = 1.5f;
-    private const float LaserCooldownMax        = 7.0f;
+    private const float LaserCooldownMax        = .1f;
     private const float LaserRange              = 100f;
     private const float LaserDamagePerSecond    = 600f;
     private const float LaserKnockbackPerSecond = 55f;
-    private const float LaserTunnelRadius       = 4f;
+    private const float LaserTunnelRadius       = 8f;
     private const float LaserBeamRadius         = .35f;
     private const float LaserExplodeRate        = 0.05f; // seconds between explode calls (~20/s)
 

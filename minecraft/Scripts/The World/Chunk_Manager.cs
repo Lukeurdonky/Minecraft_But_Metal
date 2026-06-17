@@ -11,7 +11,7 @@ using Godot;
 
 public partial class Chunk_Manager : Node
 {
-	private const int CHUNK_SIZE = 16;
+	private const int CHUNK_SIZE = Global.CHUNK_SIZE;
 
 	private static readonly Vector3I[] FaceOffsets = new Vector3I[]
 	{
@@ -86,7 +86,7 @@ public partial class Chunk_Manager : Node
 	private HashSet<int> _dirtyDamageTypes = new();
 	private LinkedList<Vector3I> _damageInsertionOrder = new LinkedList<Vector3I>();
 
-	private const int MAX_DAMAGED_BLOCKS = 1500;
+	private const int MAX_DAMAGED_BLOCKS = 3000;
 	// Blocks hit below this threshold don't get a damage overlay — cuts peripheral explosion entries.
 	private const float MinDamageForOverlay = 0.15f;
 	private Material damageOverlayMaterial;
@@ -104,6 +104,7 @@ public partial class Chunk_Manager : Node
 	{
 		public byte[] Voxels;
 		public bool   IsFullySolid;
+		public bool   IsAllAir;
 		public bool   WasEdited;
 	}
 	private readonly Dictionary<Vector3I, ChunkData> _canonicalStore = new();
@@ -130,6 +131,14 @@ public partial class Chunk_Manager : Node
 
 	private Vector3I lastPlayerChunkPos = new Vector3I(int.MaxValue, int.MaxValue, int.MaxValue);
 	private ulong _lastEvictMsec = 0;
+
+	// The offset sweep below (in handle_chunks_art) used to walk all of cachedChunkOffsets every
+	// tick — cost scales with render-volume (RD^3), unconditionally, even when nothing needs
+	// attention. Spread it across SWEEP_SLICES ticks instead via a persisted cursor; a full sweep
+	// still completes every ~SWEEP_SLICES ticks (~120ms at TIME_HANDLE=15ms), fast enough that
+	// newly-needed generation/loading isn't meaningfully delayed.
+	private int _sweepCursor = 0;
+	private const int SWEEP_SLICES = 8;
 	private List<Vector3I> cachedChunkOffsets = new List<Vector3I>();
 	// Offsets (relative to the player chunk) that are in range, as a set for O(1) membership.
 	// Built once in RecalculateChunkOffsets — a chunk is active iff (chunkPos - playerPos) is in it,
@@ -408,70 +417,84 @@ public partial class Chunk_Manager : Node
 		}
 
 		int renderDistSq = RenderDistance * RenderDistance;
-		foreach (var offset in cachedChunkOffsets)
+		int offsetCount = cachedChunkOffsets.Count;
+		if (offsetCount > 0)
 		{
-			var chunkPos = playerPos + offset;
-			bool shouldBeVisible = offset.LengthSquared() <= renderDistSq; // squared compare — no per-chunk sqrt
+			// Process one slice of the full offset volume per tick instead of all of it —
+			// see _sweepCursor declaration for why.
+			if (_sweepCursor >= offsetCount) _sweepCursor = 0;
+			int sliceSize = (offsetCount + SWEEP_SLICES - 1) / SWEEP_SLICES;
+			int start = _sweepCursor;
+			int end = Math.Min(start + sliceSize, offsetCount);
 
-			if (chunks.TryGetValue(chunkPos, out var chunk))
+			for (int idx = start; idx < end; idx++)
 			{
-				if (!chunk.Generated && !generationQueue.ContainsKey(chunkPos))
-				{
-					generationQueue[chunkPos] = 1;
-					lock (generationLock)
-					{
-						generationWorkQueue.Enqueue(chunkPos);
-						Monitor.Pulse(generationLock);
-					}
-				}
+				var offset = cachedChunkOffsets[idx];
+				var chunkPos = playerPos + offset;
+				bool shouldBeVisible = offset.LengthSquared() <= renderDistSq; // squared compare — no per-chunk sqrt
 
-				if (shouldBeVisible && chunk.Generated && !chunk.Loaded)
+				if (chunks.TryGetValue(chunkPos, out var chunk))
 				{
-					bool allNeighborsExist = true;
-					for (int i = 0; i < 6; i++)
+					if (!chunk.Generated && !generationQueue.ContainsKey(chunkPos))
 					{
-						if (!chunks.ContainsKey(chunkPos + FaceOffsets[i]))
+						generationQueue[chunkPos] = 1;
+						lock (generationLock)
 						{
-							allNeighborsExist = false;
-							break;
+							generationWorkQueue.Enqueue(chunkPos);
+							Monitor.Pulse(generationLock);
 						}
 					}
-					if (allNeighborsExist)
+
+					if (shouldBeVisible && chunk.Generated && !chunk.Loaded)
 					{
-						bool allGenerated = true;
+						bool allNeighborsExist = true;
 						for (int i = 0; i < 6; i++)
 						{
-							if (!chunks[chunkPos + FaceOffsets[i]].Generated)
+							if (!chunks.ContainsKey(chunkPos + FaceOffsets[i]))
 							{
-								allGenerated = false;
+								allNeighborsExist = false;
 								break;
 							}
 						}
-						if (allGenerated && !loadingQueue.ContainsKey(chunkPos))
+						if (allNeighborsExist)
 						{
-							loadingQueue[chunkPos] = 1;
-							lock (loadingLock)
+							bool allGenerated = true;
+							for (int i = 0; i < 6; i++)
 							{
-								loadingWorkQueue.Enqueue(chunkPos);
-								Monitor.Pulse(loadingLock);
+								if (!chunks[chunkPos + FaceOffsets[i]].Generated)
+								{
+									allGenerated = false;
+									break;
+								}
+							}
+							if (allGenerated && !loadingQueue.ContainsKey(chunkPos))
+							{
+								loadingQueue[chunkPos] = 1;
+								lock (loadingLock)
+								{
+									loadingWorkQueue.Enqueue(chunkPos);
+									Monitor.Pulse(loadingLock);
+								}
 							}
 						}
 					}
 				}
-			}
-			else
-			{
-				if (!generationQueue.ContainsKey(chunkPos))
+				else
 				{
-					generationQueue[chunkPos] = 1;
-					chunks[chunkPos] = new Chunk(chunkPos);
-					lock (generationLock)
+					if (!generationQueue.ContainsKey(chunkPos))
 					{
-						generationWorkQueue.Enqueue(chunkPos);
-						Monitor.Pulse(generationLock);
+						generationQueue[chunkPos] = 1;
+						chunks[chunkPos] = new Chunk(chunkPos);
+						lock (generationLock)
+						{
+							generationWorkQueue.Enqueue(chunkPos);
+							Monitor.Pulse(generationLock);
+						}
 					}
 				}
 			}
+
+			_sweepCursor = end >= offsetCount ? 0 : end;
 		}
 	}
 
@@ -643,6 +666,7 @@ public partial class Chunk_Manager : Node
 		{
 			chunk.Voxels      = cd.Voxels;
 			chunk.IsFullySolid = cd.IsFullySolid;
+			chunk.IsAllAir    = cd.IsAllAir;
 			chunk.WasEdited   = cd.WasEdited;
 			CallDeferred("generate_ready_chunk", position);
 			return;
@@ -651,21 +675,28 @@ public partial class Chunk_Manager : Node
 		// Fresh generation — use canonical position so terrain repeats across laps
 		byte[] data = create_chunk_data(canonicalPos);
 
+		// Single pass tracking both uniformity flags. Break early only once the chunk is
+		// confirmed mixed (saw both a solid and an air block) — the common, expensive case
+		// still exits fast. A uniformly-solid or uniformly-air chunk runs the full scan.
 		bool isFullySolid = true;
+		bool isAllAir = true;
 		for (int i = 0; i < data.Length; i++)
 		{
-			if (data[i] == 0) { isFullySolid = false; break; }
+			if (data[i] == 0) isFullySolid = false;
+			else              isAllAir = false;
+			if (!isFullySolid && !isAllAir) break;
 		}
 
 		chunk.Voxels       = data;
 		chunk.IsFullySolid = isFullySolid;
+		chunk.IsAllAir     = isAllAir;
 
 		// Store in canonical cache (another thread could race on the same canonical pos
 		// only if planet size constraint is violated — guarded by the startup clamp)
 		lock (_canonicalLock)
 		{
 			if (!_canonicalStore.ContainsKey(canonicalPos))
-				_canonicalStore[canonicalPos] = new ChunkData { Voxels = data, IsFullySolid = isFullySolid };
+				_canonicalStore[canonicalPos] = new ChunkData { Voxels = data, IsFullySolid = isFullySolid, IsAllAir = isAllAir };
 		}
 
 		CallDeferred("generate_ready_chunk", position);
@@ -687,7 +718,9 @@ public partial class Chunk_Manager : Node
 
 		var chunk = chunks[position];
 
-		if (chunk.IsFullySolid && adjacent_chunks_solid(position))
+		// All-air chunks need no neighbor check — air bordering anything is still nothing
+		// to draw. Fully-solid chunks only skip when surrounded by solid (no exposed faces).
+		if ((chunk.IsFullySolid && adjacent_chunks_solid(position)) || chunk.IsAllAir)
 			{
 				// Empty/solid chunk — no mesh. Queue an empty marker for promotion.
 				pendingBuffers[position] = new MeshBuffers { VertexCount = 0 };
@@ -1176,6 +1209,7 @@ public partial class Chunk_Manager : Node
 			{
 				cd.WasEdited = true;
 				if (blockId == 0) cd.IsFullySolid = false;
+				else              cd.IsAllAir = false;
 			}
 		}
 
@@ -1196,6 +1230,7 @@ public partial class Chunk_Manager : Node
 		if (localPos.Z < 0) localPos.Z += CHUNK_SIZE;
 
 		if (blockId == 0) chunks[chunkPos].IsFullySolid = false;
+		else              chunks[chunkPos].IsAllAir = false;
 		chunks[chunkPos].Voxels[voxel_index(localPos)] = (byte)blockId;
 
 		if (localPos.X == 0) mark_neighbor_dirty(chunkPos + new Vector3I(-1, 0, 0));
@@ -1236,6 +1271,7 @@ public partial class Chunk_Manager : Node
 			chunk.Voxels[voxel_index(localPos)] = (byte)change.blockId;
 			chunk.WasEdited = true;
 			chunk.IsFullySolid = false;
+			chunk.IsAllAir = false;
 			chunk.Dirty = true;
 			dirtySet.Add(chunkPos);
 
@@ -1245,6 +1281,7 @@ public partial class Chunk_Manager : Node
 				{
 					cd.WasEdited = true;
 					cd.IsFullySolid = false;
+					cd.IsAllAir = false;
 				}
 			}
 

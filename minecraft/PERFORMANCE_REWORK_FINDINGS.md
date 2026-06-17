@@ -6,7 +6,16 @@ Verified against `origin/rework` @ `bfe640e`.
 
 ---
 
-## 1. No fast-path skip for all-air chunks
+## 1. No fast-path skip for all-air chunks — ✅ DONE (2026-06-17)
+
+Implemented: `IsAllAir` flag added to `Chunk` + `ChunkData`, computed in the same single
+generation pass as `IsFullySolid` (two flags, early-out only when the chunk is confirmed
+mixed). `load_calculate()` fast-skip extended to `|| chunk.IsAllAir` (no neighbor check —
+air bordering anything is still nothing to draw). Invalidation mirrored at every
+`IsFullySolid = false` site: placing a solid block clears `IsAllAir` in both the live
+chunk and the canonical store.
+
+
 
 ### The problem
 
@@ -76,7 +85,16 @@ Give all-air chunks the same kind of advance knowledge `IsFullySolid` has — a 
 
 ---
 
-## 2. `handle_chunks_art`'s per-tick sweep scales with render distance cubed
+## 2. `handle_chunks_art`'s per-tick sweep scales with render distance cubed — ✅ DONE (2026-06-17)
+
+Implemented Option A (spread the sweep): added a persisted `_sweepCursor` field and
+`SWEEP_SLICES = 8` const. The offset loop now processes `ceil(offsetCount / 8)` entries
+per tick starting at the cursor, wrapping to 0 once it reaches the end of
+`cachedChunkOffsets`. A full sweep still completes roughly every 8 ticks (~120ms at
+`TIME_HANDLE` = 15ms). The chunk-crossing block above it (queue rebuild, eviction,
+unloading) is untouched — it was already correctly gated to crossings only.
+
+
 
 ### The problem
 

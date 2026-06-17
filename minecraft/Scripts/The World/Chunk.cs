@@ -21,4 +21,5 @@ public sealed class Chunk
 	}
 
 	public bool IsFullySolid { get; set; } = false;
+	public bool IsAllAir { get; set; } = false;
 }
