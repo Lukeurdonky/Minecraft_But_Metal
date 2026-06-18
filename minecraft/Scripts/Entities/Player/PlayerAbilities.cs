@@ -47,7 +47,7 @@ public partial class Player : Entity
 
     private const float LaserDuration           = 1.5f;
     private const float LaserCooldownMax        = .1f;
-    private const float LaserRange              = 100f;
+    private const float LaserRange              = 300f;
     private const float LaserDamagePerSecond    = 600f;
     private const float LaserKnockbackPerSecond = 55f;
     private const float LaserTunnelRadius       = 8f;

@@ -2,7 +2,7 @@
 
 > You're in your spaceship. You go to randomly generated planets. You kill things.
 
-A voxel-based action roguelike built in **Godot 4** (C# + GDScript). Each run: choose a planet → fight → collect upgrades → boss. All combat, no crafting, no inventory. See `NEW_VISION.md` for the full design doc.
+A voxel-based action roguelike built in **Godot 4** (C# + GDScript). Each run: choose a planet → fight → collect upgrades → boss. All combat, no crafting, no inventory. See `../design/NEW_VISION.md` for the full design doc.
 
 ---
 
@@ -67,13 +67,13 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
 ## What's Implemented
 
 ### World & Rendering
-- 16×16×16 chunk system, **threaded generation pool + mesh-builder pool** (both sized `Clamp((cores-2)/2, 2, 4)`)
-- **Mesh promotion** (main-thread `ArrayMesh` build + GPU upload) runs via a `_readyToPromote` drain queue in `_Process`, throttled by a per-frame time budget (`MaxPromotionMillisPerFrame`). Generation still signals readiness via `CallDeferred("generate_ready_chunk")`; the **mesh-upload handoff no longer uses `CallDeferred`** (it stranded buffers under multi-threaded bursts — see `PERFORMANCE.md`).
+- `CHUNK_SIZE`-cubed chunk system (`Global.CHUNK_SIZE = 48`, single source of truth — never hardcode), **threaded generation pool + mesh-builder pool** (both sized `Clamp((cores-2)/2, 2, 4)`)
+- **Mesh promotion** (main-thread `ArrayMesh` build + GPU upload) runs via a `_readyToPromote` drain queue in `_Process`, throttled by a per-frame time budget (`MaxPromotionMillisPerFrame`). Generation still signals readiness via `CallDeferred("generate_ready_chunk")`; the **mesh-upload handoff no longer uses `CallDeferred`** (it stranded buffers under multi-threaded bursts — see `../performance/PERFORMANCE.md`).
 - Greedy face culling, sphere/cylinder render distance, chunk eviction
-- Block damage overlay (MultiMesh + shader, `cull_back`), up to 1500 simultaneously damaged blocks
+- Block damage overlay — lazy/sparse per-chunk damage storage (`Chunk.DamageData`, null until first damaged block), slot-based incremental MultiMesh updates (each block owns a stable instance index; granting/revoking touches one slot, O(1)), per-block-type MultiMesh capacity starts small and doubles on demand instead of pre-allocating worst-case size, free-priority flush ordering (a destroyed block's crack disappearing is drained before any cosmetic tint refresh, so large explosions don't show a visible trailing "ghost crack" effect). Global FIFO eviction cap `MAX_DAMAGED_BLOCKS = 300,000` across all block types. See `../performance/PERFORMANCE_REWORK_FINDINGS.md` for the full rationale.
 - Explosion system (`explode()` in Chunk_Manager) — damage = 1 required to instant-kill center block
 - `damage_check()` — instant break when accumulated damage would be lethal
-- **Performance pass (see `PERFORMANCE.md`)** — fixed LOH-churn frame decay, an orphaned-mesh-buffer leak/re-mesh loop, and per-chunk-crossing O(active-set) spikes in `handle_chunks_art`. Chunk pipeline is now solid (~48–60 fps at RD15). Remaining costs are GPU-bound destroyed-terrain triangles and **enemy per-frame cost** (animation/particles/AI — enemy LOD not yet built).
+- **Performance pass (see `../performance/PERFORMANCE.md`)** — fixed LOH-churn frame decay, an orphaned-mesh-buffer leak/re-mesh loop, and per-chunk-crossing O(active-set) spikes in `handle_chunks_art`. Chunk pipeline is now solid (~48–60 fps at RD15). Remaining costs are GPU-bound destroyed-terrain triangles and **enemy per-frame cost** (animation/particles/AI — enemy LOD not yet built). Follow-up fixes (all-air chunk fast path, RD³ sweep spreading) and the damage-overlay rework above are in `../performance/PERFORMANCE_REWORK_FINDINGS.md`.
 
 ### Planet Generation
 - `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load. Three presets: `MakeField()`, `MakeCave()`, `MakeAbyss()`
@@ -137,7 +137,7 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 - Reset to 0 on landing
 
 ### Blocks & Entities
-- Stone-only generation (temp — full palette wired once World_Generator pipeline is built)
+- Full 16-block palette wired across all three templates via the biome system (see Planet Generation above) — `World_Generator.cs`'s 5-stage pipeline itself is still empty; the inline generation in `create_chunk_data` already uses the full palette and is the thing that pipeline is meant to absorb.
 - `Entity.cs` base: health, AABB physics, `heavy` bool, `Grappled` bool (suppresses movement during reel)
 - `Enemy.cs` (extends Entity): `AttackDamage`, `DetectionRange`, `Flying`, procedural world-space health bar (green→red, camera-facing billboard, damage flash, hidden at full health). Tracks `EnemyCount` in Global on spawn/death.
 - `Creature.cs` (extends Enemy): flying 3-state AI. **Idle** — hovers in place, Y-rotates and pitch-tracks toward player, loops Idle animation. Transitions to Chase when player enters `DetectionRange`. **Chase** — flies toward player (Idle animation still playing), pitch-tracks player vertically. Transitions to Grab when within `AttackRange` (default 6u). **Grab** — 3-phase lunge: charge (bleeds velocity to stop over `GrabDamageStart`), lunge impulse (single velocity burst = `LungeSpeed` in the creature's forward direction at animation start), recovery (decelerates after `GrabDamageEnd`). Damage window `GrabDamageStart`–`GrabDamageEnd`, once per grab, checked against a scene-placed `GrabHitbox` Area3D (BoxShape3D) — editor-positionable hitbox in front of the creature, read as an AABB in code. Knockback has an upward component: `KnockbackStrength * KnockbackUpFactor` added to Y. Uses `TentacleCreature.glb` model. Pitch rotation applied to `TentacleCreature` mesh child only (root stays upright for clean physics); collision shape is BoxShape3D (replaced capsule). Lunge direction = `GlobalTransform.Basis * _mesh.Transform.Basis.Z`. `Enemy._Process` auto-scans for `UniParticles3D` and `AnimationPlayer` descendants on spawn and freezes them (SpeedScale/paused) during hitstop — zero per-enemy setup required.
@@ -149,7 +149,7 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 - `PlayerHUD.cs`: jump indicator, enemy soft-aim indicator, crosshair color, player health bar (red, bottom-left), laser charge bar (blue when ready/firing, gray while recharging), speed tier indicator (3 segments, temp), red full-screen flash on player hit (fades over 0.4s)
 
 ### Archived (do not restore)
-- Minecraft inventory (36-slot), item registry, item behaviors, placeable/consumable/tool system, world-dropped items. See CLAUDE.md for file list.
+- Minecraft inventory (36-slot), item registry, item behaviors, placeable/consumable/tool system, world-dropped items. See `../../CLAUDE.md` for file list.
 
 ---
 
@@ -166,7 +166,7 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 | Enemy AI | 3 enemy type skeletons (Swarm/Heavy/Ranged) coded, waiting on models. EnemySpawner active. A* pathfinding not yet implemented. |
 | Enemy type tags | `BiomeDescriptor` has placeholder field. Wiring deferred until enemy designs exist. |
 | Run structure | No planet select, no upgrade screen, no boss trigger. |
-| Accessories | All 10 defined in NEW_VISION.md. None implemented. |
+| Accessories | All 10 defined in `../design/NEW_VISION.md`. None implemented. |
 | VFX | Laser beam ✅. Grapple rope ✅. No dash trail, no block break particles, no enemy death particles. |
 | Sound | Nothing. |
 | World save/load | Explicitly removed. Roguelike — no persistence between runs. |

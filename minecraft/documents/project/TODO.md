@@ -144,7 +144,7 @@
 
 ---
 
-## Accessories (all from NEW_VISION.md)
+## Accessories (all from `../design/NEW_VISION.md`)
 
 - [ ] Accessory slot system (equip before run or on pickup)
 - [ ] Super Jump
@@ -160,14 +160,17 @@
 
 ---
 
-## Performance (see PERFORMANCE.md for full detail)
+## Performance (see `../performance/PERFORMANCE.md` and `../performance/PERFORMANCE_REWORK_FINDINGS.md` for full detail)
 
-Chunk pipeline pass — DONE this session:
+Chunk pipeline pass — DONE:
 - [x] Threaded generation pool + mesh-builder pool (sized to core count)
 - [x] `[ThreadStatic]` mesh scratch buffers (fixed LOH-churn frame decay)
 - [x] Mesh promotion via `_readyToPromote` drain queue (fixed orphaned-buffer leak + re-mesh loop) with per-frame time-budget throttle
 - [x] `handle_chunks_art` per-crossing cost cut from ~6 O(active-set) passes to ~1 (static offset-set, small-queue reprioritize, throttled eviction, no per-chunk sqrt)
 - [x] `IsFullySolid` synced to canonical store on edit; damage shader `cull_back`
+- [x] All-air chunk fast path — `IsAllAir` flag skips the full mesh-build path the same way `IsFullySolid` does (see PERFORMANCE_REWORK_FINDINGS.md #1)
+- [x] `handle_chunks_art` RD³ sweep spread across `SWEEP_SLICES = 8` ticks via a persisted cursor instead of scanning the full offset volume every tick (see PERFORMANCE_REWORK_FINDINGS.md #2)
+- [x] Damage overlay rework — lazy/sparse per-chunk `DamageData`, slot-based incremental MultiMesh updates, dynamic per-type MultiMesh capacity (starts at 1024, doubles on demand instead of pre-allocating worst-case), free-priority flush ordering (frees fully drained before writes, so a destroyed block's crack disappears before any cosmetic tint refresh — fixes the visible "ghost crack" trailing a large explosion)
 
 Remaining:
 - [ ] **Enemy LOD** (highest-impact remaining; enemies are the other major cost — 50 enemies = 25 fps, CPU-bound): animation LOD (pause skeleton when far/off-screen) → particle LOD → AI/collision throttle for distant enemies
@@ -189,7 +192,7 @@ Remaining:
 
 ## Tech Debt / Cleanup
 
-- [x] Block damage overlay FIFO eviction — oldest tracked block evicted (health + visual) when cap (1500) is hit; `LinkedList` + node pointer for O(1) removal
+- [x] Block damage overlay FIFO eviction — oldest tracked block evicted (health + visual) when global cap (`MAX_DAMAGED_BLOCKS = 300,000`, across all block types) is hit; `LinkedList` + node pointer for O(1) removal
 - [ ] Delete or archive `Washed Code/` once nothing left to salvage
 - [ ] Remove `dummy.gd`, `portal.gd` from root (unused)
 - [ ] `Mob_Registry.cs` — repurpose for enemy definitions or remove

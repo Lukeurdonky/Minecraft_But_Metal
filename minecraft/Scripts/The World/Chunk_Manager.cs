@@ -78,25 +78,55 @@ public partial class Chunk_Manager : Node
 	// Generation parameters live in Global.Instance.ActivePlanet (PlanetParams).
 	// Do not add generation exports here — single source of truth is PlanetParams.
 
-	// Block damage system
-	private Dictionary<Vector3I, BlockHealth> damagedBlocks = new();
+	// Block damage system — per-block health lives in Chunk.DamageData (lazy/sparse, keyed
+	// by local position). These remaining structures are about the GLOBAL overlay render
+	// budget (which blocks currently show a crack, FIFO-capped across the whole world),
+	// not about where the health data itself lives.
 	private Dictionary<int, MultiMeshInstance3D> damageOverlaysByBlock = new();
 	private Dictionary<int, MultiMesh> damageMultiMeshByBlock = new();
-	private Dictionary<int, HashSet<Vector3I>> damagePositionsByBlock = new();
-	private HashSet<int> _dirtyDamageTypes = new();
+	// Slot-based overlay bookkeeping: each BlockHealth holds a stable index (BlockHealth.overlaySlot)
+	// into its block type's MultiMesh instance array. Granting/revoking/updating an overlay touches
+	// only that one slot — O(1) regardless of how many other blocks of that type are tracked. This
+	// replaces the old design where ANY change to a type re-walked and rewrote its ENTIRE visible
+	// set every flush; at large MAX_DAMAGED_BLOCKS values that made even a single new damaged block
+	// cost a multi-million-instance rebuild.
+	private Dictionary<int, Stack<int>> _freeOverlaySlots = new();
+	// High-water mark of slots ever allocated per type (== that type's MultiMesh.VisibleInstanceCount).
+	// Only grows; freed slots go on the free-list above for reuse instead of shrinking this.
+	private Dictionary<int, int> _overlayHighWater = new();
+	// Reverse map slot -> owning BlockHealth (or null if that slot is currently freed), per
+	// block type. Needed because growing a MultiMesh's InstanceCount clears all of its
+	// existing instance data in Godot, so EnsureOverlayCapacity has to redraw every live and
+	// freed slot from scratch after a resize — this is what it redraws live slots from.
+	private Dictionary<int, List<BlockHealth>> _overlaySlotOwners = new();
+	// Queued per-slot GPU writes, drained by FlushDirtyDamageOverlays under a per-frame time
+	// budget. Frees and writes are queued separately (instead of one mixed queue) so frees
+	// always drain first: a destroyed block's crack overlay disappearing late looks like the
+	// explosion missed it, while a stale tint on a still-standing block is barely noticeable.
+	private Dictionary<int, Queue<int>> _pendingOverlayFrees = new();
+	private Dictionary<int, Queue<OverlayOp>> _pendingOverlayWrites = new();
 	private LinkedList<Vector3I> _damageInsertionOrder = new LinkedList<Vector3I>();
 
-	private const int MAX_DAMAGED_BLOCKS = 3000;
+	private struct OverlayOp
+	{
+		public int Slot;
+		public Vector3I Pos;
+		public float Health;
+	}
+
+	// Initial per-type MultiMesh capacity. Grows geometrically (EnsureOverlayCapacity) instead
+	// of pre-allocating MAX_DAMAGED_BLOCKS worth of instances for every block type that's ever
+	// taken a single hit — at large MAX_DAMAGED_BLOCKS values that pre-allocation cost hundreds
+	// of MB of GPU buffer per type regardless of how many overlays that type actually used.
+	private const int OverlayInitialCapacity = 1024;
+	private const int MAX_DAMAGED_BLOCKS = 300000;
 	// Blocks hit below this threshold don't get a damage overlay — cuts peripheral explosion entries.
 	private const float MinDamageForOverlay = 0.15f;
+	// Hits weaker than this don't even register a damage entry — at large explosion radii the
+	// outer shell is mostly grazing hits with imperceptible effective damage; skipping them avoids
+	// bloating per-chunk DamageData for zero gameplay-visible effect.
+	private const float MinEffectiveDamage = 0.005f;
 	private Material damageOverlayMaterial;
-
-	private class BlockHealth
-	{
-		public float health = 1.0f;
-		public int blockType = 0;
-		public LinkedListNode<Vector3I> insertionNode;
-	}
 
 	// Persistent voxel data keyed by canonical chunk coord.
 	// Survives chunk node unloads; edited entries persist for the whole run.
@@ -159,6 +189,13 @@ public partial class Chunk_Manager : Node
 	[Export] public double MaxPromotionMillisPerFrame = 2.5;
 	[Export] public int MaxPromotionsPerFrame = 32;
 	private int _promotionsThisFrame = 0;
+
+	// Caps how long FlushDirtyDamageOverlays may spend per frame rebuilding MultiMesh
+	// instance data. A single mass-destruction explode() call can dirty several block
+	// types at once, each with up to MAX_DAMAGED_BLOCKS entries — without a budget that's
+	// a synchronous full rebuild of all of them in one frame. At least one dirty type is
+	// always processed per call so the queue can't stall.
+	[Export] public double MaxDamageOverlayMillisPerFrame = 2.0;
 	// Worker threads push finished chunk positions here; _Process drains them under the
 	// per-frame budget and promotes from pendingBuffers. Replaces the per-chunk CallDeferred
 	// handoff, which left buffers stranded under heavy multi-threaded bursts.
@@ -205,8 +242,8 @@ public partial class Chunk_Manager : Node
 	// Diagnostic: toggle to hide all damage overlays at runtime. Lets us A/B test whether the
 	// view-dependent slowdown in destroyed areas is the overlays (transparent overdraw) or the
 	// chunk geometry itself.
-	[Export] public bool ShowDamageOverlays = true;
-	private bool _lastShowDamageOverlays = true;
+	[Export] public bool ShowDamageOverlays = false;
+	private bool _lastShowDamageOverlays = false;
 
 	// pending buffers passed from worker threads to main thread, keyed by chunk position
 	private ConcurrentDictionary<Vector3I, MeshBuffers> pendingBuffers = new ConcurrentDictionary<Vector3I, MeshBuffers>();
@@ -332,8 +369,12 @@ public partial class Chunk_Manager : Node
 	private void DebugPerfReadoutPrint()
 	{
 		int meshNodes = 0;
+		int damagedCount = 0;
 		foreach (var kv in chunks)
+		{
 			if (kv.Value.MeshInstance != null) meshNodes++;
+			if (kv.Value.DamageData != null) damagedCount += kv.Value.DamageData.Count;
+		}
 
 		int canonTotal = 0, canonEdited = 0;
 		lock (_canonicalLock)
@@ -349,7 +390,7 @@ public partial class Chunk_Manager : Node
 		GD.Print(
 			$"[PERF] fps={Engine.GetFramesPerSecond():0} " +
 			$"chunks={chunks.Count} meshNodes={meshNodes} sceneChildren={sceneChildren} treeNodes={treeNodes} " +
-			$"canon={canonTotal}(edited={canonEdited}) dmg={damagedBlocks.Count} dirty={dirtyChunks.Count} " +
+			$"canon={canonTotal}(edited={canonEdited}) dmg={damagedCount} dirty={dirtyChunks.Count} " +
 			$"readyToPromote={_readyToPromote.Count} pendingBuf={pendingBuffers.Count} " +
 			$"remeshes/s={_meshRebuildsThisSecond}");
 
@@ -1310,28 +1351,68 @@ public partial class Chunk_Manager : Node
 		float r2 = radius * radius;
 		var batch = new List<(Vector3I pos, int blockId)>();
 
-		for (int x = -r; x <= r; x++)
-		for (int y = -r; y <= r; y++)
-		for (int z = -r; z <= r; z++)
+		// Cache the last resolved chunk across iterations — at CHUNK_SIZE 48 a radius-40
+		// blast only ever touches a handful of chunks, but the naive per-voxel get_block()
+		// path did a fresh dictionary lookup for every one of the ~270k voxels in the sphere.
+		Vector3I cachedChunkPos = default;
+		Chunk cachedChunk = null;
+		bool haveCachedChunk = false;
+
+		// One lock for the whole blast instead of one lock acquisition per voxel inside
+		// damage_block — at large radii that's the difference between 1 and ~250k locks.
+		lock (damageLock)
 		{
-			if (x*x + y*y + z*z > r2) continue;
-			var worldPos = center + new Vector3I(x, y, z);
-			int current = get_block(worldPos);
-			if (current == 0) continue;
-
-			float dist = Mathf.Sqrt(x*x + y*y + z*z);
-			float falloff = 1f - (dist / radius);
-			if (falloff <= 0f) continue;
-
-			if (falloff >= 1f && damage >= 1f)
+			for (int x = -r; x <= r; x++)
+			for (int y = -r; y <= r; y++)
+			for (int z = -r; z <= r; z++)
 			{
-				batch.Add((worldPos, 0));
-			}
-			else
-			{
-				// partial damage: reduce health via damage_block which handles overlays
-				damage_block(worldPos, damage * falloff);
-				
+				int distSq = x * x + y * y + z * z;
+				if (distSq > r2) continue;
+
+				var worldPos = center + new Vector3I(x, y, z);
+				var chunkPos = world_to_chunk(worldPos);
+
+				if (!haveCachedChunk || chunkPos != cachedChunkPos)
+				{
+					if (!chunks.TryGetValue(chunkPos, out cachedChunk) || !cachedChunk.Generated || cachedChunk.Voxels == null)
+						cachedChunk = null;
+					cachedChunkPos = chunkPos;
+					haveCachedChunk = true;
+				}
+
+				if (cachedChunk == null) continue;
+
+				Vector3I localPos = new Vector3I(
+					worldPos.X - (chunkPos.X * CHUNK_SIZE),
+					worldPos.Y - (chunkPos.Y * CHUNK_SIZE),
+					worldPos.Z - (chunkPos.Z * CHUNK_SIZE));
+
+				if (localPos.X < 0 || localPos.X >= CHUNK_SIZE ||
+					localPos.Y < 0 || localPos.Y >= CHUNK_SIZE ||
+					localPos.Z < 0 || localPos.Z >= CHUNK_SIZE)
+					continue;
+
+				int current = cachedChunk.Voxels[voxel_index(localPos)];
+				if (current == 0) continue;
+
+				float dist = Mathf.Sqrt(distSq);
+				float falloff = 1f - (dist / radius);
+				if (falloff <= 0f) continue;
+
+				if (falloff >= 1f && damage >= 1f)
+				{
+					batch.Add((worldPos, 0));
+					continue;
+				}
+
+				float scaledDamage = damage * falloff;
+				float effective = scaledDamage / GetHardness(current);
+				if (effective < MinEffectiveDamage) continue;
+
+				// partial damage: reduce health via the chunk/localPos-aware overload (lock
+				// already held above) — reuses the chunk+localPos this loop already resolved
+				// instead of having damage_block_locked look them up again per voxel.
+				damage_block_locked(worldPos, cachedChunk, localPos, current, scaledDamage);
 			}
 		}
 
@@ -1398,8 +1479,8 @@ public partial class Chunk_Manager : Node
 		multiMesh.TransformFormat = MultiMesh.TransformFormatEnum.Transform3D;
 		multiMesh.UseCustomData = true;
 		multiMesh.Mesh = blockMesh;
-		multiMesh.InstanceCount = MAX_DAMAGED_BLOCKS;  // pre-allocate fixed size
-		multiMesh.VisibleInstanceCount = 0;            // nothing visible yet
+		multiMesh.InstanceCount = OverlayInitialCapacity;  // grows on demand, see EnsureOverlayCapacity
+		multiMesh.VisibleInstanceCount = 0;                // nothing visible yet
 
 		MultiMeshInstance3D instance = new MultiMeshInstance3D();
 		// Large enough to never be frustum-culled regardless of player position.
@@ -1425,9 +1506,6 @@ public partial class Chunk_Manager : Node
 
 		damageOverlaysByBlock[blockType] = instance;
 		damageMultiMeshByBlock[blockType] = multiMesh;
-
-		if (!damagePositionsByBlock.ContainsKey(blockType))
-			damagePositionsByBlock[blockType] = new HashSet<Vector3I>();
 
 		return instance;
 	}
@@ -1488,69 +1566,222 @@ public partial class Chunk_Manager : Node
 		int blockType = get_block(position);
 		if (blockType == 0) return;
 
-		float effective = damage / GetHardness(blockType);
-
 		lock (damageLock)
 		{
-			if (!damagedBlocks.ContainsKey(position))
+			damage_block_locked(position, blockType, damage);
+		}
+	}
+
+	// Local position within a CHUNK_SIZE^3 chunk for a given world position + its already-
+	// resolved chunk coord. world_to_chunk uses floor division, so this is always in
+	// [0, CHUNK_SIZE) — no bounds clamping needed.
+	private Vector3I WorldToLocal(Vector3I worldPos, Vector3I chunkPos)
+	{
+		return new Vector3I(
+			worldPos.X - (chunkPos.X * CHUNK_SIZE),
+			worldPos.Y - (chunkPos.Y * CHUNK_SIZE),
+			worldPos.Z - (chunkPos.Z * CHUNK_SIZE));
+	}
+
+	// Resolves a world position's BlockHealth through its owning chunk's sparse DamageData.
+	// Returns false if the chunk isn't loaded or has no damage tracked at that position.
+	private bool TryGetBlockHealth(Vector3I worldPos, out BlockHealth health)
+	{
+		var chunkPos = world_to_chunk(worldPos);
+		health = null;
+		if (!chunks.TryGetValue(chunkPos, out var chunk) || chunk.DamageData == null)
+			return false;
+		return chunk.DamageData.TryGetValue(WorldToLocal(worldPos, chunkPos), out health);
+	}
+
+	// Same as damage_block, but assumes the caller already holds damageLock and already
+	// knows blockType — lets batch callers (explode()) apply many hits under a single lock
+	// acquisition instead of one lock + one redundant get_block per block.
+	private void damage_block_locked(Vector3I position, int blockType, float damage)
+	{
+		var chunkPos = world_to_chunk(position);
+		if (!chunks.TryGetValue(chunkPos, out var chunk)) return;
+		damage_block_locked(position, chunk, WorldToLocal(position, chunkPos), blockType, damage);
+	}
+
+	// Variant for callers (explode()) that have already resolved the chunk + local position
+	// themselves — skips a redundant chunk dictionary lookup per voxel on top of the one
+	// the caller already did for its own chunk-caching.
+	private void damage_block_locked(Vector3I position, Chunk chunk, Vector3I localPos, int blockType, float damage)
+	{
+		float effective = damage / GetHardness(blockType);
+
+		chunk.DamageData ??= new Dictionary<Vector3I, BlockHealth>();
+
+		if (!chunk.DamageData.TryGetValue(localPos, out var block))
+		{
+			bool hasOverlay = ShowDamageOverlays && effective >= MinDamageForOverlay;
+
+			// Only count visible (overlay) blocks against the FIFO cap so soft fringe
+			// hits don't evict blocks that have actual visible damage.
+			if (hasOverlay && _damageInsertionOrder.Count >= MAX_DAMAGED_BLOCKS && _damageInsertionOrder.Count > 0)
 			{
-				bool hasOverlay = effective >= MinDamageForOverlay;
-
-				// Only count visible (overlay) blocks against the FIFO cap so soft fringe
-				// hits don't evict blocks that have actual visible damage.
-				if (hasOverlay && _damageInsertionOrder.Count >= MAX_DAMAGED_BLOCKS && _damageInsertionOrder.Count > 0)
-				{
-					Vector3I oldest = _damageInsertionOrder.First.Value;
-					RemoveBlockDamage(oldest);
-				}
-
-				LinkedListNode<Vector3I> node = hasOverlay ? _damageInsertionOrder.AddLast(position) : null;
-				damagedBlocks[position] = new BlockHealth { health = 1.0f - effective, blockType = blockType, insertionNode = node };
-
-				if (hasOverlay)
-				{
-					GetOrCreateDamageOverlay(blockType);
-					damagePositionsByBlock[blockType].Add(position);
-					_dirtyDamageTypes.Add(blockType);
-				}
+				Vector3I oldest = _damageInsertionOrder.First.Value;
+				RemoveBlockOverlay(oldest);
 			}
-			else
+
+			LinkedListNode<Vector3I> node = hasOverlay ? _damageInsertionOrder.AddLast(position) : null;
+			var newBlock = new BlockHealth { health = 1.0f - effective, blockType = blockType, insertionNode = node, worldPos = position };
+			chunk.DamageData[localPos] = newBlock;
+
+			if (hasOverlay)
+				GrantOverlay(blockType, position, newBlock);
+		}
+		else
+		{
+			if (block.blockType != blockType)
 			{
-				var block = damagedBlocks[position];
-				if (block.blockType != blockType)
-				{
-					RemoveBlockDamage(position);
-					damage_block(position, damage);
-					return;
-				}
+				RemoveBlockDamage(position);
+				damage_block_locked(position, chunk, localPos, blockType, damage);
+				return;
+			}
 
-				block.health -= effective;
-				if (block.health <= 0)
-				{
-					RemoveBlockDamage(position);
-					break_block(position);
-					return;
-				}
+			block.health -= effective;
+			if (block.health <= 0)
+			{
+				RemoveBlockDamage(position);
+				break_block(position);
+				return;
+			}
 
-				// Block may have been first registered below MinDamageForOverlay — add it
-				// to the overlay list now that it has accumulated more damage.
-				if (!damagePositionsByBlock.TryGetValue(blockType, out var existingSet) || !existingSet.Contains(position))
+			if (ShowDamageOverlays)
+			{
+				if (block.overlaySlot < 0)
 				{
-					// Enforce cap before growing the insertion order.
+					// Block may have been first registered below MinDamageForOverlay — grant
+					// an overlay now that it has accumulated more damage.
 					if (block.insertionNode == null && _damageInsertionOrder.Count >= MAX_DAMAGED_BLOCKS && _damageInsertionOrder.Count > 0)
 					{
 						Vector3I oldest = _damageInsertionOrder.First.Value;
-						RemoveBlockDamage(oldest);
+						RemoveBlockOverlay(oldest);
 					}
-					GetOrCreateDamageOverlay(blockType);
-					damagePositionsByBlock[blockType].Add(position);
 					if (block.insertionNode == null)
 						block.insertionNode = _damageInsertionOrder.AddLast(position);
+					GrantOverlay(blockType, position, block);
 				}
-
-				_dirtyDamageTypes.Add(blockType);
+				else
+				{
+					// Already has a slot — update just that slot's color. O(1) regardless of
+					// how many other blocks of this type are currently tracked.
+					QueueOverlayWrite(blockType, block.overlaySlot, position, block.health);
+				}
 			}
 		}
+	}
+
+	// Allocates (or reuses) a slot in blockType's overlay MultiMesh for this block and writes
+	// its initial transform/color. Brand-new slots (beyond anything freed for reuse) are
+	// written immediately rather than queued: VisibleInstanceCount is about to grow to cover
+	// them, and an un-written instance defaults to an identity transform at the world origin —
+	// deferring the write would flash a stray crack quad there for a frame. Reused slots are
+	// already inside the visible range and currently hidden (zero-scale, from RevokeOverlay),
+	// so it's safe to queue their write for the next flush.
+	private void GrantOverlay(int blockType, Vector3I position, BlockHealth block)
+	{
+		GetOrCreateDamageOverlay(blockType);
+		if (!damageMultiMeshByBlock.TryGetValue(blockType, out var mm)) return;
+
+		if (!_freeOverlaySlots.TryGetValue(blockType, out var freeList))
+			_freeOverlaySlots[blockType] = freeList = new Stack<int>();
+
+		if (freeList.Count > 0)
+		{
+			block.overlaySlot = freeList.Pop();
+			SetSlotOwner(blockType, block.overlaySlot, block);
+			QueueOverlayWrite(blockType, block.overlaySlot, position, block.health);
+		}
+		else
+		{
+			_overlayHighWater.TryGetValue(blockType, out int hw);
+			EnsureOverlayCapacity(blockType, mm, hw + 1);
+
+			block.overlaySlot = hw;
+			_overlayHighWater[blockType] = hw + 1;
+			SetSlotOwner(blockType, hw, block);
+
+			mm.SetInstanceTransform(block.overlaySlot, new Transform3D(Basis.Identity, position + new Vector3(0.5f, 0.5f, 0.5f)));
+			mm.SetInstanceCustomData(block.overlaySlot, new Color(1f - block.health, 0f, 0f, 1f));
+			mm.VisibleInstanceCount = _overlayHighWater[blockType];
+		}
+	}
+
+	// Frees a block's overlay slot for reuse and queues a "hide" write so it stops rendering.
+	private void RevokeOverlay(int blockType, BlockHealth block)
+	{
+		if (block.overlaySlot < 0) return;
+		int slot = block.overlaySlot;
+		block.overlaySlot = -1;
+		SetSlotOwner(blockType, slot, null);
+
+		if (!_freeOverlaySlots.TryGetValue(blockType, out var freeList))
+			_freeOverlaySlots[blockType] = freeList = new Stack<int>();
+		freeList.Push(slot);
+
+		QueueOverlayFree(blockType, slot);
+	}
+
+	private void SetSlotOwner(int blockType, int slot, BlockHealth owner)
+	{
+		if (!_overlaySlotOwners.TryGetValue(blockType, out var owners))
+			_overlaySlotOwners[blockType] = owners = new List<BlockHealth>();
+		while (owners.Count <= slot)
+			owners.Add(null);
+		owners[slot] = owner;
+	}
+
+	// Grows a block type's MultiMesh to at least neededSlots, geometrically (doubling) to
+	// amortize the cost. Godot clears ALL instance data when InstanceCount changes, so every
+	// slot below the current high-water mark — live or freed — has to be rewritten from
+	// scratch afterward: live slots from their owning BlockHealth (worldPos/health), freed
+	// slots back to the hidden zero-scale transform. This only runs on the rare occasions a
+	// type's overlay count actually grows past its current capacity, not on every grant.
+	private void EnsureOverlayCapacity(int blockType, MultiMesh mm, int neededSlots)
+	{
+		if (mm.InstanceCount >= neededSlots) return;
+
+		int newCapacity = Mathf.Max(mm.InstanceCount, OverlayInitialCapacity);
+		while (newCapacity < neededSlots)
+			newCapacity *= 2;
+
+		mm.InstanceCount = newCapacity;
+
+		_overlaySlotOwners.TryGetValue(blockType, out var owners);
+		_overlayHighWater.TryGetValue(blockType, out int hw);
+
+		for (int slot = 0; slot < hw; slot++)
+		{
+			var owner = (owners != null && slot < owners.Count) ? owners[slot] : null;
+			if (owner != null)
+			{
+				mm.SetInstanceTransform(slot, new Transform3D(Basis.Identity, owner.worldPos + new Vector3(0.5f, 0.5f, 0.5f)));
+				mm.SetInstanceCustomData(slot, new Color(1f - owner.health, 0f, 0f, 1f));
+			}
+			else
+			{
+				mm.SetInstanceTransform(slot, new Transform3D(Basis.Identity.Scaled(Vector3.Zero), Vector3.Zero));
+			}
+		}
+
+		mm.VisibleInstanceCount = hw;
+	}
+
+	private void QueueOverlayWrite(int blockType, int slot, Vector3I pos, float health)
+	{
+		if (!_pendingOverlayWrites.TryGetValue(blockType, out var q))
+			_pendingOverlayWrites[blockType] = q = new Queue<OverlayOp>();
+		q.Enqueue(new OverlayOp { Slot = slot, Pos = pos, Health = health });
+	}
+
+	private void QueueOverlayFree(int blockType, int slot)
+	{
+		if (!_pendingOverlayFrees.TryGetValue(blockType, out var q))
+			_pendingOverlayFrees[blockType] = q = new Queue<int>();
+		q.Enqueue(slot);
 	}
 
 	public bool damage_check(Vector3I position, float damage)
@@ -1562,7 +1793,7 @@ public partial class Chunk_Manager : Node
 
 		lock (damageLock)
 		{
-			if (damagedBlocks.TryGetValue(position, out BlockHealth block))
+			if (TryGetBlockHealth(position, out var block))
 			{
 				if (block.health - effective <= 0)
 				{
@@ -1586,44 +1817,146 @@ public partial class Chunk_Manager : Node
 	{
 		lock (damageLock)
 		{
-			if (!damagedBlocks.TryGetValue(position, out var block)) return;
+			var chunkPos = world_to_chunk(position);
+			if (!chunks.TryGetValue(chunkPos, out var chunk) || chunk.DamageData == null) return;
+
+			var localPos = WorldToLocal(position, chunkPos);
+			if (!chunk.DamageData.TryGetValue(localPos, out var block)) return;
 
 			int bt = block.blockType;
-			damagedBlocks.Remove(position);
+			chunk.DamageData.Remove(localPos);
+			if (chunk.DamageData.Count == 0)
+				chunk.DamageData = null; // free the sparse dict once this chunk has no damage left
 
 			if (block.insertionNode != null)
 				_damageInsertionOrder.Remove(block.insertionNode);
 
-			if (damagePositionsByBlock.TryGetValue(bt, out var posList))
-				posList.Remove(position);
-
-			_dirtyDamageTypes.Add(bt);
+			RevokeOverlay(bt, block);
 		}
 	}
 
+	// Evicts only the crack-overlay slot for a block, leaving its tracked health intact.
+	// Used by the FIFO overlay cap: a single large explosion can create far more newly
+	// damaged blocks than MAX_DAMAGED_BLOCKS in one call, so evicting via RemoveBlockDamage
+	// (which deletes the whole entry) would heal blocks the same explosion just damaged
+	// before the call even returns, making big explosions look like they did nothing.
+	// This way an evicted block just stops rendering a crack — it keeps accumulating real
+	// damage and still breaks normally once enough damage lands.
+	private void RemoveBlockOverlay(Vector3I position)
+	{
+		lock (damageLock)
+		{
+			var chunkPos = world_to_chunk(position);
+			if (!chunks.TryGetValue(chunkPos, out var chunk) || chunk.DamageData == null) return;
+
+			var localPos = WorldToLocal(position, chunkPos);
+			if (!chunk.DamageData.TryGetValue(localPos, out var block)) return;
+
+			int bt = block.blockType;
+
+			if (block.insertionNode != null)
+			{
+				_damageInsertionOrder.Remove(block.insertionNode);
+				block.insertionNode = null;
+			}
+
+			RevokeOverlay(bt, block);
+		}
+	}
+
+	// Drains queued per-slot overlay writes, budgeted per frame. Each op touches exactly one
+	// MultiMesh instance slot, so cost here is proportional to how many blocks actually
+	// changed since the last flush — not to how many are currently tracked in total. A single
+	// mass-destruction explode() call can still queue a very large number of ops at once
+	// (e.g. hundreds of thousands of newly-overlaid blocks), so this still drains under a
+	// time budget, at op granularity (not just per-type), so one huge type's queue can't
+	// blow the whole frame budget by itself. At least one op always completes per call so
+	// the queue can't stall forever.
 	private void FlushDirtyDamageOverlays()
 	{
-		if (_dirtyDamageTypes.Count == 0) return;
+		if (_pendingOverlayFrees.Count == 0 && _pendingOverlayWrites.Count == 0) return;
 
 		lock (damageLock)
 		{
-			foreach (int bt in _dirtyDamageTypes)
-			{
-				if (!damageMultiMeshByBlock.TryGetValue(bt, out var mm)) continue;
-				if (!damagePositionsByBlock.TryGetValue(bt, out var posSet)) continue;
+			ulong budgetUsec = (ulong)(MaxDamageOverlayMillisPerFrame * 1000.0);
+			ulong startUsec = Time.GetTicksUsec();
+			int processedOps = 0;
+			var emptyTypes = new List<int>();
 
-				int i = 0;
-				foreach (var pos in posSet)
+			// Phase 1: frees. Always drained first and to completion before any write is
+			// touched — a block that's already gone showing a crack for several extra
+			// frames reads as "the explosion missed it," which is far more noticeable than
+			// a still-standing block's tint refreshing a few frames late.
+			foreach (var kv in _pendingOverlayFrees)
+			{
+				int bt = kv.Key;
+				var q = kv.Value;
+
+				if (!damageMultiMeshByBlock.TryGetValue(bt, out var mm))
 				{
-					if (i >= MAX_DAMAGED_BLOCKS) break;
-					if (!damagedBlocks.TryGetValue(pos, out var bh)) continue;
-					mm.SetInstanceTransform(i, new Transform3D(Basis.Identity, pos + new Vector3(0.5f, 0.5f, 0.5f)));
-					mm.SetInstanceCustomData(i, new Color(1f - bh.health, 0f, 0f, 1f));
-					i++;
+					q.Clear();
+					emptyTypes.Add(bt);
+					continue;
 				}
-				mm.VisibleInstanceCount = i;
+
+				while (q.Count > 0)
+				{
+					if (processedOps > 0 && Time.GetTicksUsec() - startUsec >= budgetUsec)
+						break;
+
+					int slot = q.Dequeue();
+					mm.SetInstanceTransform(slot, new Transform3D(Basis.Identity.Scaled(Vector3.Zero), Vector3.Zero));
+					processedOps++;
+				}
+
+				if (q.Count == 0)
+					emptyTypes.Add(bt);
+
+				if (processedOps > 0 && Time.GetTicksUsec() - startUsec >= budgetUsec)
+					break;
 			}
-			_dirtyDamageTypes.Clear();
+
+			foreach (var bt in emptyTypes)
+				_pendingOverlayFrees.Remove(bt);
+
+			if (_pendingOverlayFrees.Count > 0)
+				return; // frees still outstanding somewhere; writes wait for the next call
+
+			emptyTypes.Clear();
+
+			// Phase 2: cosmetic tint/transform writes, only once every free is caught up.
+			foreach (var kv in _pendingOverlayWrites)
+			{
+				int bt = kv.Key;
+				var q = kv.Value;
+
+				if (!damageMultiMeshByBlock.TryGetValue(bt, out var mm))
+				{
+					q.Clear();
+					emptyTypes.Add(bt);
+					continue;
+				}
+
+				while (q.Count > 0)
+				{
+					if (processedOps > 0 && Time.GetTicksUsec() - startUsec >= budgetUsec)
+						break;
+
+					var op = q.Dequeue();
+					mm.SetInstanceTransform(op.Slot, new Transform3D(Basis.Identity, op.Pos + new Vector3(0.5f, 0.5f, 0.5f)));
+					mm.SetInstanceCustomData(op.Slot, new Color(1f - op.Health, 0f, 0f, 1f));
+					processedOps++;
+				}
+
+				if (q.Count == 0)
+					emptyTypes.Add(bt);
+
+				if (processedOps > 0 && Time.GetTicksUsec() - startUsec >= budgetUsec)
+					break;
+			}
+
+			foreach (var bt in emptyTypes)
+				_pendingOverlayWrites.Remove(bt);
 		}
 	}
 
@@ -1631,10 +1964,18 @@ public partial class Chunk_Manager : Node
 	{
 		lock (damageLock)
 		{
-			foreach (var blockPos in damagedBlocks.Keys.ToList())
+			if (!chunks.TryGetValue(chunkPos, out var chunk) || chunk.DamageData == null)
+				return;
+
+			// Snapshot first since RemoveBlockDamage mutates chunk.DamageData mid-loop
+			// (including potentially nulling it out once empty).
+			foreach (var localPos in chunk.DamageData.Keys.ToList())
 			{
-				if (world_to_chunk(blockPos) == chunkPos)
-					RemoveBlockDamage(blockPos);
+				var worldPos = new Vector3I(
+					chunkPos.X * CHUNK_SIZE + localPos.X,
+					chunkPos.Y * CHUNK_SIZE + localPos.Y,
+					chunkPos.Z * CHUNK_SIZE + localPos.Z);
+				RemoveBlockDamage(worldPos);
 			}
 		}
 	}

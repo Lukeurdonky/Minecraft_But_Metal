@@ -1,6 +1,8 @@
 # Antithesis Conquering Simulator — Claude Context
 
-> **Starting a new session?** See `STARTUP.md`.
+> **Starting a new session?** See `documents/project/STARTUP.md`.
+> **Ending the session / handing off the project?** See `documents/project/HANDOFF.md` and follow its instructions.
+> All other project documentation lives under `documents/` — see `documents/README.md` for the index.
 
 ## MCP server — use it proactively
 
@@ -17,7 +19,7 @@ The `godot-ai` MCP server is always available when Godot is open. Use it without
 
 ## What this project is
 
-A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minecraft clone. Game loop: choose a planet → fight → collect upgrades → next planet → boss. All combat, no crafting, no inventory. See `NEW_VISION.md` for full design doc, `PROGRESS.md` for current state, `TODO.md` for next steps.
+A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minecraft clone. Game loop: choose a planet → fight → collect upgrades → next planet → boss. All combat, no crafting, no inventory. See `documents/design/NEW_VISION.md` for full design doc, `documents/project/PROGRESS.md` for current state, `documents/project/TODO.md` for next steps.
 
 ---
 
@@ -180,8 +182,10 @@ Arms render in a SubViewport with its own Camera3D that mirrors the main camera'
 
 ## Project Identity Documents
 
-Additional design and lore documents are available in project knowledge. Consult these when making decisions about visual style, character, aesthetic, or the game's broader identity:
+Additional design and lore documents live in `documents/design/`. Consult these when making decisions about visual style, character, aesthetic, or the game's broader identity:
 
-- **ANTITHESIS.md** — character identity, visual style, sound, and aesthetic principles. Reference for any decision touching how the game looks, sounds, or feels.
-- **COSMOS_LORE.md** — narrative archive for the Cosmos universe. Reference for THE PLANT boss design, the game's tonal identity, and its relationship to the original Cosmos concept.
-- **ORIGIN.md** — background context on Cosmos Enterprises and the lineage of this project. Not active design direction, but useful for understanding *why* certain decisions are what they are.
+- **documents/design/ANTITHESIS.md** — character identity, visual style, sound, and aesthetic principles. Reference for any decision touching how the game looks, sounds, or feels.
+- **documents/design/COSMOS_LORE.md** — narrative archive for the Cosmos universe. Reference for THE PLANT boss design, the game's tonal identity, and its relationship to the original Cosmos concept.
+- **documents/design/ORIGIN.md** — background context on Cosmos Enterprises and the lineage of this project. Not active design direction, but useful for understanding *why* certain decisions are what they are.
+
+See `documents/README.md` for the full documentation index (engineering specs, performance history, project tracking).

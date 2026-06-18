@@ -1,5 +1,7 @@
 # Performance Optimization Plan
 
+> Historical record of the first optimization pass — chunk counts and array sizes below were computed against the chunk size in effect at the time this analysis was written. `Global.CHUNK_SIZE` is now 48 (see `Global.cs`, the single source of truth); the relative shape of the findings (thread starvation, array resize churn, deferred-call bursts) is unaffected, but don't copy the absolute chunk-count numbers below as current. See `PERFORMANCE_REWORK_FINDINGS.md` in this folder for the follow-up pass (all-air fast path, RD³ sweep cost, damage-overlay rework) done after this one.
+
 Root cause summary: at render distance 15 the chunk manager is handling ~14,147 visible chunks vs ~331 at the default of 5. That's 43× the geometry, fed through a single mesh-building thread with no LOD, no batching, and arrays that resize during the build loop. The lag spikes are the main thread waiting on a mesh queue that can never drain.
 
 ---

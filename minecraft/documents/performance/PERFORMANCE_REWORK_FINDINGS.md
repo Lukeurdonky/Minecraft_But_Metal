@@ -148,3 +148,31 @@ Option A is the smaller change; Option B is more invasive but removes the cost a
 
 1. **Fix #2 (RD³ sweep)** — do this first. It's the one most likely to move steady-state FPS, since it's an unconditional per-frame cost independent of terrain content.
 2. **Fix #1 (AllAir skip)** — do this second. Helps more with stutter during load-in and movement than with steady-state FPS while standing still, but it's a small, low-risk change mirroring a pattern that already exists in the code (`IsFullySolid`).
+
+---
+
+## 3. Damage overlay system rework — ✅ DONE (2026-06-17)
+
+Not a regression from the quick-wins pass — this is a separate user-reported symptom: on a large (radius-40) laser blast, the crack overlay on destroyed blocks visibly lagged behind the explosion, vanishing in a slow trailing wave instead of all at once. Three compounding causes were fixed together.
+
+### a. Dense per-chunk damage storage → lazy/sparse
+
+`BlockHealth` tracking used to live in a single global dictionary, then was moved onto `Chunk.DamageData` — but as a `Dictionary<Vector3I, BlockHealth>` allocated for every loaded chunk regardless of whether anything in it was damaged. Changed to lazy: `DamageData` starts `null`, is allocated on a chunk's first damaged block, and is set back to `null` once its last damaged block clears. A chunk with no damage now costs nothing beyond the field itself, instead of a dictionary instance per loaded chunk (which at `CHUNK_SIZE = 48` would otherwise be wasted overhead at scale).
+
+### b. Pre-allocated MultiMesh size → dynamic growth
+
+Each damaged block type's crack-overlay `MultiMesh` used to pre-allocate `InstanceCount = MAX_DAMAGED_BLOCKS` up front. At the user's then-current cap of 3,000,000 this was ~192 MB of GPU buffer per touched block type, paid immediately on first use regardless of how many blocks of that type were ever actually damaged. Changed to start at `OverlayInitialCapacity = 1024` and double only when a type's overlay actually needs more slots (`EnsureOverlayCapacity`).
+
+This required solving a non-obvious Godot API problem: **changing `MultiMesh.InstanceCount` clears every existing instance's transform/custom-data buffer** (confirmed against the Godot docs and godot-proposals #412, "Don't clean the data in MultiMesh when changing instance_count"). A naive resize-on-demand would erase all currently-visible crack overlays every time a type's overlay grew. Fixed by adding a slot-owner reverse map (`_overlaySlotOwners: Dictionary<int, List<BlockHealth>>`) so that after any resize, every slot below the current high-water mark is redrawn from its owning `BlockHealth.worldPos`/`health` (live slots) or hidden via a zero-scale transform (freed slots). `BlockHealth.worldPos` was added specifically to make this redraw possible without reverse-mapping from chunk + local position.
+
+Each `BlockHealth.overlaySlot` is a stable index into its block type's MultiMesh instance array — granting/revoking a crack overlay touches exactly one slot, O(1), independent of how many other blocks are damaged.
+
+### c. Mixed free/write queue → free-priority draining
+
+This is the fix for the reported symptom directly. Pending overlay updates used to live in one mixed FIFO queue (`Queue<OverlayOp>`) containing both "hide this slot" (block destroyed or evicted) and "update this slot's crack tint" (block freshly damaged) operations, drained in arrival order under a per-frame time budget (`MaxDamageOverlayMillisPerFrame`). On a radius-40 explosion, thousands of "hide" ops for destroyed blocks and thousands of "write" ops for blocks on the blast periphery landed in the queue at once, interleaved by whatever order they happened to be generated in — so destroyed blocks' crack overlays visibly disappeared in a slow trickle alongside everything else, instead of vanishing immediately.
+
+Split into two queues — `_pendingOverlayFrees: Dictionary<int, Queue<int>>` and `_pendingOverlayWrites: Dictionary<int, Queue<OverlayOp>>` — and changed `FlushDirtyDamageOverlays` to a two-phase drain: every block type's frees queue is fully drained (within the existing time budget) before any writes queue is touched at all. A destroyed block's crack disappearing is prioritized over a still-standing block's cosmetic tint update, since the former reads as "the explosion missed this block" (looks broken) while the latter is barely noticeable. Total catch-up time after a huge explosion is unchanged — this only changes what's visible while catching up. FIFO correctness is preserved by phase ordering: `RevokeOverlay` always pushes a freed slot's hide-op before `GrantOverlay` can reuse that slot and push a write-op, and frees are always fully drained before writes, so a slot's hide always happens-before its next reuse-write.
+
+### Files touched
+
+`Scripts/The World/Chunk.cs` (`BlockHealth.worldPos` field, `Chunk.DamageData` lazy allocation) and `Scripts/The World/Chunk_Manager.cs` (`GetOrCreateDamageOverlay`, `GrantOverlay`, `RevokeOverlay`, `SetSlotOwner`, `EnsureOverlayCapacity`, `FlushDirtyDamageOverlays`). Build-verified, 0 errors.
