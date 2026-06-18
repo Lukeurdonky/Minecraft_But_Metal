@@ -4,18 +4,26 @@
 [ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/The World/Chunk_Manager.cs" id="2_tia5y"]
 [ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/block_texture_atlas.tres" id="3_a802x"]
 [ext_resource type="Texture2D" uid="uid://dwam68po60hgu" path="res://Sprites/block breaking.png" id="4_om2ps"]
-[ext_resource type="PackedScene" uid="uid://ddghs13iu0otv" path="res://Assets/creature.tscn" id="5_n2v53"]
 [ext_resource type="Script" uid="uid://b7w2jsfdn7cvi" path="res://Scripts/Entities/EnemySpawner.cs" id="6_2d6dh"]
+[ext_resource type="PackedScene" uid="uid://ddghs13iu0otv" path="res://Assets/creature.tscn" id="6_4vfp7"]
 
 [sub_resource type="Environment" id="Environment_akwl5"]
 background_mode = 1
+background_color = Color(0.3665946, 0.3665946, 0.36659458, 1)
+ambient_light_color = Color(0.3647059, 0.3647059, 0.3647059, 1)
+ssao_radius = 12.96
+glow_intensity = 8.0
+glow_strength = 1.22
+glow_bloom = 0.51
 fog_enabled = true
 fog_mode = 1
-fog_light_color = Color(0, 0, 0, 1)
+fog_light_color = Color(0.3647059, 0.3647059, 0.3647059, 1)
 fog_light_energy = 0.15
 fog_density = 1.0
 fog_sky_affect = 0.0
-fog_depth_end = 240.0
+fog_depth_curve = 0.6330341
+fog_depth_end = 576.0
+volumetric_fog_length = 32.81
 
 [node name="GameHandler" type="Node3D"]
 script = ExtResource("1_a802x")
@@ -23,11 +31,13 @@ script = ExtResource("1_a802x")
 [node name="Game" type="Node3D" parent="."]
 script = ExtResource("2_tia5y")
 Mat = ExtResource("3_a802x")
-RenderDistance = 15
+RenderDistance = 12
 DamageTexture = ExtResource("4_om2ps")
+DebugPerfReadout = true
+ShowDamageOverlays = true
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="Game"]
-transform = Transform3D(1, 0, 0, 0, -0.5, 0.866025, 0, -0.866025, -0.5, 0, 0, 0)
+transform = Transform3D(1, 0, 0, 0, -0.49999985, 0.86602503, 0, -0.86602503, -0.49999985, 0, 0, 0)
 layers = 1048575
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="Game"]
@@ -37,7 +47,7 @@ environment = SubResource("Environment_akwl5")
 
 [node name="EnemySpawner" type="Node" parent="Game"]
 script = ExtResource("6_2d6dh")
-CreatureScene = ExtResource("5_n2v53")
+CreatureScene = ExtResource("6_4vfp7")
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://du771gwxm45or")

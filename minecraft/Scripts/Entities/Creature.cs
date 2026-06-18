@@ -23,6 +23,15 @@ public partial class Creature : Enemy
     private CollisionShape3D  _hitboxShape;
     private Node3D            _mesh;
 
+    // Far-tier AI throttle — re-evaluate state/targeting every 4th physics frame instead
+    // of every frame, accumulating the skipped delta so movement stays time-correct on the
+    // tick that runs. See documents/performance/ENEMY_PERFORMANCE.md Fix 3. Velocity
+    // integration + world collision (in Entity._PhysicsProcess) still run every frame —
+    // safe here because Creature is Flying and applies no per-tick gravity.
+    private const int FarTierAiInterval = 4;
+    private int        _farTierTick   = 0;
+    private float       _accumulatedDt = 0f;
+
     public override void ImHere()
     {
         base.ImHere();
@@ -40,19 +49,30 @@ public partial class Creature : Enemy
             _anim.Play("Idle");          // manual loop — imported clips can't be marked looping
         else if (animName == "Grab")
         {
-            var dist = (Global.GetPlayerPos() - GlobalPosition).Length();
-            _state = dist <= DetectionRange ? State.Chase : State.Idle;
+            _state = DistSqToPlayer <= DetectionRange * DetectionRange ? State.Chase : State.Idle;
             _anim.Play("Idle");
         }
     }
 
     public override void ApplyMovementFromInput(double delta)
     {
-        float   dt        = (float)delta;
+        base.ApplyMovementFromInput(delta); // updates DistSqToPlayer / Lod
+
+        float dt = (float)delta;
+        _accumulatedDt += dt;
+
+        if (Lod == LodTier.Far)
+        {
+            _farTierTick++;
+            if (_farTierTick < FarTierAiInterval) return; // skip decision this tick; velocity/collision still integrate at full rate
+            _farTierTick = 0;
+        }
+
+        dt             = _accumulatedDt; // fold in skipped ticks so accel/lerp stay time-correct
+        _accumulatedDt = 0f;
+
         Vector3 playerPos = Global.GetPlayerPos();
         var     vel       = Velocity;
-
-        float distToPlayer = (playerPos - GlobalPosition).Length();
 
         if (_state == State.Idle)
         {
@@ -72,7 +92,7 @@ public partial class Creature : Enemy
             vel.Y = Mathf.MoveToward(vel.Y, 0f, ChaseAccel * dt);
             vel.Z = Mathf.MoveToward(vel.Z, 0f, ChaseAccel * dt);
 
-            if (distToPlayer <= DetectionRange)
+            if (DistSqToPlayer <= DetectionRange * DetectionRange)
                 _state = State.Chase;
         }
         else if (_state == State.Chase)
@@ -95,7 +115,7 @@ public partial class Creature : Enemy
                 vel = vel.Normalized() * LungeSpeed * 0.5f;
 
             // In attack range → trigger grab
-            if (distToPlayer <= AttackRange)
+            if (DistSqToPlayer <= AttackRange * AttackRange)
             {
                 _state        = State.Grab;
                 _grabTimer    = 0f;
@@ -104,7 +124,7 @@ public partial class Creature : Enemy
                 _lungeDir = (GlobalTransform.Basis * _mesh.Transform.Basis.Z).Normalized();
                 _anim.Play("Grab");
             }
-            else if (distToPlayer > DetectionRange)
+            else if (DistSqToPlayer > DetectionRange * DetectionRange)
             {
                 _state = State.Idle;
             }

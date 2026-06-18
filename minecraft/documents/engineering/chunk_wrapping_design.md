@@ -1,21 +1,25 @@
 # Chunk Wrapping & Enemy Handling Design Document
 ### Antithesis Conquering Simulator
 
+> **Status: implemented.** The "Wrapping" and "Enemy Spawning via FeatureStage" sections below describe the design as built. The checklists at the bottom of this document are kept as a historical record of the implementation plan — see `documents/project/TODO.md` ("World Wrapping" section) for the live, current checklist. The Boss persistence design has not been implemented yet.
+>
+> Chunk size used in the examples below is `Global.CHUNK_SIZE` — **the single source of truth lives in `Global.cs`, currently 48**, not the `16` shown in earlier drafts of this doc. Numbers below are recalculated for 48.
+
 ---
 
 ## Overview
 
 The planet is a finite horizontal world that wraps at its edges — when the player exits one side, they re-enter from the opposite side. Vertically, the world has a real top and bottom (sky ceiling, abyss floor). Only horizontal axes wrap.
 
-The planet size is defined in **chunks**, not blocks. Because chunks are 16×16 blocks, the planet dimensions must be a multiple of 16 to guarantee clean alignment at the wrap seam — no partial chunks, no edge-case generation. Planet size is set via `PlanetChunksX` and `PlanetChunksZ` in `Global.cs`; block dimensions derive from these (`PlanetWidth = PlanetChunksX * 16`).
+The planet size is defined in **chunks**, not blocks. Because chunks are `CHUNK_SIZE × CHUNK_SIZE` blocks (48×48), the planet dimensions must be a multiple of 48 to guarantee clean alignment at the wrap seam — no partial chunks, no edge-case generation. Planet size is set via `PlanetChunksX` and `PlanetChunksZ` in `Global.cs`; block dimensions derive from these (`PlanetWidth = PlanetChunksX * CHUNK_SIZE`).
 
-**Reference sizes:**
+**Reference sizes (at CHUNK_SIZE = 48):**
 
 | Chunks per side | Blocks per side | Notes |
 |---|---|---|
-| 32 | 512 | Small — loops fast, tight combat density |
-| 64 | 1,024 | Medium — recommended starting point |
-| 128 | 2,048 | Large — likely more than a run needs |
+| 32 | 1,536 | Small — loops fast, tight combat density |
+| 64 | 3,072 | Medium — recommended starting point |
+| 128 | 6,144 | Large — likely more than a run needs |
 
 The exact value is a playtesting decision. The system works identically at any chunk-aligned size.
 
@@ -33,11 +37,11 @@ The planet's canonical world space spans `PlanetChunksX × 16` blocks on X and `
 
 ```csharp
 // Global.cs
-public const int PlanetChunksX = 64;   // Tune this
-public const int PlanetChunksZ = 64;   // Tune this
-public const int ChunkSize     = 16;
-public const int PlanetWidth   = PlanetChunksX * ChunkSize;  // 1024
-public const int PlanetDepth   = PlanetChunksZ * ChunkSize;  // 1024
+public const int CHUNK_SIZE    = 48;
+public static int PlanetChunksX = 64;   // Tune this
+public static int PlanetChunksZ = 64;   // Tune this
+public static int PlanetWidth  => PlanetChunksX * CHUNK_SIZE;  // 3072
+public static int PlanetDepth  => PlanetChunksZ * CHUNK_SIZE;  // 3072
 ```
 
 Any world X/Z coordinate outside the canonical range is wrapped back into it:
@@ -98,14 +102,14 @@ Because `PlanetWidth` is baked into the torus mapping at generation time, a fixe
 ChunkManager.NoiseScale = Global.PlanetWidth / (2f * Mathf.Pi * targetFeatureBlocks);
 ```
 
-Typical reference values for a 1024-block (64-chunk) planet:
+Typical reference values for a 3,072-block (64-chunk, CHUNK_SIZE=48) planet:
 
 | NoiseScale | Feature size |
 |---|---|
-| 1.0 | ~163 blocks — sweeping, open |
-| 1.5 | ~108 blocks — default terrain |
-| 3.0 | ~54 blocks — dense, varied |
-| 6.0 | ~27 blocks — tight caves |
+| 1.0 | ~489 blocks — sweeping, open |
+| 1.5 | ~326 blocks — default terrain |
+| 3.0 | ~163 blocks — dense, varied |
+| 6.0 | ~81 blocks — tight caves |
 
 ### Dirty Chunk Reload
 
@@ -124,7 +128,7 @@ BuildMesh(physicalNode, data);   // always from current canonical data
 
 ### Mesh Origin Offset
 
-Physical chunk nodes are placed at their raw world position (`rawChunkX * 16, y, rawChunkZ * 16`). The block data is canonical, the mesh renders at the physical location. A chunk that wraps gets a mesh origin at `PlanetWidth + offset`, placing it seamlessly in the render window.
+Physical chunk nodes are placed at their raw world position (`rawChunkX * CHUNK_SIZE, y, rawChunkZ * CHUNK_SIZE`). The block data is canonical, the mesh renders at the physical location. A chunk that wraps gets a mesh origin at `PlanetWidth + offset`, placing it seamlessly in the render window.
 
 ### No Teleportation — Infinite Tiling
 
@@ -240,17 +244,19 @@ The boss also applies `WrapPosition()` identically to regular entities.
 
 ## Implementation Checklist
 
-**Wrapping:**
-- [ ] `PlanetChunksX` / `PlanetChunksZ` constants in `Global.cs` (multiples of 1, derive `PlanetWidth` / `PlanetDepth` — never hardcode block counts)
-- [ ] At startup, hard-clamp: `PlanetChunksX = max(PlanetChunksX, RenderDistanceChunks * 2 + 1)` (same for Z) — print warning if clamped
-- [ ] Canonical coord utilities in `Global.cs`: `CanonicalBlockX(int x)`, `CanonicalBlockZ(int z)`, `CanonicalChunkX(int cx)`, `CanonicalChunkZ(int cz)`
-- [ ] Split chunk manager into `_canonicalData` (keyed by canonical coord, permanent this run) and `_activeNodes` (keyed by raw physical coord, freed on unload)
-- [ ] `ChunkData.Dirty` flag — set on any block modification; prevents fresh regeneration on reload
-- [ ] Apply canonical mapping in `get_block` and all block read/write paths (`break_block`, `damage_block`, `explode`)
-- [ ] Physical chunk node positioned at raw world offset (`rawChunkX * 16`) — mesh at physical location, data from canonical
-- [ ] No position clamping on player, entities, or GrappleHook — everything stays in raw world space
+> Wrapping is done — see `documents/project/TODO.md` ("World Wrapping" section) for the live checklist, kept in sync with the code. Enemy Spawning and Boss persistence below are not yet built.
 
-**Enemy Spawning:**
+**Wrapping:** ✅ done
+- [x] `PlanetChunksX` / `PlanetChunksZ` constants in `Global.cs` (multiples of 1, derive `PlanetWidth` / `PlanetDepth` — never hardcode block counts)
+- [x] At startup, hard-clamp: `PlanetChunksX = max(PlanetChunksX, RenderDistanceChunks * 2 + 1)` (same for Z) — print warning if clamped
+- [x] Canonical coord utilities in `Global.cs`: `CanonicalBlockX(int x)`, `CanonicalBlockZ(int z)`, `CanonicalChunkX(int cx)`, `CanonicalChunkZ(int cz)`
+- [x] Split chunk manager into `_canonicalData` (keyed by canonical coord, permanent this run) and `_activeNodes` (keyed by raw physical coord, freed on unload)
+- [x] `ChunkData.Dirty` flag — set on any block modification; prevents fresh regeneration on reload
+- [x] Apply canonical mapping in `get_block` and all block read/write paths (`break_block`, `damage_block`, `explode`)
+- [x] Physical chunk node positioned at raw world offset (`rawChunkX * CHUNK_SIZE`) — mesh at physical location, data from canonical
+- [x] No position clamping on player, entities, or GrappleHook — everything stays in raw world space
+
+**Enemy Spawning:** not started
 - [ ] `EnemySpawnDescriptor` struct
 - [ ] `SpawnDescriptors` list on `ChunkData` (not on the physical node — `ChunkData` persists, the node does not)
 - [ ] FeatureStage populates `SpawnDescriptors` using canonical chunk seed
@@ -258,7 +264,7 @@ The boss also applies `WrapPosition()` identically to regular entities.
 - [ ] `OwnerChunkPos` on `Entity.cs` stores the **raw** chunk coord of the chunk that spawned it — unload sweep compares directly against the unloading node's raw coord, no canonicalization needed
 - [ ] Chunk manager sweeps and frees owned enemies on chunk unload
 
-**Boss:**
+**Boss:** not started
 - [ ] `BossState` struct
 - [ ] `BossState?` + arena position on `RunManager`
 - [ ] `RunManager.OnBossChunkLoaded()` hook

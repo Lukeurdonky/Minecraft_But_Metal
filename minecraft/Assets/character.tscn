@@ -463,6 +463,30 @@ offset_bottom = -747.0
 grow_vertical = 0
 color = Color(1, 0.2, 0.2, 1)
 
+[node name="JumpSection2" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 0
+offset_left = 1303.0
+offset_top = 72.0
+offset_right = 1359.0
+offset_bottom = 80.0
+color = Color(0.5, 0.9, 1, 1)
+
+[node name="JumpSection3" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 0
+offset_left = 1361.0
+offset_top = 72.0
+offset_right = 1417.0
+offset_bottom = 80.0
+color = Color(0.5, 0.9, 1, 1)
+
+[node name="JumpSection1" type="ColorRect" parent="CanvasLayer/BarContainer"]
+layout_mode = 0
+offset_left = 1245.0
+offset_top = 72.0
+offset_right = 1301.0
+offset_bottom = 80.0
+color = Color(0.5, 0.9, 1, 1)
+
 [node name="HitFlash" type="ColorRect" parent="CanvasLayer"]
 modulate = Color(1, 1, 1, 0)
 anchors_preset = 15

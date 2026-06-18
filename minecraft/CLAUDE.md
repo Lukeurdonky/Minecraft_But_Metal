@@ -1,6 +1,8 @@
 # Antithesis Conquering Simulator — Claude Context
 
-> **Starting a new session?** See `STARTUP.md`.
+> **Starting a new session?** See `documents/project/STARTUP.md`.
+> **Ending the session / handing off the project?** See `documents/project/HANDOFF.md` and follow its instructions.
+> All other project documentation lives under `documents/` — see `documents/README.md` for the index.
 
 ## MCP server — use it proactively
 
@@ -17,7 +19,7 @@ The `godot-ai` MCP server is always available when Godot is open. Use it without
 
 ## What this project is
 
-A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minecraft clone. Game loop: choose a planet → fight → collect upgrades → next planet → boss. All combat, no crafting, no inventory. See `NEW_VISION.md` for full design doc, `PROGRESS.md` for current state, `TODO.md` for next steps.
+A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minecraft clone. Game loop: choose a planet → fight → collect upgrades → next planet → boss. All combat, no crafting, no inventory. See `documents/design/NEW_VISION.md` for full design doc, `documents/project/PROGRESS.md` for current state, `documents/project/TODO.md` for next steps.
 
 ---
 
@@ -140,6 +142,26 @@ Base class for all entities. Manual AABB collision against voxel blocks. Do NOT 
 
 `heavy` (bool, default false) — controls grapple behaviour. Heavy = player pulled toward entity. Light = entity pulled toward player and thrown on release. Set on creature prefabs/exports.
 
+### Enemy.cs — LOD standard (required for every AI-driven enemy)
+
+Root cause history: raising the spawn cap to 50 enemies dropped fps to 25 identically whether enemies were on/off-screen — confirmed CPU-bound cost from animation/particle/AI work that ran unconditionally per enemy per frame, with no LOD and no pooling. Full writeup, fixes, and the standard below: `documents/performance/ENEMY_PERFORMANCE.md`.
+
+`Enemy.cs` now caches a per-frame player-distance and LOD tier (`Near` / `Mid` / `Far`, thresholds 40u / 80u), computed once in `Enemy.ApplyMovementFromInput` before any subclass logic runs:
+
+- **`DistSqToPlayer`** / **`Lod`** — public, read-only from subclasses. **Never call `(playerPos - GlobalPosition).Length()` / `.DistanceTo()` in an enemy subclass** — use these instead. Squared-distance comparisons (`DistSqToPlayer <= Range * Range`) replace linear-distance checks; only call `Normalized()` when you actually need a unit direction (that sqrt is unavoidable).
+- Subclasses that override `ApplyMovementFromInput` **must call `base.ApplyMovementFromInput(delta)` first** so the cache updates — `Creature.cs` does this.
+- `Enemy._Process` gates animation (`AnimationPlayer.SpeedScale`) and particles on `Lod` (`GpuParticles3D.Emitting`, or `Set("paused", ...)` for the legacy `UniParticles3D` addon type), and skips the health-bar billboard `LookAt` entirely at `Far`. Property writes are skipped unless the gated value actually changed (`_lastAnimateState` / `_lastEmitState`).
+- **Use `GpuParticles3D`, never the `UniParticles3D` addon, for new enemy effects.** Profiling found `UniParticles3D`'s per-particle update is plain GDScript (a script-object loop, not GPU-driven) — it was the dominant cost once animation/AI were LOD-gated, even with emission already Near-tier-only. `Creature.cs`'s ember effect (`Assets/creature.tscn` → `EmberParticles`) was rebuilt as native `GpuParticles3D` for this reason; `Enemy.cs` still recognizes `UniParticles3D` for backward compat but it must not be used going forward.
+- **Far-tier AI throttle**: `Creature.cs` re-evaluates state transitions/targeting only every 4th physics frame at `Far` tier, accumulating delta across the skipped frames so accel/lerp stay time-correct on the tick that runs. Velocity integration + world collision (in `Entity._PhysicsProcess`) are untouched by this and still run every frame. This pattern is safe as-is only for flying entities with no per-tick gravity (`Creature` is `Flying`); a ground enemy with manual `vel.Y -= Gravity * dt` needs gravity applied on every tick, not just the decision tick.
+
+Rules for any **new** `Enemy` subclass (see the doc for the full numbered list):
+- Extend `Enemy`, not `Entity` directly, for anything AI-driven/hostile — that's where the LOD cache lives.
+- Gate every expensive per-frame op (raycasts, `get_block()` loops, physics queries, more than one `Atan2`) behind `Lod` — full simulation at `Near`, approximate or skipped at `Far`.
+- No scene-tree search (`FindChildren`, recursive `GetNode`) outside `_Ready()`/`ImHere()` — cache the reference.
+- No unconditional Godot property writes per frame — compare against last-applied value first.
+- Pool instances (don't `Instantiate()`/`QueueFree()` per spawn) for anything spawning more than a couple times per encounter — not yet built, tracked in `documents/project/TODO.md`.
+- Profile at 50 concurrent enemies (temporarily raise `EnemySpawner.MaxEnemies`) before calling a new enemy type done.
+
 ---
 
 ## Chunk_Manager.cs — do not casually refactor
@@ -169,7 +191,7 @@ Arms render in a SubViewport with its own Camera3D that mirrors the main camera'
 
 ## Conventions
 
-- New enemy types extend `Entity.cs`, set `heavy` appropriately
+- New enemy types extend `Enemy.cs` (not `Entity.cs` directly), set `heavy` appropriately, and follow the LOD standard above
 - New abilities go in `PlayerAbilities.cs`, write directly to `Velocity`
 - New blocks go in `Block_Registry.cs`
 - No Minecraft systems (crafting, farming, hunger, sleep, building)
@@ -180,8 +202,10 @@ Arms render in a SubViewport with its own Camera3D that mirrors the main camera'
 
 ## Project Identity Documents
 
-Additional design and lore documents are available in project knowledge. Consult these when making decisions about visual style, character, aesthetic, or the game's broader identity:
+Additional design and lore documents live in `documents/design/`. Consult these when making decisions about visual style, character, aesthetic, or the game's broader identity:
 
-- **ANTITHESIS.md** — character identity, visual style, sound, and aesthetic principles. Reference for any decision touching how the game looks, sounds, or feels.
-- **COSMOS_LORE.md** — narrative archive for the Cosmos universe. Reference for THE PLANT boss design, the game's tonal identity, and its relationship to the original Cosmos concept.
-- **ORIGIN.md** — background context on Cosmos Enterprises and the lineage of this project. Not active design direction, but useful for understanding *why* certain decisions are what they are.
+- **documents/design/ANTITHESIS.md** — character identity, visual style, sound, and aesthetic principles. Reference for any decision touching how the game looks, sounds, or feels.
+- **documents/design/COSMOS_LORE.md** — narrative archive for the Cosmos universe. Reference for THE PLANT boss design, the game's tonal identity, and its relationship to the original Cosmos concept.
+- **documents/design/ORIGIN.md** — background context on Cosmos Enterprises and the lineage of this project. Not active design direction, but useful for understanding *why* certain decisions are what they are.
+
+See `documents/README.md` for the full documentation index (engineering specs, performance history, project tracking).

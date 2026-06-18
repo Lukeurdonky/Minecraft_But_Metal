@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_disabled, unshaded;
+render_mode blend_mix, depth_draw_always, cull_back, unshaded;
 
 uniform sampler2D damage_texture : source_color, filter_nearest, repeat_enable;
 

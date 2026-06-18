@@ -1,6 +1,7 @@
 public class PlanetParams
 {
 	public string Template        = "Field";
+	public string Biome           = "";
 
 	// Terrain
 	public bool   FillSolid       = false;
@@ -57,9 +58,9 @@ public class PlanetParams
 		SpawnClearRadiusY  = 6f,
 	};
 
-	public static PlanetParams MakeChasm() => new PlanetParams
+	public static PlanetParams MakeAbyss() => new PlanetParams
 	{
-		Template       = "Chasm",
+		Template       = "Abyss",
 		FillSolid      = false,
 		SurfaceBlock   = 6,    // Steel
 		NoiseScale     = 1.5f,

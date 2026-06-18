@@ -5,6 +5,10 @@ using System.Runtime.CompilerServices;
 
 public partial class Global : Node
 {
+	// Single source of truth for chunk dimensions — every other file referencing chunk
+	// size should derive from this, not hardcode 16.
+	public const int CHUNK_SIZE = 48;
+
 	public static Global Instance { get; private set; }
 
 	public Player Player      { get; set; }
@@ -17,6 +21,7 @@ public partial class Global : Node
 	public void SetPlanetConfig(Godot.Collections.Dictionary config)
 	{
 		var p = new PlanetParams();
+		if (config.ContainsKey("biome"))           p.Biome           = config["biome"].AsString();
 		if (config.ContainsKey("template"))        p.Template        = config["template"].AsString();
 		if (config.ContainsKey("fill_solid"))       p.FillSolid       = config["fill_solid"].AsBool();
 		if (config.ContainsKey("surface_block"))    p.SurfaceBlock    = (byte)config["surface_block"].AsInt32();
@@ -155,8 +160,8 @@ public partial class Global : Node
 	public static int PlanetChunksX = 32;
 	public static int PlanetChunksZ = 32;
 
-	public static int PlanetWidth => PlanetChunksX * 16;
-	public static int PlanetDepth => PlanetChunksZ * 16;
+	public static int PlanetWidth => PlanetChunksX * CHUNK_SIZE;
+	public static int PlanetDepth => PlanetChunksZ * CHUNK_SIZE;
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static int CanonicalChunkX(int cx) => ((cx % PlanetChunksX) + PlanetChunksX) % PlanetChunksX;

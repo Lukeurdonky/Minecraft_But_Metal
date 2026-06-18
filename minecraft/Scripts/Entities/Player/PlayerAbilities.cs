@@ -46,11 +46,11 @@ public partial class Player : Entity
     public float LaserCooldown { get; private set; } = 0f;
 
     private const float LaserDuration           = 1.5f;
-    private const float LaserCooldownMax        = 7.0f;
-    private const float LaserRange              = 100f;
+    private const float LaserCooldownMax        = .1f;
+    private const float LaserRange              = 300f;
     private const float LaserDamagePerSecond    = 600f;
     private const float LaserKnockbackPerSecond = 55f;
-    private const float LaserTunnelRadius       = 4f;
+    private const float LaserTunnelRadius       = 8f;
     private const float LaserBeamRadius         = .35f;
     private const float LaserExplodeRate        = 0.05f; // seconds between explode calls (~20/s)
 
@@ -189,6 +189,15 @@ public partial class Player : Entity
         ProcessGrapple(delta);
         ProcessDash(delta);
         ProcessSpeedThreshold(delta);
+        ProcessJumpMeter(delta);
+    }
+
+    private void ProcessJumpMeter(float delta)
+    {
+        float rate = JumpRechargeRate;
+        if (CurrentGrappleState == GrappleState.Attached)
+            rate *= 1.5f;
+        _jumpMeter = Mathf.Min(_jumpMeter + rate * delta, JumpMeterMax);
     }
 
     private void ProcessSpeedTier(float delta)
@@ -267,7 +276,7 @@ public partial class Player : Entity
         {
             Velocity = Camera.GlobalTransform.Basis.Z.Normalized() * scaledImpulse;
         }
-        _airJumps = 1;
+        _jumpMeter = Mathf.Min(_jumpMeter + 1f, JumpMeterMax);
 
         // Use coyote-aware effective tier — ProcessSpeedTier already ran this frame.
         int damage = EffectiveSpeedTier switch
@@ -285,9 +294,6 @@ public partial class Player : Entity
         var knockback = -lookDir * scaledImpulse * 0.5f;
         foreach (var entity in targets)
             entity.TakeDamage(damage, knockback);
-
-        if (_grappledEntity != null && targets.Contains(_grappledEntity))
-            CancelGrapple();
     }
 
     private bool FindJackhammerBlock(out Vector3I hitBlock)
@@ -400,7 +406,7 @@ public partial class Player : Entity
         }
 
         // Entity damage — capsule cast along beam (hits any entity intersecting the laser tube)
-        _laserShape        ??= new CapsuleShape3D { Radius = LaserBeamRadius };
+        _laserShape        ??= new CapsuleShape3D { Radius = LaserTunnelRadius };
         _laserShape.Height   = beamLength;
 
         var right    = (Mathf.Abs(lookDir.Dot(Vector3.Up)) < 0.99f ? Vector3.Up : Vector3.Forward).Cross(lookDir).Normalized();
@@ -555,9 +561,6 @@ public partial class Player : Entity
     {
         _grappleCooldown     = Mathf.Max(_grappleCooldown - delta, 0f);
         _grappleJumpCooldown = Mathf.Max(_grappleJumpCooldown - delta, 0f);
-        if (CurrentGrappleState == GrappleState.Attached && _grappledEntity != null && _grappleJumpCooldown <= 0f)
-            _airJumps = Mathf.Max(_airJumps, 1);
-
         switch (CurrentGrappleState)
         {
             case GrappleState.Idle:
@@ -602,7 +605,6 @@ public partial class Player : Entity
                         if (toEntity.LengthSquared() > 0.001f)
                             Velocity = toEntity.Normalized() * HeavyEntityReelSpeed;
                         ReleaseGrappledEntity();
-                        _airJumps           = 1;
                         CurrentGrappleState = GrappleState.Idle;
                         _grappleCooldown    = GrappleCooldownMax;
                     }
@@ -613,7 +615,6 @@ public partial class Player : Entity
                         if (toPlayer.LengthSquared() > 0.001f)
                             _grappledEntity.Velocity = toPlayer.Normalized() * LightEntityReelSpeed;
                         ReleaseGrappledEntity();
-                        _airJumps           = 1;
                         CurrentGrappleState = GrappleState.Idle;
                         _grappleCooldown    = GrappleCooldownMax;
                     }
@@ -631,7 +632,6 @@ public partial class Player : Entity
                             }
                         }
                         ReleaseGrappledEntity();
-                        _airJumps            = 1;
                         CurrentGrappleState  = GrappleState.Idle;
                         _grappleCooldown     = GrappleCooldownMax;
                     }
@@ -639,19 +639,22 @@ public partial class Player : Entity
                 else
                 {
                     // Jump escape — directional lunge if movement keys held, straight up if not.
-                    // ApplyMovement already applied the Y jump this frame, so we only override XZ.
-                    if (_grappledEntity == null && IsJustPressedOrBuffered("jump"))
+                    // Gate on _usedAirJumpThisFrame so no lunge fires without an air jump in reserve.
+                    // ApplyMovement already applied the Y jump and set the flag this frame.
+                    if (_grappledEntity == null && _usedAirJumpThisFrame)
                     {
-                        CancelGrapple();
                         var lungeDir = Vector3.Zero;
                         if (Input.IsActionPressed("move_back"))  lungeDir -= forwardDirection;
                         if (Input.IsActionPressed("move_left"))  lungeDir -= rightDirection;
                         if (Input.IsActionPressed("move_right")) lungeDir += rightDirection;
                         if (lungeDir.LengthSquared() > 0.01f)
                         {
+                            lungeDir = lungeDir.Normalized();
+                            var cur2D    = new Vector2(Velocity.X, Velocity.Z);
+                            var newSpeed = Mathf.Max(cur2D.Length(), DashStrength);
                             var v = Velocity;
-                            v.X      = lungeDir.Normalized().X * DashStrength;
-                            v.Z      = lungeDir.Normalized().Z * DashStrength;
+                            v.X = lungeDir.X * newSpeed;
+                            v.Z = lungeDir.Z * newSpeed;
                             Velocity = v;
                         }
                         break;
@@ -701,7 +704,6 @@ public partial class Player : Entity
             _grappledEntity     = SelectedEnemy;
             GrappleAnchor       = SelectedEnemy.GetCenter();
             CurrentGrappleState = GrappleState.Attached;
-            _airJumps           = 1;
             if (!SelectedEnemy.heavy)
             {
                 SelectedEnemy.Grappled = true;
@@ -750,7 +752,6 @@ public partial class Player : Entity
             _grappledEntity     = hitEntity;
             GrappleAnchor       = hitEntity.GetCenter();
             CurrentGrappleState = GrappleState.Attached;
-            _airJumps           = 1;
 
             if (!hitEntity.heavy)
             {
@@ -765,7 +766,6 @@ public partial class Player : Entity
             // Instant attach — block in range
             GrappleAnchor       = blockHitPos;
             CurrentGrappleState = GrappleState.Attached;
-            _airJumps           = 1;
         }
         else if (GrappleHookScene != null)
         {
@@ -781,7 +781,6 @@ public partial class Player : Entity
             {
                 GrappleAnchor       = worldPos;
                 CurrentGrappleState = GrappleState.Attached;
-                _airJumps           = 1;
                 _activeHook         = null;
             };
             hook.OnAttachEntity = (entity) =>
@@ -789,7 +788,6 @@ public partial class Player : Entity
                 _grappledEntity     = entity;
                 GrappleAnchor       = entity.GetCenter();
                 CurrentGrappleState = GrappleState.Attached;
-                _airJumps           = 1;
                 if (!entity.heavy)
                 {
                     entity.Grappled = true;

@@ -93,20 +93,23 @@
 ## World Generation
 
 - [x] Seamless terrain via 4D simplex noise on flat torus (`Simplex4D.cs`) — replaces FastNoiseLite
-- [x] `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load; `MakeField()`, `MakeCave()`, `MakeChasm()` presets
+- [x] `PlanetParams.cs` — single source of truth for all generation values; `Global.ActivePlanet` set before scene load; `MakeField()`, `MakeCave()`, `MakeAbyss()` presets
 - [x] Removed all generation `[Export]` fields from `Chunk_Manager`; `create_chunk_data` reads `Global.Instance.ActivePlanet`
-- [x] `PlanetConfigMenu.gd` — F3 debug UI: template selector pre-fills presets; SpinBox/CheckButton rows for all params; Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`
-- [x] New blocks: Cloud (1), Smaug (2), Crystal (2), LightCrystal (1), Brick (5) — hardness values in parens; IDs 8–12 in `Block_Registry.cs`
-- [x] `CaveStage` — true 3D two-octave density field: Y encoded as additive torus phase offsets, not worm rotation. Preserves X/Z seam seamlessness. Lives in `create_chunk_data`; move to `CaveStage.Generate()` when WorldGenerator is wired
+- [x] `PlanetConfigMenu.gd` — F3 debug UI: biome selector pre-fills presets; SpinBox/CheckButton rows for all params; Generate button calls `Global.SetPlanetConfig` → `reload_current_scene()`
+- [x] Block palette IDs 1–16 in `Block_Registry.cs`. Notable blocks: Cloud (8), Crystal (10), LightCrystal (11), Sand (13), Moss (14), Lava (15), Virus (16). Atlas is full at 16/16 slots.
+- [x] `CaveStage` — true 3D two-octave density field: Y encoded as additive torus phase offsets, not worm rotation. Lives in `create_chunk_data`; migrate to `CaveStage.Generate()` when WorldGenerator is wired
+- [x] `BiomeDescriptor.cs` + `Biome_Registry.cs` — 9 hardcoded biomes across 3 templates (Field/Cave/Abyss). Each owns surface block, param ranges, fog color. `MakePlanetParams(seed)` randomises within ranges for RunManager use.
+- [x] World size param in F3 menu — `planet_chunks` SpinBox sets `Global.PlanetChunksX/Z` on generate; default 32 chunks (512 blocks)
 - [ ] `TerrainStage` — port height-map fill from `create_chunk_data` into `World_Generator.cs` stage
 - [ ] `CaveStage` migration — move cave carver from `create_chunk_data` into `CaveStage.Generate()`; gate on `CavesEnabled` / `CaveFullRange`
-- [ ] `ChasmStage` — sinusoidal shaft carver; already live in `create_chunk_data`, port to stage
-- [ ] `FeatureStage` — crash-site carve-out (guaranteed open ellipsoid near Cave spawn), enemy spawn markers, points of interest
+- [ ] `AbyssStage` — sinusoidal shaft carver; already live in `create_chunk_data`, port to stage
+- [ ] `FeatureStage` — crash-site carve-out, enemy spawn markers, biome-driven feature placement (see below)
+- [ ] `FeatureStage` biome features — modular self-contained feature classes (`VineFeature`, `SpikeFeature`, `PillarFeature`, `GlowVeinFeature`, etc.); `BiomeDescriptor` holds a feature list; `FeatureStage` iterates and places. Each feature has `Place(chunkData, chunkPos, rng, density)`.
 - [ ] Wire `World_Generator.cs` into `Chunk_Manager` (shrink `create_chunk_data` as each stage absorbs its piece)
-- [ ] `PlanetDescriptor` class — gameplay layer (difficulty, win condition, enemy density) distinct from `PlanetParams` (generation layer)
+- [ ] Surface block palette on `BiomeDescriptor` — replace single `SurfaceBlock` with a small list (2–3 natural candidates per biome); `MakePlanetParams` picks one via seed
+- [ ] Atlas expansion — `atlas_width`/`atlas_height` in `Block_Registry.cs` must be resized before any new blocks can be added (currently full at 16/16 slots)
+- [ ] Enemy type tags on `BiomeDescriptor` — list of enemy archetypes valid for this biome; wired to `EnemySpawner` once enemy variety designs exist (deferred)
 - [ ] Finite planet-shaped world (not infinite flat terrain)
-- [ ] Per-planet gravity setting
-- [ ] Difficulty modifiers (terrain hostility, enemy density)
 - [ ] Underground depth zones (Underground Forest −10 to −300, Purple Crystal −310 to −600)
 
 ---
@@ -114,10 +117,13 @@
 ## Run Structure
 
 - [x] Debug planet config menu (F3) — interim stand-in for planet selection; lets you configure any PlanetParams manually and regenerate
-- [ ] `RunManager` singleton — tracks current planet index, total kills, run score; drives the planet → upgrade → boss → win flow
+- [ ] `PlanetDescriptor` class — full implementation; holds atmosphere (SkyColor, FogColor, FogDensity, AmbientLight) + gameplay modifiers (Gravity, EnemyDensity, EnemyHostility, enemy type tags); assembled by RunManager from biome values + difficulty state before scene load
+- [ ] `AtmosphereSystem` — reads `PlanetDescriptor` on scene load; applies fog color, sky color, ambient light to Godot `WorldEnvironment`; peer to ChunkManager (not a generation stage)
+- [ ] RunManager modifier system — framework for run-level modifiers applied on top of biome after `MakePlanetParams`; modifiers include: Low Gravity, Heavy Fog, Alien Surface, and others TBD
+- [ ] RunManager modifier: **Alien Surface** — weighted table across all registered blocks; overrides the biome's natural surface block pick; makes familiar biomes feel visually alien on certain runs
+- [ ] `RunManager` singleton — tracks current planet index, total kills, run score; drives the planet → upgrade → boss → win flow; picks biome + seed + modifiers; calls `biome.MakePlanetParams(seed)` and builds `PlanetDescriptor`
 - [ ] Kill counter per planet fed into `RunManager` (Exploration win condition)
 - [ ] Survival timer per planet (Survival win condition)
-- [ ] Planet creation sets `Global.PlanetChunksX/Z` — `NoiseScale = PlanetWidth / (2π × targetFeatureBlocks)` keeps density consistent
 - [ ] Planet selection screen (3 choices, difficulty shown, pre-generated random params under constraints)
 - [ ] Planet map HUD visible during run
 - [ ] Post-planet upgrade screen (choose 1 of 3 accessories)
@@ -138,7 +144,7 @@
 
 ---
 
-## Accessories (all from NEW_VISION.md)
+## Accessories (all from `../design/NEW_VISION.md`)
 
 - [ ] Accessory slot system (equip before run or on pickup)
 - [ ] Super Jump
@@ -154,6 +160,29 @@
 
 ---
 
+## Performance (see `../performance/PERFORMANCE.md` and `../performance/PERFORMANCE_REWORK_FINDINGS.md` for full detail)
+
+Chunk pipeline pass — DONE:
+- [x] Threaded generation pool + mesh-builder pool (sized to core count)
+- [x] `[ThreadStatic]` mesh scratch buffers (fixed LOH-churn frame decay)
+- [x] Mesh promotion via `_readyToPromote` drain queue (fixed orphaned-buffer leak + re-mesh loop) with per-frame time-budget throttle
+- [x] `handle_chunks_art` per-crossing cost cut from ~6 O(active-set) passes to ~1 (static offset-set, small-queue reprioritize, throttled eviction, no per-chunk sqrt)
+- [x] `IsFullySolid` synced to canonical store on edit; damage shader `cull_back`
+- [x] All-air chunk fast path — `IsAllAir` flag skips the full mesh-build path the same way `IsFullySolid` does (see PERFORMANCE_REWORK_FINDINGS.md #1)
+- [x] `handle_chunks_art` RD³ sweep spread across `SWEEP_SLICES = 8` ticks via a persisted cursor instead of scanning the full offset volume every tick (see PERFORMANCE_REWORK_FINDINGS.md #2)
+- [x] Damage overlay rework — lazy/sparse per-chunk `DamageData`, slot-based incremental MultiMesh updates, dynamic per-type MultiMesh capacity (starts at 1024, doubles on demand instead of pre-allocating worst-case), free-priority flush ordering (frees fully drained before writes, so a destroyed block's crack disappears before any cosmetic tint refresh — fixes the visible "ghost crack" trailing a large explosion)
+
+Enemy performance pass — DONE (see `../performance/ENEMY_PERFORMANCE.md`):
+- [x] **Enemy LOD** — `Enemy.cs` caches `DistSqToPlayer`/`Lod` (Near/Mid/Far) once per physics tick; gates animation (`AnimationPlayer.SpeedScale`), particles (`GpuParticles3D.Emitting`), and health-bar `LookAt` by tier; `Creature.cs` throttles state/targeting decisions to every 4th frame at Far tier
+- [x] **Replace `UniParticles3D` with native `GpuParticles3D`** on Creature (`EmberParticles`) — the addon's per-particle update was plain GDScript, not GPU-driven, and was the dominant remaining cost once animation/AI were LOD-gated (creatures cluster Near the player in actual combat, where LOD doesn't throttle). Confirmed: 50 concurrent enemies now run with no lag. `UniParticles3D` must not be used on any new enemy type.
+
+Remaining:
+- [ ] **Enemy spawn pooling** — reuse instances instead of instantiating the GLB per spawn (kills the 3–9 fps spawn hitch)
+- [ ] Greedy meshing — cuts destroyed-terrain triangle count (GPU-bound view-dependent dips); requires texture array / custom-UV shader to tile the atlas across merged quads
+- [ ] Incremental unload sweep — only scan the trailing-edge shell on crossing instead of all loaded chunks (reduces remaining moving spikes)
+
+---
+
 ## Polish & Atmosphere
 
 - [ ] Antithesis aesthetic — dark terrain palette, bright electronic enemy materials
@@ -166,7 +195,7 @@
 
 ## Tech Debt / Cleanup
 
-- [x] Block damage overlay FIFO eviction — oldest tracked block evicted (health + visual) when cap (1500) is hit; `LinkedList` + node pointer for O(1) removal
+- [x] Block damage overlay FIFO eviction — oldest tracked block evicted (health + visual) when global cap (`MAX_DAMAGED_BLOCKS = 300,000`, across all block types) is hit; `LinkedList` + node pointer for O(1) removal
 - [ ] Delete or archive `Washed Code/` once nothing left to salvage
 - [ ] Remove `dummy.gd`, `portal.gd` from root (unused)
 - [ ] `Mob_Registry.cs` — repurpose for enemy definitions or remove

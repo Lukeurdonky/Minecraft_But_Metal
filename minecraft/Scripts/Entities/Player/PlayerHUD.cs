@@ -10,6 +10,7 @@ public partial class PlayerHUD : Control
 
     private Player    _player;
     private bool      _hadJump           = false;
+    private float     _prevJumpMeter     = Player.JumpMeterMax;
     private string    _lastEnemyAnim     = "";
     private bool      _lastGrappleTarget = false;
 
@@ -19,6 +20,9 @@ public partial class PlayerHUD : Control
     [Export] public ColorRect SpeedSection1 { get; set; }
     [Export] public ColorRect SpeedSection2 { get; set; }
     [Export] public ColorRect SpeedSection3 { get; set; }
+    [Export] public ColorRect JumpSection1  { get; set; }
+    [Export] public ColorRect JumpSection2  { get; set; }
+    [Export] public ColorRect JumpSection3  { get; set; }
     [Export] public ColorRect HitFlash    { get; set; }
 
     private float _hpBarLeft;
@@ -40,6 +44,9 @@ public partial class PlayerHUD : Control
         SpeedSection1  ??= GetNodeOrNull<ColorRect>("../BarContainer/SpeedSection1");
         SpeedSection2  ??= GetNodeOrNull<ColorRect>("../BarContainer/SpeedSection2");
         SpeedSection3  ??= GetNodeOrNull<ColorRect>("../BarContainer/SpeedSection3");
+        JumpSection1   ??= GetNodeOrNull<ColorRect>("../BarContainer/JumpSection1");
+        JumpSection2   ??= GetNodeOrNull<ColorRect>("../BarContainer/JumpSection2");
+        JumpSection3   ??= GetNodeOrNull<ColorRect>("../BarContainer/JumpSection3");
         HitFlash       ??= GetNodeOrNull<ColorRect>("../HitFlash");
 
         if (HpBarFg != null)
@@ -60,13 +67,14 @@ public partial class PlayerHUD : Control
         {
             _player = Global.Instance?.Player;
             if (_player == null) return;
-            // Sync initial jump state without waiting for a transition
-            _hadJump = _player.AirJumpsAvailable > 0;
+            _prevJumpMeter = _player.JumpMeter;
+            _hadJump       = _player.JumpMeter >= 1f;
             JumpAnimPlayer?.Play(_hadJump ? "JumpUITrue" : "JumpUIFalse");
             return;
         }
 
         UpdateJumpIndicator();
+        UpdateJumpMeter();
         UpdateEnemyIndicator();
         UpdateCrosshair();
         UpdateHealthBar();
@@ -77,10 +85,41 @@ public partial class PlayerHUD : Control
 
     private void UpdateJumpIndicator()
     {
-        bool hasJump = _player.AirJumpsAvailable > 0;
-        if (hasJump == _hadJump) return;
-        _hadJump = hasJump;
-        JumpAnimPlayer?.Play(hasJump ? "JumpUITrue" : "JumpUIFalse");
+        float meter       = _player.JumpMeter;
+        bool  hasJump     = meter >= 1f;
+        bool  jumpSpent   = _prevJumpMeter - meter >= 0.9f;
+        _prevJumpMeter    = meter;
+
+        if (jumpSpent)
+        {
+            // Flash off on every jump, even when charges remain
+            _hadJump = false;
+            JumpAnimPlayer?.Play("JumpUIFalse");
+        }
+        else if (hasJump != _hadJump)
+        {
+            _hadJump = hasJump;
+            JumpAnimPlayer?.Play(hasJump ? "JumpUITrue" : "JumpUIFalse");
+        }
+    }
+
+    private static readonly Color JumpColor    = new Color(0.5f, 0.9f, 1.0f);
+    private const float JumpSectionDim = 0.12f;
+
+    private void UpdateJumpMeter()
+    {
+        if (JumpSection1 == null) return;
+        float meter = _player.JumpMeter;
+        SetJumpSection(JumpSection1, Mathf.Clamp(meter - 0f, 0f, 1f));
+        SetJumpSection(JumpSection2, Mathf.Clamp(meter - 1f, 0f, 1f));
+        SetJumpSection(JumpSection3, Mathf.Clamp(meter - 2f, 0f, 1f));
+    }
+
+    private static void SetJumpSection(ColorRect rect, float fill)
+    {
+        var c = JumpColor;
+        c.A       = Mathf.Lerp(JumpSectionDim, 1f, fill);
+        rect.Color = c;
     }
 
     private static readonly Color LaserColorReady    = new Color(0.2f, 0.5f, 1.0f);
