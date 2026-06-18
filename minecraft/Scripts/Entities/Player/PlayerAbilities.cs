@@ -406,7 +406,7 @@ public partial class Player : Entity
         }
 
         // Entity damage — capsule cast along beam (hits any entity intersecting the laser tube)
-        _laserShape        ??= new CapsuleShape3D { Radius = LaserBeamRadius };
+        _laserShape        ??= new CapsuleShape3D { Radius = LaserTunnelRadius };
         _laserShape.Height   = beamLength;
 
         var right    = (Mathf.Abs(lookDir.Dot(Vector3.Up)) < 0.99f ? Vector3.Up : Vector3.Forward).Cross(lookDir).Normalized();

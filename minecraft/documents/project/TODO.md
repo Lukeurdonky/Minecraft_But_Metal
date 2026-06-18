@@ -172,8 +172,11 @@ Chunk pipeline pass — DONE:
 - [x] `handle_chunks_art` RD³ sweep spread across `SWEEP_SLICES = 8` ticks via a persisted cursor instead of scanning the full offset volume every tick (see PERFORMANCE_REWORK_FINDINGS.md #2)
 - [x] Damage overlay rework — lazy/sparse per-chunk `DamageData`, slot-based incremental MultiMesh updates, dynamic per-type MultiMesh capacity (starts at 1024, doubles on demand instead of pre-allocating worst-case), free-priority flush ordering (frees fully drained before writes, so a destroyed block's crack disappears before any cosmetic tint refresh — fixes the visible "ghost crack" trailing a large explosion)
 
+Enemy performance pass — DONE (see `../performance/ENEMY_PERFORMANCE.md`):
+- [x] **Enemy LOD** — `Enemy.cs` caches `DistSqToPlayer`/`Lod` (Near/Mid/Far) once per physics tick; gates animation (`AnimationPlayer.SpeedScale`), particles (`GpuParticles3D.Emitting`), and health-bar `LookAt` by tier; `Creature.cs` throttles state/targeting decisions to every 4th frame at Far tier
+- [x] **Replace `UniParticles3D` with native `GpuParticles3D`** on Creature (`EmberParticles`) — the addon's per-particle update was plain GDScript, not GPU-driven, and was the dominant remaining cost once animation/AI were LOD-gated (creatures cluster Near the player in actual combat, where LOD doesn't throttle). Confirmed: 50 concurrent enemies now run with no lag. `UniParticles3D` must not be used on any new enemy type.
+
 Remaining:
-- [ ] **Enemy LOD** (highest-impact remaining; enemies are the other major cost — 50 enemies = 25 fps, CPU-bound): animation LOD (pause skeleton when far/off-screen) → particle LOD → AI/collision throttle for distant enemies
 - [ ] **Enemy spawn pooling** — reuse instances instead of instantiating the GLB per spawn (kills the 3–9 fps spawn hitch)
 - [ ] Greedy meshing — cuts destroyed-terrain triangle count (GPU-bound view-dependent dips); requires texture array / custom-UV shader to tile the atlas across merged quads
 - [ ] Incremental unload sweep — only scan the trailing-edge shell on crossing instead of all loaded chunks (reduces remaining moving spikes)

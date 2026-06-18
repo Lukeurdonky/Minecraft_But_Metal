@@ -9,6 +9,16 @@ public partial class Enemy : Entity
     [Export] public float DetectionRange { get; set; } = 15f;
     [Export] public bool  Flying                       = false;
 
+    // LOD tier by distance to player. Subclasses must read DistSqToPlayer/Lod instead of
+    // computing their own player-distance — see documents/performance/ENEMY_PERFORMANCE.md.
+    public enum LodTier { Near, Mid, Far }
+
+    public float   DistSqToPlayer { get; private set; } = 0f;
+    public LodTier Lod            { get; private set; } = LodTier.Near;
+
+    private const float MidLodDistance = 40f;
+    private const float FarLodDistance = 80f;
+
     private Node3D             _healthBarRoot;
     private MeshInstance3D     _healthBarFg;
     private StandardMaterial3D _healthBarFgMat;
@@ -22,12 +32,19 @@ public partial class Enemy : Entity
     private Godot.Collections.Array<Node> _particles;
     private Godot.Collections.Array<Node> _animPlayers;
     private bool _counted = false;
+    private bool _lastAnimateState = true;
+    private bool _lastEmitState    = true;
 
     public override void ImHere()
     {
         base.ImHere();
         BuildHealthBar();
-        _particles   = FindChildren("*", "UniParticles3D",  true, false);
+        // GpuParticles3D is the standard going forward (native, GPU-driven — see
+        // documents/performance/ENEMY_PERFORMANCE.md). UniParticles3D (GDScript, CPU-bound
+        // per-particle simulation) is kept here only in case an older enemy scene still uses it.
+        _particles = FindChildren("*", "GPUParticles3D", true, false);
+        foreach (var legacy in FindChildren("*", "UniParticles3D", true, false))
+            _particles.Add(legacy);
         _animPlayers = FindChildren("*", "AnimationPlayer", true, false);
         if (Global.Instance != null) { Global.Instance.EnemyCount++; _counted = true; }
     }
@@ -53,23 +70,57 @@ public partial class Enemy : Entity
         }
     }
 
-    public override void _Process(double delta)
+    // Computed once per physics tick, before any subclass decision logic runs. Subclasses
+    // must read DistSqToPlayer/Lod instead of computing their own player distance.
+    public override void ApplyMovementFromInput(double delta)
+    {
+        UpdatePlayerDistance();
+        base.ApplyMovementFromInput(delta);
+    }
+
+    private void UpdatePlayerDistance()
     {
         var player = Global.Instance?.Player;
-        if (player != null && GlobalPosition.DistanceSquaredTo(player.GlobalPosition) > DespawnRadius * DespawnRadius)
+        DistSqToPlayer = player != null
+            ? GlobalPosition.DistanceSquaredTo(player.GlobalPosition)
+            : float.MaxValue;
+        Lod = DistSqToPlayer > FarLodDistance * FarLodDistance ? LodTier.Far
+            : DistSqToPlayer > MidLodDistance * MidLodDistance ? LodTier.Mid
+            : LodTier.Near;
+    }
+
+    public override void _Process(double delta)
+    {
+        if (DistSqToPlayer > DespawnRadius * DespawnRadius)
         {
             QueueFree();
             return;
         }
 
         bool hitstop = Global?.HitstopActive == true;
-        foreach (var node in _particles)
-            node.Set("paused", hitstop);
-        foreach (var node in _animPlayers)
-            if (node is AnimationPlayer ap)
-                ap.SpeedScale = hitstop ? 0f : 1f;
 
-        if (_healthBarRoot == null) return;
+        // Animation + particle LOD — the dominant per-enemy cost (skeleton eval + skinning).
+        // Gated on Lod, and only written when the value actually changes (Godot property
+        // writes aren't free at 50 entities). See documents/performance/ENEMY_PERFORMANCE.md.
+        bool shouldAnimate = Lod != LodTier.Far && !hitstop;
+        if (shouldAnimate != _lastAnimateState)
+        {
+            foreach (var node in _animPlayers)
+                if (node is AnimationPlayer ap) ap.SpeedScale = shouldAnimate ? 1f : 0f;
+            _lastAnimateState = shouldAnimate;
+        }
+
+        bool shouldEmit = Lod == LodTier.Near && !hitstop;
+        if (shouldEmit != _lastEmitState)
+        {
+            foreach (var node in _particles)
+                if (node is GpuParticles3D p) p.Emitting = shouldEmit;
+                else node.Set("paused", !shouldEmit);
+            _lastEmitState = shouldEmit;
+        }
+
+        // Health bar billboard tracking is unreadable at Far tier — skip it entirely.
+        if (_healthBarRoot == null || Lod == LodTier.Far) return;
         var cam = Global.Instance?.Player?.Camera;
         if (cam == null) return;
         var toCamera = cam.GlobalPosition - _healthBarRoot.GlobalPosition;

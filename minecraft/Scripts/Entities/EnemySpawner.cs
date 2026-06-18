@@ -4,8 +4,8 @@ public partial class EnemySpawner : Node
 {
 	[Export] public PackedScene CreatureScene { get; set; }
 
-	private const int   MaxEnemies     = 5;
-	private const float SpawnInterval  = 2f;
+	private const int   MaxEnemies     = 50;
+	private const float SpawnInterval  = .1f;
 	private const float SpawnRadiusMin = 20f;
 	private const float SpawnRadiusMax = 120f;
 	private const int   ScanAttempts   = 20;
