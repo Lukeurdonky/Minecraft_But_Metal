@@ -291,9 +291,11 @@ public partial class Player : Entity
         if (hitBlock)
             Global.CubeManager.explode(blockPos, JackhammerRadius, 1f);
 
-        var knockback = -lookDir * scaledImpulse * 0.5f;
         foreach (var entity in targets)
-            entity.TakeDamage(damage, knockback);
+        {
+            var awayFromPlayer = (entity.GlobalPosition - GlobalPosition).Normalized();
+            entity.TakeDamage(damage, awayFromPlayer * scaledImpulse * 0.5f);
+        }
     }
 
     private bool FindJackhammerBlock(out Vector3I hitBlock)

@@ -31,7 +31,7 @@ script = ExtResource("1_a802x")
 [node name="Game" type="Node3D" parent="."]
 script = ExtResource("2_tia5y")
 Mat = ExtResource("3_a802x")
-RenderDistance = 12
+RenderDistance = 16
 DamageTexture = ExtResource("4_om2ps")
 DebugPerfReadout = true
 ShowDamageOverlays = true
@@ -48,6 +48,8 @@ environment = SubResource("Environment_akwl5")
 [node name="EnemySpawner" type="Node" parent="Game"]
 script = ExtResource("6_2d6dh")
 CreatureScene = ExtResource("6_4vfp7")
+MaxEnemies = 20
+SpawnRadiusMax = 140.0
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://du771gwxm45or")
