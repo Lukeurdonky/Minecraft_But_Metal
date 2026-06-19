@@ -22,14 +22,14 @@ public partial class GroundRobotShooter : Enemy
     public override void ImHere()
     {
         base.ImHere();
-        MaxHealth      = 100;
-        CurrentHealth  = 100;
-        AttackDamage   = 15;
-        DetectionRange = 30f;
-        heavy          = false;
-        Flying         = false;
-        width          = 1.0f;
-        height         = 2.0f;
+        // MaxHealth      = 100;
+        // CurrentHealth  = 100;
+        // AttackDamage   = 15;
+        // DetectionRange = 30f;
+        // heavy          = false;
+        // Flying         = false;
+        // width          = 1.0f;
+        // height         = 2.0f;
 
         _anim = GetNode<AnimationPlayer>("GroundShooterReal/AnimationPlayer");
         var aimAnim = _anim.GetAnimation("Aim");

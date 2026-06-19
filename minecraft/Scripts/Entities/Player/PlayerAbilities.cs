@@ -103,8 +103,11 @@ public partial class Player : Entity
     private const float GrappleLungeSpeed     = 50f;
     private const float GrappleDetachDist     = 1.5f;
     private const float LightEntityYBoost       = 8f;  // Y velocity added to player on light-entity attach
-    private const float LightEntityReelSpeed    = 35f; // speed entity is pulled toward player
+    private const float LightEntityReelAccel    = 90f; // acceleration toward player while reeling in
+    private const float LightEntityReelSpeed    = 80f; // max speed entity reaches while reeling toward player
+    private const float LightEntityBounceSpeed  = 60f; // speed entity bounces back at when it hits the player
     private const float LightEntityReleaseBoost = 10f; // upward boost on release (zeroes Y first)
+    private const float LightEntityLungeSpeed   = 35f; // speed player lunges toward light entity on release
     private const float HeavyEntityReelSpeed    = 35f; // speed player is pulled toward heavy entity
     private const float HeavyEntityArrivalBoost = 8f;  // upward boost when player reaches heavy entity
     private const float GrappleCooldownMax       = 0.1f;
@@ -612,10 +615,14 @@ public partial class Player : Entity
                     }
                     else if (_grappledEntity != null && !_grappledEntity.heavy)
                     {
-                        // Launch light entity toward player on release
-                        var toPlayer = GlobalPosition - _grappledEntity.GetCenter();
-                        if (toPlayer.LengthSquared() > 0.001f)
-                            _grappledEntity.Velocity = toPlayer.Normalized() * LightEntityReelSpeed;
+                        // Meet in the middle: entity launched toward player, player lunges toward entity
+                        var toEntity = GrappleAnchor - GlobalPosition;
+                        if (toEntity.LengthSquared() > 0.001f)
+                        {
+                            var dir  = toEntity.Normalized();
+                            Velocity = dir * LightEntityLungeSpeed;
+                            _grappledEntity.Velocity = -dir * LightEntityReelSpeed;
+                        }
                         ReleaseGrappledEntity();
                         CurrentGrappleState = GrappleState.Idle;
                         _grappleCooldown    = GrappleCooldownMax;
@@ -683,6 +690,23 @@ public partial class Player : Entity
                         break;
                     }
 
+                    else if (_grappledEntity != null && !_grappledEntity.heavy)
+                    {
+                        // Light entity accelerates toward the player, ignoring gravity.
+                        // Player velocity is untouched — no pull, no knockback from the approach.
+                        if (toAnchor.Length() < GrappleDetachDist)
+                        {
+                            // Hit the player — bounce back instead of overlapping
+                            _grappledEntity.Velocity = toAnchor.Normalized() * LightEntityBounceSpeed;
+                        }
+                        else
+                        {
+                            var pullToPlayer = -toAnchor.Normalized();
+                            float inDir      = _grappledEntity.Velocity.Dot(pullToPlayer);
+                            float addSpeed   = Mathf.Clamp(LightEntityReelSpeed - inDir, 0f, LightEntityReelAccel * delta);
+                            _grappledEntity.Velocity += pullToPlayer * addSpeed;
+                        }
+                    }
                     else
                     {
                         // Pull player toward block (Quake-style acceleration)

@@ -9,6 +9,7 @@ size = Vector3(11.583008, 19.91178, 12.758362)
 [node name="GroundRobotShooter" type="CharacterBody3D"]
 collision_layer = 3
 script = ExtResource("1_whr27")
+DetectionRange = 150.0
 offset = Vector2(0, 0.259)
 
 [node name="GroundShooterReal" parent="." instance=ExtResource("1_bajqt")]
