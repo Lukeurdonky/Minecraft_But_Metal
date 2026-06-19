@@ -52,7 +52,8 @@
   - [x] SwarmEnemy.cs — fast, small, flying, light, group attacker (needs model + scene)
   - [x] HeavyEnemy.cs — slow, tanky, ground, heavy=true, charge attack (needs model + scene)
   - [x] RangedEnemy.cs — medium, ground, maintains distance, fires EnemyBolt (needs model + scene)
-  - [ ] Assign scenes to EnemySpawner once models are built
+  - [x] GroundRobotShooter.cs — grounded gunner, full model + scene + script (`Assets/ground_robot_shooter.tscn`). Rotates/walks toward player, auto-jumps 1-block walls, scrubs (`Seek`, not `Play`) a single "Aim" clip on the arm skeleton to track the player's vertical angle, lerped via `AimLerpSpeed`. Killable with the standard `Enemy` health bar (`collision_layer = 3` so Jackhammer/Laser hit-detection — `CollisionMask = 2` — can find it; this was the one non-obvious gotcha, easy to forget on a hand-built scene). Does not fire yet.
+  - [ ] Assign scenes to EnemySpawner once models are built (SwarmEnemy/HeavyEnemy/RangedEnemy still need models; GroundRobotShooter has one but isn't wired into EnemySpawner yet — spawner only instances `CreatureScene` today)
 - [x] Wall navigation — ground enemies auto-jump over 1-block walls when chasing
 - [x] Improve Creature.cs AI — attack behavior (deal `AttackDamage` on contact), not just chase
 - [x] Creature rework — 3-state AI (Idle/Chase/Grab), range-based detection, Idle animation during chase, Grab animation only on attack, 3-phase lunge (charge/impulse/recovery), forward-direction lunge, GrabHitbox Area3D in scene, upward knockback factor, pitch tracked on mesh child, BoxShape3D collider, hitstop freezes particles + animations via auto-scan in Enemy

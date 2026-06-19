@@ -1,0 +1,19 @@
+[gd_scene load_steps=4 format=3 uid="uid://dh54rqsul1tlt"]
+
+[ext_resource type="PackedScene" uid="uid://c6ehf176pjvgy" path="res://Assets/ground_shooter_real.tscn" id="1_bajqt"]
+[ext_resource type="Script" uid="uid://pqprc27nxyll" path="res://Scripts/Entities/GroundRobotShooter.cs" id="1_whr27"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_bajqt"]
+size = Vector3(11.583008, 19.91178, 12.758362)
+
+[node name="GroundRobotShooter" type="CharacterBody3D"]
+collision_layer = 3
+script = ExtResource("1_whr27")
+offset = Vector2(0, 0.259)
+
+[node name="GroundShooterReal" parent="." instance=ExtResource("1_bajqt")]
+transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0, 0)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(0.1, 0, 0, 0, 0.1, 0, 0, 0, 0.1, 0, 0.259, 0)
+shape = SubResource("BoxShape3D_bajqt")

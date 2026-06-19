@@ -1,0 +1,42 @@
+[gd_scene load_steps=2 format=3 uid="uid://c6ehf176pjvgy"]
+
+[ext_resource type="PackedScene" uid="uid://b14jwasgkclbl" path="res://Assets/GroundShooterReal.glb" id="1_3unlp"]
+
+[node name="GroundShooterReal" instance=ExtResource("1_3unlp")]
+
+[node name="Base" parent="." index="0"]
+layers = 3
+
+[node name="treads" parent="." index="1"]
+layers = 3
+
+[node name="power" parent="." index="2"]
+layers = 3
+
+[node name="Cylinder_001" parent="GunArm" index="0"]
+layers = 3
+
+[node name="Skeleton3D" parent="GunArm" index="1"]
+bones/0/rotation = Quaternion(0.70496476, 0.0012354471, -0.7092396, -0.0015394986)
+bones/1/rotation = Quaternion(8.645462e-05, 9.495971e-07, 0.003098315, 0.9999952)
+bones/2/rotation = Quaternion(2.7131386e-05, 1.3211064e-07, -0.0012665909, 0.9999993)
+bones/3/rotation = Quaternion(3.4242706e-07, 5.613176e-08, -0.0003711676, 0.99999994)
+bones/4/rotation = Quaternion(-8.22877e-06, 1.5457566e-08, -3.1997984e-05, 1)
+bones/5/position = Vector3(-1.5471573, -29.786505, -0.027370702)
+bones/5/rotation = Quaternion(0.5000001, -0.49999997, -0.49999982, 0.50000006)
+bones/6/rotation = Quaternion(-0.7049652, 0, 0.709242, -2.9802322e-08)
+
+[node name="GunArmModel" parent="GunArm/Skeleton3D" index="0"]
+layers = 3
+
+[node name="wire" parent="." index="4"]
+layers = 3
+
+[node name="wire_001" parent="." index="5"]
+layers = 3
+
+[node name="wire_002" parent="." index="6"]
+layers = 3
+
+[node name="casings" parent="." index="7"]
+layers = 3

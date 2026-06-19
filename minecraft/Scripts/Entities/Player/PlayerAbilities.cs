@@ -18,8 +18,8 @@ public partial class Player : Entity
 
     private const float JackhammerMaxCharge  = .5f;
     private const float JackhammerImpulseWeak = 35f;
-    private const float JackhammerImpulseMed  = 50f;
-    private const float JackhammerImpulseHard = 70f;
+    private const float JackhammerImpulseMed  = 60f;
+    private const float JackhammerImpulseHard = 100f;
     private const float JackhammerConeRange  = 6f;
     private const float JackhammerConeAngle  = 0.65f; // ~41° half-angle
 
