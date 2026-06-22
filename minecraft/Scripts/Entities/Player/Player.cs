@@ -91,6 +91,13 @@ public partial class Player : Entity
 		if (Camera != null)
 			Camera.Current = true;
 
+		// Layer 4 (bit 8) is Player-exclusive. Layer 1 is shared with every enemy
+		// (Creature/GroundRobotShooter use collision_layer = 3, i.e. bits 1+2), so an
+		// enemy projectile that wants to hit only the player can't mask on bit 1 alone —
+		// it would also match its own shooter. Bit 8 gives projectiles something to
+		// mask against that no enemy occupies.
+		CollisionLayer |= 8;
+
 		// ARCHIVED: Pickup area removed — item pickup system archived.
 	}
 

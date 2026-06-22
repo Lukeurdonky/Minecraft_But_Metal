@@ -51,6 +51,9 @@ CreatureScene = ExtResource("6_4vfp7")
 MaxEnemies = 20
 SpawnRadiusMax = 140.0
 
+[node name="TestRobotShooter" parent="Game" instance=ExtResource("6_4vfp7")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 525, 8, 512)
+
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://du771gwxm45or")
 spawn_path = NodePath("../Game/Players")

@@ -26,11 +26,9 @@ public partial class EnemyBolt : Projectile
 
     public override void OnHitEntity(Entity entity)
     {
-        if (entity is Player player)
-        {
-            var kb = Velocity.Normalized() * 5f;
-            player.TakeDamage(Damage, kb);
-        }
+        if (entity is not Player player) return;
+        var kb = Velocity.Normalized() * 5f;
+        player.TakeDamage(Damage, kb);
         QueueFree();
     }
 }
