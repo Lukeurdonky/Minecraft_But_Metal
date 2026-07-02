@@ -1,4 +1,4 @@
-[gd_scene load_steps=8 format=3 uid="uid://dsq2766vhek4b"]
+[gd_scene load_steps=10 format=3 uid="uid://dsq2766vhek4b"]
 
 [ext_resource type="Script" uid="uid://cdiksh4gbjy6j" path="res://Scripts/Handlers/level.gd" id="1_a802x"]
 [ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/The World/Chunk_Manager.cs" id="2_tia5y"]
@@ -6,6 +6,8 @@
 [ext_resource type="Texture2D" uid="uid://dwam68po60hgu" path="res://Sprites/block breaking.png" id="4_om2ps"]
 [ext_resource type="Script" uid="uid://b7w2jsfdn7cvi" path="res://Scripts/Entities/EnemySpawner.cs" id="6_2d6dh"]
 [ext_resource type="PackedScene" uid="uid://dh54rqsul1tlt" path="res://Assets/ground_robot_shooter.tscn" id="6_4vfp7"]
+[ext_resource type="PackedScene" uid="uid://ddghs13iu0otv" path="res://Assets/creature.tscn" id="7_creature"]
+[ext_resource type="Script" uid="uid://seheqylc5tjw" path="res://Scripts/Handlers/AtmosphereSystem.cs" id="8_atmo"]
 
 [sub_resource type="Environment" id="Environment_akwl5"]
 background_mode = 1
@@ -16,13 +18,10 @@ glow_intensity = 8.0
 glow_strength = 1.22
 glow_bloom = 0.51
 fog_enabled = true
-fog_mode = 1
 fog_light_color = Color(0.3647059, 0.3647059, 0.3647059, 1)
 fog_light_energy = 0.15
-fog_density = 1.0
+fog_density = 0.02
 fog_sky_affect = 0.0
-fog_depth_curve = 0.6330341
-fog_depth_end = 576.0
 volumetric_fog_length = 32.81
 
 [node name="GameHandler" type="Node3D"]
@@ -43,16 +42,17 @@ layers = 1048575
 [node name="WorldEnvironment" type="WorldEnvironment" parent="Game"]
 environment = SubResource("Environment_akwl5")
 
+[node name="AtmosphereSystem" type="Node" parent="Game"]
+script = ExtResource("8_atmo")
+
 [node name="Players" type="Node" parent="Game"]
 
 [node name="EnemySpawner" type="Node" parent="Game"]
 script = ExtResource("6_2d6dh")
-CreatureScene = ExtResource("6_4vfp7")
+EnemyScenes = [ExtResource("6_4vfp7"), ExtResource("7_creature")]
+SpawnWeights = PackedFloat32Array(0.4, 0.6)
 MaxEnemies = 20
 SpawnRadiusMax = 140.0
-
-[node name="TestRobotShooter" parent="Game" instance=ExtResource("6_4vfp7")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 525, 8, 512)
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://du771gwxm45or")

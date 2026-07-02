@@ -3,7 +3,8 @@ extends CanvasLayer
 # Toggle with F3. Calls Global.SetPlanetConfig(dict) then reloads the scene.
 
 var _panel: PanelContainer
-var _fields := {}   # key -> Control (SpinBox or CheckButton)
+var _fields := {}                          # key -> Control (SpinBox or CheckButton)
+var _selected_biome_name: String = ""      # tracks the OptionButton selection
 
 # Per-biome presets. Selecting a biome pre-fills all param spinboxes.
 # Values are midpoints of each biome's valid range.
@@ -171,6 +172,7 @@ func _build_ui() -> void:
 	vbox.add_child(gen_btn)
 
 	# Pre-fill with first biome
+	_selected_biome_name = BIOMES.keys()[0]
 	_apply_preset(BIOMES.values()[0])
 
 func _add_float_row(parent: Control, key: String, label: String,
@@ -210,7 +212,8 @@ func _on_biome_selected(index: int) -> void:
 	var names := BIOMES.keys()
 	if index >= names.size():
 		return
-	_apply_preset(BIOMES[names[index]])
+	_selected_biome_name = names[index]
+	_apply_preset(BIOMES[_selected_biome_name])
 
 func _apply_preset(preset: Dictionary) -> void:
 	for key in preset:
@@ -230,5 +233,9 @@ func _on_generate() -> void:
 			config[key] = ctrl.value
 		elif ctrl is CheckButton:
 			config[key] = ctrl.button_pressed
+	# Pass biome identity so AtmosphereSystem and future systems can look it up
+	var preset: Dictionary = BIOMES.get(_selected_biome_name, {})
+	if preset.has("biome"):    config["biome"]    = preset["biome"]
+	if preset.has("template"): config["template"] = preset["template"]
 	Global.SetPlanetConfig(config)
 	get_tree().reload_current_scene()

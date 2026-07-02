@@ -13,6 +13,10 @@ public partial class Global : Node
 
 	public Player Player      { get; set; }
 	public int    EnemyCount  { get; set; } = 0;
+	public int    KillCount   { get; set; } = 0;
+	public float  RunTimer    { get; set; } = 0f;
+
+	public void IncrementKills() => KillCount++;
 
 	// Active planet configuration — persists across scene reloads.
 	public PlanetParams ActivePlanet { get; set; } = PlanetParams.MakeField();
@@ -43,7 +47,9 @@ public partial class Global : Node
 			PlanetChunksZ = sz;
 		}
 		ActivePlanet = p;
-		WorldSpawn = new Vector3I(WorldSpawn.X, p.SpawnY, WorldSpawn.Z);
+		WorldSpawn   = new Vector3I(WorldSpawn.X, p.SpawnY, WorldSpawn.Z);
+		KillCount    = 0;
+		RunTimer     = 0f;
 	}
 	
 	[Export]
@@ -114,10 +120,10 @@ public partial class Global : Node
 
 	public override void _Process(double delta)
 	{
-		if (_hitstopTimer > 0f)
-			_hitstopTimer = Mathf.Max(_hitstopTimer - (float)delta, 0f);
-		if (_shakeTimer > 0f)
-			_shakeTimer = Mathf.Max(_shakeTimer - (float)delta, 0f);
+		float dt = (float)delta;
+		if (_hitstopTimer > 0f) _hitstopTimer = Mathf.Max(_hitstopTimer - dt, 0f);
+		if (_shakeTimer   > 0f) _shakeTimer   = Mathf.Max(_shakeTimer   - dt, 0f);
+		if (Player != null)     RunTimer      += dt;
 	}
 
 	public Vector3 GetPlayerPos()

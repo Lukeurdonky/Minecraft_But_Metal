@@ -497,6 +497,12 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(1, 0, 0, 1)
 
+[node name="RunUI" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 1440.0
+offset_bottom = 810.0
+
 [node name="DeathScreen" type="Control" parent="CanvasLayer"]
 visible = false
 layout_mode = 3
@@ -523,7 +529,7 @@ grow_vertical = 2
 
 [node name="Title" type="Label" parent="CanvasLayer/DeathScreen/Center"]
 layout_mode = 2
-text = "SIGNAL LOST"
+text = "You've met your Antithesis"
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="CanvasLayer/DeathScreen/Center"]

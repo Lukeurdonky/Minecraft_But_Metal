@@ -25,6 +25,9 @@ public partial class PlayerHUD : Control
     [Export] public ColorRect JumpSection3  { get; set; }
     [Export] public ColorRect HitFlash    { get; set; }
 
+    [Export] public Label KillLabel  { get; set; }
+    [Export] public Label TimerLabel { get; set; }
+
     private float _hpBarLeft;
     private float _hpBarFullRight;
     private float _laserBarLeft;
@@ -59,6 +62,7 @@ public partial class PlayerHUD : Control
             _laserBarLeft      = LaserBarFg.OffsetLeft;
             _laserBarFullRight = LaserBarFg.OffsetRight;
         }
+
     }
 
     public override void _Process(double delta)
@@ -81,6 +85,7 @@ public partial class PlayerHUD : Control
         UpdateLaserBar();
         UpdateSpeedBar();
         UpdateHitFlash((float)delta);
+        UpdateRunStats();
     }
 
     private void UpdateJumpIndicator()
@@ -234,6 +239,17 @@ public partial class PlayerHUD : Control
         m.G = hasTarget ? 1f : 1f;
         m.B = hasTarget ? .5f : 1f;
         Crosshair.Modulate = m;
+    }
+
+    private void UpdateRunStats()
+    {
+        if (Global.Instance == null) return;
+        if (KillLabel  != null) KillLabel.Text  = $"{Global.Instance.KillCount}";
+        if (TimerLabel != null)
+        {
+            float t = Global.Instance.RunTimer;
+            TimerLabel.Text = $"{(int)(t / 60f):D2}:{(int)(t % 60f):D2}";
+        }
     }
 
     private void UpdateEnemyIndicator()

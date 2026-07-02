@@ -51,6 +51,7 @@ public partial class Enemy : Entity
 
     public override void Die()
     {
+        Global.Instance?.IncrementKills();
         DecrementCount();
         base.Die();
     }
