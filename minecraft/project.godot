@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Minecraft"
-run/main_scene="uid://dsq2766vhek4b"
+run/main_scene="res://Scenes/MainMenu.tscn"
 config/features=PackedStringArray("4.5", "C#", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -22,12 +22,16 @@ Item_Registry="*res://Scripts/Datasets/Item_Registry.cs"
 Block_Registry="*res://Scripts/Datasets/Block_Registry.cs"
 PlanetConfigMenu="*res://Scripts/Handlers/PlanetConfigMenu.gd"
 _mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
+RunManager="*res://Scripts/Handlers/RunManager.cs"
 
 [display]
 
 window/size/viewport_width=1440
 window/size/viewport_height=810
 window/size/initial_screen=1
+window/size/window_width_override=1920
+window/size/window_height_override=1080
+window/stretch/mode="canvas_items"
 
 [dotnet]
 

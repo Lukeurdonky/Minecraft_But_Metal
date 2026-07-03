@@ -46,6 +46,13 @@ public partial class Global : Node
 			PlanetChunksX = sz;
 			PlanetChunksZ = sz;
 		}
+		ApplyPlanetParams(p);
+	}
+
+	// Shared tail of SetPlanetConfig — also called directly by RunManager,
+	// which already has a fully-built PlanetParams and skips the dictionary round-trip.
+	public void ApplyPlanetParams(PlanetParams p)
+	{
 		ActivePlanet = p;
 		WorldSpawn   = new Vector3I(WorldSpawn.X, p.SpawnY, WorldSpawn.Z);
 		KillCount    = 0;

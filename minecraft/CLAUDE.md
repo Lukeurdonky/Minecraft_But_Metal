@@ -36,7 +36,7 @@ A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minec
 
 ```
 Scripts/
-├── Handlers/         Global.cs (autoload singleton), DebugMenu.gd
+├── Handlers/         Global.cs (autoload singleton), RunManager.cs (autoload, run flow), DebugMenu.gd
 ├── The World/        Chunk_Manager.cs, Chunk.cs, Block_Registry.cs, Block_Model.cs
 │   └── Generation/   World_Generator.cs  ← 5-stage pipeline, ALL STAGES EMPTY
 ├── Entities/         Entity.cs, GrappleHook.cs, Creature.cs, Projectile.cs
@@ -44,7 +44,7 @@ Scripts/
 └── Datasets/         Block_Registry.cs, Item_Registry.cs (ARCHIVED stub)
 Assets/               character.tscn, creature.tscn, GrappleHook.tscn
                       left_arm.tscn, right_arm.tscn
-Scenes/               CubeLand.tscn (main scene)
+Scenes/               MainMenu.tscn (main scene) → PlanetSelect.tscn → CubeLand.tscn (gameplay)
 Washed Code/          Old/abandoned code — read-only reference, do not add to it
 ```
 
@@ -163,6 +163,16 @@ Rules for any **new** `Enemy` subclass (see the doc for the full numbered list):
 - Profile at 50 concurrent enemies (temporarily raise `EnemySpawner.MaxEnemies`) before calling a new enemy type done.
 
 ---
+
+## Run flow — MainMenu → PlanetSelect → CubeLand
+
+`RunManager.cs` (autoload, registered right after `Global` in `project.godot`) drives the demo's linear **3-planet-stage + placeholder boss** loop. `MainMenu.tscn` is `run/main_scene` — the game no longer boots directly into `CubeLand.tscn`.
+
+- `RunManager.CurrentOptions` is a generic `List<StageOption>`, never a hardcoded 3-tuple. `PlanetSelect.gd` only ever reads it through `GetOptionsForUI()` and calls `ChooseOption(index)` — it has no idea stages are linear. `CompleteStage()` is the only method that assumes "next stage = index + 1"; that's the intended seam for swapping in a real branching node-graph map later without touching anything else.
+- `ChooseOption(index)` → `Global.Instance.ApplyPlanetParams(descriptor.MakePlanetParams(seed))` → `ChangeSceneToFile(CubeLand.tscn)`. Same `ApplyPlanetParams` tail the F3 debug menu (`PlanetConfigMenu.gd` → `Global.SetPlanetConfig`) already used — don't duplicate the reset logic (`WorldSpawn`/`KillCount`/`RunTimer`) anywhere else.
+- Stage-clear is currently a placeholder: `RunManager._Process` polls `Global.KillCount` against a per-stage constant. There is no `PlanetDescriptor` yet, so the difficulty label shown on `PlanetSelect` is cosmetic only.
+- **Known gap:** `Player.Die()` reloads the current planet in place; it does not end the run or touch `RunManager` state. There is no lose-path wired up yet.
+- **Editing `project.godot` while the editor is open:** use the godot-ai MCP `project_manage(op="settings_set")` / `autoload_manage` ops, not a raw file edit — the editor's live in-memory settings will silently re-clobber a manual text edit (`run/main_scene`, `[autoload]`) the next time any MCP call re-serializes the file.
 
 ## Chunk_Manager.cs — do not casually refactor
 

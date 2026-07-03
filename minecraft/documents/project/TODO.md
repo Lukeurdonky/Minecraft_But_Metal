@@ -34,9 +34,9 @@
 - [x] Player takes damage, has health bar UI — contact damage from Creature, red bar bottom-left
 - [x] Knockback on hit — `TakeDamage(amount, knockbackVector)` implemented; enemy contact applies directional knockback to player
 - [x] Global camera shake — `Global.ShakeCamera(intensity, duration)` callable from any script; applied in `RotateCamera()`
-- [x] Player death / run-end state — SIGNAL LOST screen, jump to reload scene
-- [ ] Kill counter per planet (Exploration win condition)
-- [ ] Survival timer (Survival win condition)
+- [x] Player death / run-end state — "You've met your Antithesis" screen (`Assets/character.tscn` → `CanvasLayer/DeathScreen`), jump to reload scene
+- [x] Kill counter per planet (Exploration win condition) — `Global.KillCount`, resets per planet, now also drives `RunManager`'s stage-clear check
+- [x] Survival timer (`Global.RunTimer`) — ticks while a player exists; not yet wired as an actual alternate win condition (only kill-count currently advances a stage)
 - [ ] "Reach the core" objective (Combat win condition)
 
 ---
@@ -53,7 +53,8 @@
   - [x] HeavyEnemy.cs — slow, tanky, ground, heavy=true, charge attack (needs model + scene)
   - [x] RangedEnemy.cs — medium, ground, maintains distance, fires EnemyBolt (needs model + scene)
   - [x] GroundRobotShooter.cs — grounded gunner, full model + scene + script (`Assets/ground_robot_shooter.tscn`). Rotates/walks toward player, auto-jumps 1-block walls, scrubs (`Seek`, not `Play`) a single "Aim" clip on the arm skeleton to track the player's vertical angle, lerped via `AimLerpSpeed`. Killable with the standard `Enemy` health bar (`collision_layer = 3` so Jackhammer/Laser hit-detection — `CollisionMask = 2` — can find it; this was the one non-obvious gotcha, easy to forget on a hand-built scene). Does not fire yet.
-  - [ ] Assign scenes to EnemySpawner once models are built (SwarmEnemy/HeavyEnemy/RangedEnemy still need models; GroundRobotShooter has one but isn't wired into EnemySpawner yet — spawner only instances `CreatureScene` today)
+- [x] `EnemySpawner` multi-type — `EnemyScenes[]` (PackedScene array) + parallel `SpawnWeights[]` (float array), weighted random pick via `PickScene()`. `CubeLand.tscn` wired with `creature.tscn` (weight 0.6) and `ground_robot_shooter.tscn` (weight 0.4). Add new enemy types by appending to both arrays in the Inspector.
+  - [ ] SwarmEnemy/HeavyEnemy/RangedEnemy still need models before they can join the spawner pool
 - [x] Wall navigation — ground enemies auto-jump over 1-block walls when chasing
 - [x] Improve Creature.cs AI — attack behavior (deal `AttackDamage` on contact), not just chase
 - [x] Creature rework — 3-state AI (Idle/Chase/Grab), range-based detection, Idle animation during chase, Grab animation only on attack, 3-phase lunge (charge/impulse/recovery), forward-direction lunge, GrabHitbox Area3D in scene, upward knockback factor, pitch tracked on mesh child, BoxShape3D collider, hitstop freezes particles + animations via auto-scan in Enemy
@@ -117,19 +118,23 @@
 
 ## Run Structure
 
-- [x] Debug planet config menu (F3) — interim stand-in for planet selection; lets you configure any PlanetParams manually and regenerate
-- [ ] `PlanetDescriptor` class — full implementation; holds atmosphere (SkyColor, FogColor, FogDensity, AmbientLight) + gameplay modifiers (Gravity, EnemyDensity, EnemyHostility, enemy type tags); assembled by RunManager from biome values + difficulty state before scene load
-- [ ] `AtmosphereSystem` — reads `PlanetDescriptor` on scene load; applies fog color, sky color, ambient light to Godot `WorldEnvironment`; peer to ChunkManager (not a generation stage)
-- [ ] RunManager modifier system — framework for run-level modifiers applied on top of biome after `MakePlanetParams`; modifiers include: Low Gravity, Heavy Fog, Alien Surface, and others TBD
-- [ ] RunManager modifier: **Alien Surface** — weighted table across all registered blocks; overrides the biome's natural surface block pick; makes familiar biomes feel visually alien on certain runs
-- [ ] `RunManager` singleton — tracks current planet index, total kills, run score; drives the planet → upgrade → boss → win flow; picks biome + seed + modifiers; calls `biome.MakePlanetParams(seed)` and builds `PlanetDescriptor`
-- [ ] Kill counter per planet fed into `RunManager` (Exploration win condition)
-- [ ] Survival timer per planet (Survival win condition)
-- [ ] Planet selection screen (3 choices, difficulty shown, pre-generated random params under constraints)
-- [ ] Planet map HUD visible during run
-- [ ] Post-planet upgrade screen (choose 1 of 3 accessories)
-- [ ] Boss encounter trigger
-- [ ] Run win / lose states
+> Demo scope is confirmed as a linear 3-planet-stage run followed by a boss (Inscryption-style funnel, not the full ~10-planet vision). See `../design/NEW_VISION.md` and the "Game Loop" note below.
+
+- [x] Debug planet config menu (F3) — interim stand-in for manual planet configuration; still used for ad-hoc testing, no longer the only way to start a planet
+- [x] `MainMenu.tscn` + `MainMenu.gd` — new `run/main_scene` (previously booted directly into `CubeLand.tscn`, no menu existed). "New Run" calls `RunManager.StartNewRun()`; "Quit".
+- [x] `PlanetSelect.tscn` + `PlanetSelect.gd` — shows `RunManager.CurrentOptions` as 3 buttons (biome + cosmetic difficulty label); picking one calls `RunManager.ChooseOption(index)`. Also owns the temporary "3 planets cleared — boss coming soon" placeholder panel shown once `RunManager.RunComplete` is true, so the loop doesn't dead-end pending the real boss.
+- [x] `RunManager.cs` singleton (autoload, registered after `Global`) — tracks `CurrentStageIndex` (0–2) through the 3 demo planet stages, generates 3 non-repeating-per-run biome options per stage (`StageOption`: biome, template, seed, cosmetic difficulty label), applies the chosen biome via `Global.ApplyPlanetParams` + `ChangeSceneToFile(CubeLand.tscn)`, and polls `Global.KillCount` each frame against a placeholder per-stage target (15/20/25) to auto-advance. `CurrentOptions` is a generic `List<StageOption>`, not a hardcoded 3-branch tuple — `CompleteStage()` is the only place assuming "next = index+1", so a real branching node-graph map can replace it later without touching the rest of `RunManager`'s public surface. See the 2026-07-02/03 roadmap artifact for the phased plan this came from.
+- [x] Kill counter per planet fed into `RunManager` (Exploration win condition) — stage auto-advances on threshold
+- [x] Survival timer per planet (`Global.RunTimer`) — exists and ticks, not yet wired as an alternate win condition
+- [x] Planet selection screen (3 choices, difficulty shown) — `PlanetSelect.tscn`; not yet a visual branching map, by design for the demo (see `demo_run_structure` decision)
+- [ ] `PlanetDescriptor` class — full implementation; holds atmosphere (SkyColor, FogColor, FogDensity, AmbientLight) + gameplay modifiers (Gravity, EnemyDensity, EnemyHostility, enemy type tags). Currently `RunManager`'s difficulty label ("Easy"/"Medium"/"Hard") is **cosmetic only** — no gameplay effect — until this exists.
+- [x] `AtmosphereSystem` — reads `Global.ActivePlanet.Biome` → `Biome_Registry` on scene `_Ready()`; applies fog color/density, background color, ambient light to `WorldEnvironment` (exponential fog mode). Node in `CubeLand.tscn` under `Game`. Will swap to reading `PlanetDescriptor.Atmosphere` once that class exists.
+- [ ] RunManager modifier system — framework for run-level modifiers applied on top of biome after `MakePlanetParams`; modifiers include: Low Gravity, Heavy Fog, Alien Surface, and others TBD. Deferred past the demo.
+- [ ] RunManager modifier: **Alien Surface** — weighted table across all registered blocks; overrides the biome's natural surface block pick; makes familiar biomes feel visually alien on certain runs. Deferred past the demo.
+- [ ] Planet map HUD visible during run — not needed while the demo is select-screen-only (no persistent map to show)
+- [ ] Post-planet upgrade screen (choose 1 of 3 accessories) — blocked on at least 3 real accessories existing (Super Jump, Glide, Dig Dig Dig! — see Accessories section)
+- [ ] Boss encounter trigger — replaces the current "3 planets cleared" placeholder panel in `PlanetSelect.tscn`
+- [ ] Run win / lose states — `RunManager.RunComplete` exists as a placeholder flag (no real win screen yet); **no lose-state wiring at all** — `Player.Die()` still just reloads the current planet in place on jump-press, doesn't end the run or reset `RunManager`
 
 ---
 

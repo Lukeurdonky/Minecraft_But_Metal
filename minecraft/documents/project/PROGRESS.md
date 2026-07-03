@@ -20,6 +20,8 @@ A voxel-based action roguelike built in **Godot 4** (C# + GDScript). Each run: c
 Choose 1 of 3 planets → Difficulty → Clear / Survive → Upgrades → Next planet → Boss
 ```
 
+Demo scope (confirmed 2026-07-02): a linear **3 planet stages, then THE PLANT boss** — Inscryption-style funnel, not the full ~10-planet vision. This is now implemented end-to-end as far as the boss: `MainMenu.tscn` → `PlanetSelect.tscn` (pick 1 of 3 generated planets) → `CubeLand.tscn` → kill-target clear → back to `PlanetSelect.tscn` → repeat ×3 → placeholder "boss coming soon" screen. See "Run Structure" below.
+
 ---
 
 ## Architecture Overview
@@ -92,6 +94,20 @@ Manual AABB collision against voxel data. `heavy` bool on every entity — used 
   - Abyss: Dark Descent · The Virus · Lava Walls
 - Enemy unload fix: `Enemy._ExitTree` decrements `EnemyCount` via `_counted` guard (idempotent with `Die()`). Distance despawn at 160 units keeps counter accurate as player loads new chunks.
 
+### Run Structure
+- `RunManager.cs` — new autoload singleton (registered in `project.godot` right after `Global`), drives the demo's 3-planet-stage run. `CurrentStageIndex` (0–2), `CurrentOptions` (`List<StageOption>` — biome, template, seed, cosmetic difficulty label), `RunComplete` flag.
+  - `StartNewRun()` resets stage/options; `GenerateOptionsForStage()` picks 3 distinct biomes not yet used this run (`_usedBiomes` HashSet, falls back to the full pool once <3 remain — only relevant once a run exceeds 9 stages).
+  - `ChooseOption(index)` resolves the picked `StageOption` to a `Biome_Registry` descriptor, calls `descriptor.MakePlanetParams(seed)` → `Global.Instance.ApplyPlanetParams(...)` → `GetTree().ChangeSceneToFile("res://Scenes/CubeLand.tscn")`.
+  - `_Process` polls `Global.Instance.KillCount` against a placeholder per-stage target (`{15, 20, 25}`) while a stage is active; on threshold, `CompleteStage()` increments the stage index, regenerates options (or sets `RunComplete = true` after stage 3), and returns to `PlanetSelect.tscn`.
+  - `GetOptionsForUI()` marshals `CurrentOptions` to a `Godot.Collections.Array<Dictionary>` for the GDScript-driven select screen — same dict convention already used by `Global.SetPlanetConfig`.
+  - Deliberately data-driven: `CurrentOptions` is a generic list, not a hardcoded 3-tuple, and `CompleteStage()` is the only place assuming "next stage = index + 1" — the intended seam for later replacing the linear stage-select with a real branching node-graph map (Inscryption/Slay-the-Spire style) without touching the rest of `RunManager`'s public surface.
+- `Global.ApplyPlanetParams(PlanetParams p)` — extracted from the tail of `SetPlanetConfig` (apply params, reset `WorldSpawn`/`KillCount`/`RunTimer`) so `RunManager` can skip the dictionary round-trip; the F3 debug menu path (`SetPlanetConfig`) now calls this too.
+- `Scenes/MainMenu.tscn` (`MainMenu.gd`, GDScript) — new `run/main_scene` (previously `CubeLand.tscn` directly — there was no menu). Title, "New Run" (`RunManager.StartNewRun()` → `PlanetSelect.tscn`), "Quit".
+- `Scenes/PlanetSelect.tscn` (`PlanetSelect.gd`, GDScript) — two toggled `VBoxContainer` panels under a `CenterContainer`: `OptionsPanel` (3 buttons built at runtime from `RunManager.GetOptionsForUI()`) and `CompletePanel` (shown instead, once `RunManager.RunComplete`, with a "3 planets cleared — boss coming soon" placeholder and a Return-to-MainMenu button — avoids dead-ending the loop pending the real boss).
+- Both new scenes hand-styled (dark `#0a0c0f` background, `#3bdce6` cyan accent) — no shared Theme resource exists in the project yet.
+- **Known gap:** `Player.Die()` still just reloads the current `CubeLand` scene in place on jump-press. Dying does not end the run or reset any `RunManager` state — there is no deliberate lose-path yet.
+- Verified end-to-end (MCP `game_eval` + `game_manage`): full MainMenu → PlanetSelect → CubeLand → auto-advance ×3 → completion-placeholder → MainMenu loop, including the correct biome/template actually reaching `Chunk_Manager` for each stage.
+
 ### Player Movement
 - WASD, mouse-look FPS camera, sprint, spectator mode (V)
 - Single velocity system with Quake-style directional air movement
@@ -161,13 +177,13 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 |---|---|
 | World_Generator pipeline | Three templates (Field/Cave/Abyss) live inline in `create_chunk_data`. `World_Generator.cs` 5-stage pipeline is empty — TerrainStage, CaveStage, AbyssStage, FeatureStage need to absorb the inline code. |
 | FeatureStage | Biome-driven feature placement (vines, spikes, pillars, glow veins, etc.). Modular feature classes, biome holds a feature list. |
-| AtmosphereSystem | Reads `PlanetDescriptor` on scene load, applies fog/sky/ambient to WorldEnvironment. `BiomeDescriptor` already stores FogColor/FogDensity — needs Godot wiring. |
-| PlanetDescriptor | Doc-only stub. Needs full C# implementation: atmosphere fields + gameplay modifiers (gravity, enemy density/hostility). |
-| RunManager | No planet select, no upgrade screen, no boss trigger, no modifier system. Biome + seed + modifier pipeline is architected but unbuilt. |
-| RunManager modifier system | Low Gravity, Heavy Fog, Alien Surface (weighted block table override), others TBD. |
-| Enemy AI | 3 enemy type skeletons (Swarm/Heavy/Ranged) coded, waiting on models. EnemySpawner active. A* pathfinding not yet implemented. |
+| PlanetDescriptor | Doc-only stub. Needs full C# implementation: atmosphere fields + gameplay modifiers (gravity, enemy density/hostility). `RunManager`'s difficulty label is cosmetic-only until this exists. |
+| Boss (THE PLANT) | Not started. `PlanetSelect.tscn` shows a "boss coming soon" placeholder after 3 planet clears instead of triggering an encounter. |
+| RunManager modifier system | Low Gravity, Heavy Fog, Alien Surface (weighted block table override), others TBD. Deferred past the demo. |
+| Run win/lose states | `RunManager.RunComplete` is a placeholder flag only (no real win screen). No lose-path at all — `Player.Die()` just reloads the current planet in place. |
+| Upgrade screen | Blocked on ≥3 real accessories existing (see Accessories row). |
+| Enemy AI | 3 enemy type skeletons (Swarm/Heavy/Ranged) coded, waiting on models. `EnemySpawner` is multi-type/weighted and live with Creature + GroundRobotShooter. A* pathfinding not yet implemented. |
 | Enemy type tags | `BiomeDescriptor` has placeholder field. Wiring deferred until enemy designs exist. |
-| Run structure | No planet select, no upgrade screen, no boss trigger. |
 | Accessories | All 10 defined in `../design/NEW_VISION.md`. None implemented. |
 | VFX | Laser beam ✅. Grapple rope ✅. No dash trail, no block break particles, no enemy death particles. |
 | Sound | Nothing. |
@@ -179,6 +195,9 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 
 | Thing | File |
 |---|---|
+| Run flow (3-stage loop, stage-clear check) | `Scripts/Handlers/RunManager.cs` |
+| Entry point / New Run | `Scenes/MainMenu.tscn`, `Scripts/Handlers/MainMenu.gd` |
+| Planet stage-select UI | `Scenes/PlanetSelect.tscn`, `Scripts/Handlers/PlanetSelect.gd` |
 | Movement (single velocity, Quake air) | `Scripts/Entities/Player/Player.cs` → `ApplyMovement` |
 | All 4 player abilities + speed threshold | `Scripts/Entities/Player/PlayerAbilities.cs` |
 | Grapple hook projectile + entity detection | `Scripts/Entities/GrappleHook.cs` |
