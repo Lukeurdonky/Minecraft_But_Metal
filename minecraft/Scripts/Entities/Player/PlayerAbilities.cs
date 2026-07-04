@@ -154,6 +154,7 @@ public partial class Player : Entity
         {
             Velocity *= Mathf.Pow(SpeedPenaltyDecay, delta * 60f);
             Global.Instance.ShakeCamera(Mathf.Clamp(excessRatio * 0.45f, 0.1f, 0.5f), 0.08f);
+            foreach (var a in _accessories) a.OnSpeedImpact(GlobalPosition, speed);
         }
     }
 
@@ -265,6 +266,7 @@ public partial class Player : Entity
         float scaledImpulse = targets.Count > 0
             ? EffectiveSpeedTier switch { 2 => JackhammerImpulseHard, 1 => JackhammerImpulseMed, _ => JackhammerImpulseWeak }
             : JackhammerImpulseWeak;
+        foreach (var a in _accessories) scaledImpulse = a.ModifyJackhammerImpulse(scaledImpulse);
 
         float hitstop = targets.Count > 0
             ? EffectiveSpeedTier switch { 2 => HitstopHard, 1 => HitstopMed, _ => 0f }
@@ -288,17 +290,24 @@ public partial class Player : Entity
             1 => JackhammerDamageMed,
             _ => JackhammerDamageWeak,
         };
+        foreach (var a in _accessories) damage = a.ModifyJackhammerDamage(damage);
+
+        float radius = JackhammerRadius;
+        foreach (var a in _accessories) radius = a.ModifyJackhammerRadius(radius);
 
         var lookDir = -Camera.GlobalTransform.Basis.Z.Normalized();
 
         if (hitBlock)
-            Global.CubeManager.explode(blockPos, JackhammerRadius, 1f);
+            Global.CubeManager.explode(blockPos, radius, 1f);
 
         foreach (var entity in targets)
         {
             var awayFromPlayer = (entity.GlobalPosition - GlobalPosition).Normalized();
             entity.TakeDamage(damage, awayFromPlayer * scaledImpulse * 0.5f);
         }
+
+        var impactPos = hitBlock ? (Vector3)blockPos : GlobalPosition;
+        foreach (var a in _accessories) a.OnJackhammerImpact(hitBlock ? blockPos : (Vector3I?)null, impactPos);
     }
 
     private bool FindJackhammerBlock(out Vector3I hitBlock)
@@ -389,6 +398,9 @@ public partial class Player : Entity
         var lookDir = -Camera.GlobalTransform.Basis.Z.Normalized();
 
         // Block tunneling — ray march to first block, explode on cooldown
+        float tunnelRadius = LaserTunnelRadius;
+        foreach (var a in _accessories) tunnelRadius = a.ModifyLaserTunnelRadius(tunnelRadius);
+
         Vector3     beamEnd    = origin + lookDir * LaserRange;
         float       beamLength = LaserRange;
         const float step       = 0.5f;
@@ -403,7 +415,7 @@ public partial class Player : Entity
                 beamLength = t;
                 if (_laserExplodeCooldown <= 0f)
                 {
-                    Global.CubeManager.explode(bp, LaserTunnelRadius, 1.0f);
+                    Global.CubeManager.explode(bp, tunnelRadius, 1.0f);
                     _laserExplodeCooldown = LaserExplodeRate;
                 }
                 break;
@@ -442,10 +454,8 @@ public partial class Player : Entity
 
         if (_laserBeam == null)
         {
-            var cyl          = new CylinderMesh();
-            cyl.TopRadius    = LaserBeamRadius;
-            cyl.BottomRadius = LaserBeamRadius;
-            cyl.Height       = 1f;
+            var cyl    = new CylinderMesh();
+            cyl.Height = 1f;
 
             cyl.SurfaceSetMaterial(0, GD.Load<StandardMaterial3D>("res://Materials/LaserMaterial.tres"));
 
@@ -454,6 +464,12 @@ public partial class Player : Entity
             _laserBeam.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             RightArmMesh.GetViewport().AddChild(_laserBeam);
         }
+
+        float beamRadius = LaserBeamRadius;
+        foreach (var a in _accessories) beamRadius = a.ModifyLaserBeamRadius(beamRadius);
+        var beamCyl = (CylinderMesh)_laserBeam.Mesh;
+        beamCyl.TopRadius    = beamRadius;
+        beamCyl.BottomRadius = beamRadius;
 
         // Start: laser tip already in SubViewport space
         var tipPos = LaserTip != null
@@ -737,6 +753,7 @@ public partial class Player : Entity
                 v.Y      = Mathf.Max(v.Y, 0f) + LightEntityYBoost;
                 Velocity = v;
             }
+            NotifyGrappleAttach(SelectedEnemy, GrappleAnchor);
             return;
         }
 
@@ -786,12 +803,14 @@ public partial class Player : Entity
                 v.Y      = Mathf.Max(v.Y, 0f) + LightEntityYBoost;
                 Velocity = v;
             }
+            NotifyGrappleAttach(hitEntity, GrappleAnchor);
         }
         else if (blockDist < float.MaxValue)
         {
             // Instant attach — block in range
             GrappleAnchor       = blockHitPos;
             CurrentGrappleState = GrappleState.Attached;
+            NotifyGrappleAttach(null, GrappleAnchor);
         }
         else if (GrappleHookScene != null)
         {
@@ -808,6 +827,7 @@ public partial class Player : Entity
                 GrappleAnchor       = worldPos;
                 CurrentGrappleState = GrappleState.Attached;
                 _activeHook         = null;
+                NotifyGrappleAttach(null, GrappleAnchor);
             };
             hook.OnAttachEntity = (entity) =>
             {
@@ -822,6 +842,7 @@ public partial class Player : Entity
                     Velocity = v;
                 }
                 _activeHook = null;
+                NotifyGrappleAttach(entity, GrappleAnchor);
             };
             hook.OnRetracted = () =>
             {

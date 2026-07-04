@@ -48,6 +48,7 @@ var server_version := ""
 
 var dispatcher
 var log_buffer
+var surfaced_error_tracker
 ## Set by plugin.gd when the HTTP port is occupied by an incompatible or
 ## unverified server. Keeping the Connection node alive lets handlers and the
 ## dock share one object, but no WebSocket is opened to the wrong server.
@@ -309,6 +310,8 @@ func send_deferred_response(request_id: String, payload: Dictionary) -> void:
 	## `readiness_after` payload field were ever dropped.
 	if not response.has("readiness"):
 		response["readiness"] = get_readiness()
+	if not response.has("error_watermark"):
+		_stamp_error_watermark(response)
 	if _send_json(response) and dispatcher != null:
 		dispatcher.complete_deferred_response(request_id)
 
@@ -359,7 +362,11 @@ func _check_state_changes() -> void:
 		if send_event("readiness_changed", {"readiness": readiness}):
 			_last_readiness = readiness
 			if log_buffer:
-				log_buffer.log("[event] readiness -> %s" % readiness)
+				## echo=false: readiness flips on every filesystem scan
+				## (each import cycles importing -> ready), so echoing to
+				## console spams every install during normal editing (#626).
+				## The line stays in the ring for the dock's log panel.
+				log_buffer.log("[event] readiness -> %s" % readiness, false)
 
 
 func _get_current_scene_path() -> String:
@@ -403,6 +410,7 @@ func _handle_outbound_backpressure(
 		return false
 
 	var err_response := _make_backpressure_error(request_id, buffered_bytes, message_bytes)
+	_stamp_error_watermark(err_response)
 	var err_text := JSON.stringify(err_response)
 	var err_bytes := err_text.to_utf8_buffer().size()
 	if _would_exceed_outbound_backpressure(buffered_bytes, err_bytes):
@@ -455,6 +463,10 @@ static func _make_backpressure_error(
 			},
 		},
 	}
+
+
+func _stamp_error_watermark(response: Dictionary) -> void:
+	McpSurfacedErrorTracker.stamp_watermark(response, surfaced_error_tracker)
 
 
 ## Build a human-readable session ID of form "<slug>@<4hex>" from the project path.

@@ -21,6 +21,37 @@ public partial class Global : Node
 	// Active planet configuration — persists across scene reloads.
 	public PlanetParams ActivePlanet { get; set; } = PlanetParams.MakeField();
 
+	// Names of currently-equipped accessories (Accessory_Registry keys) — persists across
+	// scene reloads so Player.EquipStartingAccessories() can re-attach them on load.
+	// Not touched by ApplyPlanetParams (must survive planet-to-planet transitions within
+	// a run).
+	public List<string> EquippedAccessoryIds { get; set; } = new();
+
+	// GDScript can only call methods on autoloads, not read plain C# properties — these
+	// wrappers are the bridge point for the F3 debug menu and the upgrade-pick screen.
+	public Godot.Collections.Array<string> GetAllAccessoryNames()
+	{
+		var arr = new Godot.Collections.Array<string>();
+		foreach (var d in Accessory_Registry.All) arr.Add(d.Name);
+		return arr;
+	}
+
+	public bool IsAccessoryEquipped(string name) => EquippedAccessoryIds.Contains(name);
+
+	public void SetAccessoryEquipped(string name, bool equipped)
+	{
+		if (equipped)
+		{
+			if (!EquippedAccessoryIds.Contains(name)) EquippedAccessoryIds.Add(name);
+			Player?.EquipAccessory(name);
+		}
+		else
+		{
+			EquippedAccessoryIds.Remove(name);
+			Player?.UnequipAccessory(name);
+		}
+	}
+
 	// Called from PlanetConfigMenu (GDScript) before reloading the scene.
 	public void SetPlanetConfig(Godot.Collections.Dictionary config)
 	{

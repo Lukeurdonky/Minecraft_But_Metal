@@ -132,9 +132,9 @@
 - [ ] RunManager modifier system — framework for run-level modifiers applied on top of biome after `MakePlanetParams`; modifiers include: Low Gravity, Heavy Fog, Alien Surface, and others TBD. Deferred past the demo.
 - [ ] RunManager modifier: **Alien Surface** — weighted table across all registered blocks; overrides the biome's natural surface block pick; makes familiar biomes feel visually alien on certain runs. Deferred past the demo.
 - [ ] Planet map HUD visible during run — not needed while the demo is select-screen-only (no persistent map to show)
-- [ ] Post-planet upgrade screen (choose 1 of 3 accessories) — blocked on at least 3 real accessories existing (Super Jump, Glide, Dig Dig Dig! — see Accessories section)
+- [x] Post-planet upgrade screen (choose 1 of 3 accessories) — `Scenes/UpgradeSelect.tscn`/`.gd`, shown after every `RunManager.CompleteStage()` (including the final one, before the complete panel). Picks from accessories not yet equipped, falls back to full pool if <3 remain.
 - [ ] Boss encounter trigger — replaces the current "3 planets cleared" placeholder panel in `PlanetSelect.tscn`
-- [ ] Run win / lose states — `RunManager.RunComplete` exists as a placeholder flag (no real win screen yet); **no lose-state wiring at all** — `Player.Die()` still just reloads the current planet in place on jump-press, doesn't end the run or reset `RunManager`
+- [x] Run lose-state wiring — `Player.Die()` on jump-press now calls `RunManager.EndRun()` (resets stage index, `RunComplete`, used-biomes, and `Global.EquippedAccessoryIds`) and goes to `MainMenu.tscn`, instead of reloading the current planet in place. `PlanetSelect.gd`'s "Return to Main Menu" button (the win path) calls the same `EndRun()` first. `RunManager.RunComplete` is still a placeholder flag — no real win screen yet, just the "3 planets cleared" panel.
 
 ---
 
@@ -152,15 +152,16 @@
 
 ## Accessories (all from `../design/NEW_VISION.md`)
 
-- [ ] Accessory slot system (equip before run or on pickup)
-- [ ] Super Jump
-- [ ] Super Slam — amplify jackhammer ground slam radius/damage
-- [ ] Explosive Bounce — jackhammer release creates explosion at impact
-- [x] Destructive Laser — laser already destroys blocks via `explode()` tunneling (base behavior, not an accessory upgrade)
+- [x] Accessory runtime shell — `Accessory` base class + `Accessory_Registry`/`AccessoryDescriptor` + `PlayerAccessories.cs` (equip/unequip, hook points into jump/jackhammer/grapple/laser).
+- [x] Accessory slot system — `Global.SetAccessoryEquipped`/`IsAccessoryEquipped`/`GetAllAccessoryNames` bridge methods (GDScript can only call autoload methods, not read C# properties — confirmed empirically). F3 debug menu (`PlanetConfigMenu.gd`) has a checkbox per accessory, applies instantly via the same bridge. HUD (`PlayerHUD.cs`) shows equipped accessories as atlas icons (`item_texture_atlas.png`, 12x8 grid, 16px cells) in a real scene node (`RunUI/AccessoryRow` in `character.tscn`), rebuilt only when the equipped set changes.
+- [x] Super Slam — jackhammer release always explodes at the impact point, even on entity-only hits (`SuperSlamAccessory`)
+- [x] Explosive Bounce — hooks the existing ram-into-a-block-and-it-breaks mechanic (`ProcessSpeedThreshold`); triggers a bigger explosion + bounces you back, cooldown-gated (`ExplosiveBounceAccessory`, numbers untuned)
+- [x] Destructive Laser — tunnels a much wider hole through blocks with a thicker beam (`DestructiveLaserAccessory`)
+- [x] Super Jump — cooldown-based (5s), press `super_jump` (bound to C) to launch straight up (`SuperJumpAccessory`)
 - [ ] Little Friend
-- [ ] Glide — slow fall while holding jump in air
-- [ ] Dig Dig Dig! — jackhammer mines blocks faster
-- [ ] Flaming Grapple — fire applied on grapple pull/lunge
+- [x] Glide — holding jump while airborne caps fall speed to a slow constant, vertical only, no horizontal push (`GlideAccessory`, "The Messenger" style not Minecraft elytra)
+- [ ] Dig Dig Dig! — reworked concept: dedicated hotkey turns you into a human drill, keep drilling while submerged in blocks. Still being workshopped, not implemented.
+- [x] Flaming Grapple — grappling an enemy sets it on fire for 3s (damage-over-time + spreads to nearby enemies); new `Enemy.SetOnFire`/burn system + `Materials/Fire.gdshader` (`FlamingGrappleAccessory`)
 - [ ] Tech Vision — enemy highlight through walls
 - [ ] Exo Suit — mobility buffs (dash speed/cooldown)
 

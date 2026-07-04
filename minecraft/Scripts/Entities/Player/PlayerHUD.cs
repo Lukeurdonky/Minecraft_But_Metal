@@ -1,4 +1,6 @@
 using Godot;
+using System.Collections.Generic;
+using System.Linq;
 
 // Drives all player-state HUD indicators from one place.
 // To add a new indicator: declare an [Export], auto-wire in _Ready, react to state changes in _Process.
@@ -7,6 +9,7 @@ public partial class PlayerHUD : Control
     [Export] public AnimationPlayer JumpAnimPlayer  { get; set; }
     [Export] public Node2D          EnemyIndicator  { get; set; }
     [Export] public CanvasItem      Crosshair       { get; set; }
+    [Export] public HBoxContainer   AccessoryRow    { get; set; }
 
     private Player    _player;
     private bool      _hadJump           = false;
@@ -42,6 +45,7 @@ public partial class PlayerHUD : Control
         JumpAnimPlayer ??= GetNodeOrNull<AnimationPlayer>("Panel/Jump/AnimationPlayer");
         EnemyIndicator ??= GetNodeOrNull<Node2D>("Panel/Enemy");
         Crosshair      ??= GetNodeOrNull<CanvasItem>("Panel/Crosshair");
+        AccessoryRow   ??= GetNodeOrNull<HBoxContainer>("RunUI/AccessoryRow");
         HpBarFg        ??= GetNodeOrNull<ColorRect>("../BarContainer/HPBarFg");
         LaserBarFg     ??= GetNodeOrNull<ColorRect>("../BarContainer/LaserBarFg");
         SpeedSection1  ??= GetNodeOrNull<ColorRect>("../BarContainer/SpeedSection1");
@@ -86,6 +90,7 @@ public partial class PlayerHUD : Control
         UpdateSpeedBar();
         UpdateHitFlash((float)delta);
         UpdateRunStats();
+        UpdateAccessoryRow();
     }
 
     private void UpdateJumpIndicator()
@@ -249,6 +254,51 @@ public partial class PlayerHUD : Control
         {
             float t = Global.Instance.RunTimer;
             TimerLabel.Text = $"{(int)(t / 60f):D2}:{(int)(t % 60f):D2}";
+        }
+    }
+
+    // Same 12-col x 8-row / 16px-cell grid Item_Registry.cs used for this atlas.
+    private const int AccessoryAtlasCols  = 12;
+    private const int AccessoryIconSize   = 16;
+    private static Texture2D _accessoryAtlas;
+
+    private readonly List<string> _lastAccessoryNames = new();
+
+    private static AtlasTexture MakeAccessoryIcon(int iconIndex)
+    {
+        _accessoryAtlas ??= GD.Load<Texture2D>("res://Sprites/Textures/item_texture_atlas.png");
+        int col = iconIndex % AccessoryAtlasCols;
+        int row = iconIndex / AccessoryAtlasCols;
+        return new AtlasTexture
+        {
+            Atlas  = _accessoryAtlas,
+            Region = new Rect2(col * AccessoryIconSize, row * AccessoryIconSize, AccessoryIconSize, AccessoryIconSize),
+        };
+    }
+
+    private void UpdateAccessoryRow()
+    {
+        if (AccessoryRow == null) return;
+
+        var current = _player.Accessories.Select(a => a.Name).ToList();
+        if (current.SequenceEqual(_lastAccessoryNames)) return;
+
+        _lastAccessoryNames.Clear();
+        _lastAccessoryNames.AddRange(current);
+
+        foreach (var child in AccessoryRow.GetChildren())
+            child.QueueFree();
+
+        foreach (var name in current)
+        {
+            var descriptor = Accessory_Registry.Get(name);
+            AccessoryRow.AddChild(new TextureRect
+            {
+                Texture           = MakeAccessoryIcon(descriptor?.IconIndex ?? 0),
+                CustomMinimumSize = new Vector2(24, 24),
+                StretchMode       = TextureRect.StretchModeEnum.Scale,
+                TextureFilter     = CanvasItem.TextureFilterEnum.Nearest,
+            });
         }
     }
 

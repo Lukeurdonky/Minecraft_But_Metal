@@ -31,6 +31,7 @@ public partial class RunManager : Node
 	public int CurrentStageIndex { get; private set; } = 0;
 	public bool RunComplete { get; private set; } = false;
 	public List<StageOption> CurrentOptions { get; private set; } = new();
+	public List<string> CurrentAccessoryOptions { get; private set; } = new();
 
 	private bool _stageActive = false;
 	private int _stageKillTarget = 0;
@@ -46,14 +47,27 @@ public partial class RunManager : Node
 			CompleteStage();
 	}
 
-	// Called by MainMenu's "New Run" button.
-	public void StartNewRun()
+	private void ResetRunState()
 	{
 		CurrentStageIndex = 0;
 		RunComplete = false;
 		_stageActive = false;
 		_usedBiomes.Clear();
+		Global.Instance.EquippedAccessoryIds.Clear();
+	}
+
+	// Called by MainMenu's "New Run" button.
+	public void StartNewRun()
+	{
+		ResetRunState();
 		GenerateOptionsForStage();
+	}
+
+	// Called on death (Player.Die()) and on returning to MainMenu after a run-complete —
+	// both are the run actually ending, so both forfeit stage progress and accessories.
+	public void EndRun()
+	{
+		ResetRunState();
 	}
 
 	// Picks 3 biomes not yet seen this run (falls back to the full pool once
@@ -87,6 +101,40 @@ public partial class RunManager : Node
 		return arr;
 	}
 
+	// Picks 3 accessories not yet equipped this run (falls back to the full pool once
+	// exhausted, mirroring GenerateOptionsForStage's biome fallback).
+	private void GenerateAccessoryOptions()
+	{
+		var equipped = Global.Instance.EquippedAccessoryIds;
+		var pool = Accessory_Registry.All.Where(a => !equipped.Contains(a.Name)).ToList();
+		if (pool.Count < 3) pool = Accessory_Registry.All.ToList();
+
+		CurrentAccessoryOptions = pool.OrderBy(_ => _rng.Next()).Take(3).Select(a => a.Name).ToList();
+	}
+
+	public Godot.Collections.Array<Godot.Collections.Dictionary> GetAccessoryOptionsForUI()
+	{
+		var arr = new Godot.Collections.Array<Godot.Collections.Dictionary>();
+		foreach (var name in CurrentAccessoryOptions)
+		{
+			var descriptor = Accessory_Registry.Get(name);
+			arr.Add(new Godot.Collections.Dictionary
+			{
+				{ "name", name },
+				{ "description", descriptor?.Description ?? "" },
+			});
+		}
+		return arr;
+	}
+
+	// Called by UpgradeSelect when the player picks one of CurrentAccessoryOptions.
+	public void ChooseAccessory(int index)
+	{
+		if (index < 0 || index >= CurrentAccessoryOptions.Count) return;
+		Global.Instance.SetAccessoryEquipped(CurrentAccessoryOptions[index], true);
+		GetTree().ChangeSceneToFile("res://Scenes/PlanetSelect.tscn");
+	}
+
 	// Called by PlanetSelect when the player picks one of CurrentOptions.
 	public void ChooseOption(int index)
 	{
@@ -110,6 +158,10 @@ public partial class RunManager : Node
 			RunComplete = true; // placeholder end-state — no boss stage yet
 		else
 			GenerateOptionsForStage();
-		GetTree().ChangeSceneToFile("res://Scenes/PlanetSelect.tscn");
+
+		// Upgrade pick always comes first — UpgradeSelect.ChooseAccessory() is what
+		// actually transitions on to PlanetSelect.tscn (next options or complete panel).
+		GenerateAccessoryOptions();
+		GetTree().ChangeSceneToFile("res://Scenes/UpgradeSelect.tscn");
 	}
 }

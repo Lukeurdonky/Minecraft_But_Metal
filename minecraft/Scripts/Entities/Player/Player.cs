@@ -88,6 +88,7 @@ public partial class Player : Entity
 		Input.MouseMode = Input.MouseModeEnum.Captured;
 		Global = GetNode<Global>("/root/Global");
 		Global.Player = this;
+		EquipStartingAccessories();
 		if (Camera != null)
 			Camera.Current = true;
 
@@ -106,7 +107,10 @@ public partial class Player : Entity
 		if (IsDead)
 		{
 			if (Input.IsActionJustPressed("jump"))
-				GetTree().ReloadCurrentScene();
+			{
+				RunManager.Instance?.EndRun();
+				GetTree().ChangeSceneToFile("res://Scenes/MainMenu.tscn");
+			}
 			return;
 		}
 		bool hitstopNow = Global?.HitstopActive == true;
@@ -168,6 +172,7 @@ public partial class Player : Entity
 		UpdateGrappleRope();
 		UpdateArmBlendShapes((float)delta);
 		UpdateLeftArmTracking((float)delta);
+		ProcessAccessories((float)delta);
 		// ApplyStepTraversal((float)delta);
 	}
 
@@ -369,6 +374,7 @@ public partial class Player : Entity
 		timeSinceLeftGround += (float)delta;
 		ApplyMovement(delta);
 		ProcessAbilities((float)delta);
+		PhysicsProcessAccessories((float)delta);
 	}
 
 	private void ApplyMovement(double delta)
@@ -436,7 +442,7 @@ public partial class Player : Entity
 			vel.Y = 0f;
 
 		if ((isOnFloor || SpectatorMode) && Input.IsActionPressed("jump") && vel.Y <= 0.25f)
-			vel.Y = JumpStrength;
+			vel.Y = ApplyJumpStrengthMods(JumpStrength);
 		else if (!isOnFloor && !SpectatorMode
 			&& CurrentGrappleState == GrappleState.Attached && _grappledEntity != null
 			&& _grappleJumpCooldown <= 0f && _jumpMeter >= 1f && IsJustPressedOrBuffered("jump"))

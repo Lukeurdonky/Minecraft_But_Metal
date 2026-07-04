@@ -380,6 +380,14 @@ offset_right = 954.0
 offset_bottom = 128.805
 horizontal_alignment = 1
 
+[node name="AccessoryRow" type="HBoxContainer" parent="CanvasLayer/Control Center/RunUI"]
+layout_mode = 0
+offset_left = 829.0
+offset_top = -1.0
+offset_right = 1302.0
+offset_bottom = 31.0
+theme_override_constants/separation = 6
+
 [node name="Control Debug" type="Control" parent="CanvasLayer"]
 layout_mode = 3
 anchors_preset = 0

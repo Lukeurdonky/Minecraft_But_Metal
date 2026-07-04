@@ -5,6 +5,7 @@ extends CanvasLayer
 var _panel: PanelContainer
 var _fields := {}                          # key -> Control (SpinBox or CheckButton)
 var _selected_biome_name: String = ""      # tracks the OptionButton selection
+var _accessory_checks := {}                # accessory name -> CheckButton
 
 # Per-biome presets. Selecting a biome pre-fills all param spinboxes.
 # Values are midpoints of each biome's valid range.
@@ -103,9 +104,17 @@ func _input(event: InputEvent) -> void:
 			_panel.visible = not _panel.visible
 			if _panel.visible:
 				Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+				_refresh_accessory_checks()
 			else:
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 			get_viewport().set_input_as_handled()
+
+# Panel is built once in _ready() and only shown/hidden after that — accessories can
+# change in between (upgrade pick, another debug toggle) so re-sync the checkboxes to
+# the real equipped state every time the menu opens, rather than trusting stale UI.
+func _refresh_accessory_checks() -> void:
+	for accessory_name in _accessory_checks:
+		_accessory_checks[accessory_name].set_pressed_no_signal(Global.IsAccessoryEquipped(accessory_name))
 
 func _build_ui() -> void:
 	_panel = PanelContainer.new()
@@ -171,6 +180,9 @@ func _build_ui() -> void:
 	gen_btn.pressed.connect(_on_generate)
 	vbox.add_child(gen_btn)
 
+	vbox.add_child(HSeparator.new())
+	_build_accessory_rows(vbox)
+
 	# Pre-fill with first biome
 	_selected_biome_name = BIOMES.keys()[0]
 	_apply_preset(BIOMES.values()[0])
@@ -207,6 +219,26 @@ func _add_bool_row(parent: Control, key: String, label: String, default_val: boo
 	row.add_child(check)
 	parent.add_child(row)
 	_fields[key] = check
+
+# Accessories apply instantly (Global.SetAccessoryEquipped equips/unequips on the live
+# Player right away) — independent of the biome _fields/"Generate" flow above.
+func _build_accessory_rows(parent: Control) -> void:
+	var lbl := Label.new(); lbl.text = "— Accessories —"; parent.add_child(lbl)
+	for accessory_name in Global.GetAllAccessoryNames():
+		var row := HBoxContainer.new()
+		var row_lbl := Label.new()
+		row_lbl.text = accessory_name
+		row_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(row_lbl)
+		var check := CheckButton.new()
+		check.button_pressed = Global.IsAccessoryEquipped(accessory_name)
+		check.toggled.connect(_on_accessory_toggled.bind(accessory_name))
+		row.add_child(check)
+		parent.add_child(row)
+		_accessory_checks[accessory_name] = check
+
+func _on_accessory_toggled(pressed: bool, accessory_name: String) -> void:
+	Global.SetAccessoryEquipped(accessory_name, pressed)
 
 func _on_biome_selected(index: int) -> void:
 	var names := BIOMES.keys()

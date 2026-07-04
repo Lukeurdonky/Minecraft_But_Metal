@@ -1,0 +1,48 @@
+[gd_scene load_steps=2 format=3 uid="uid://dfjj28r4s28ey"]
+
+[ext_resource type="Script" uid="uid://dsb7v2bodjhg7" path="res://Scripts/Handlers/UpgradeSelect.gd" id="1_1xvx8"]
+
+[node name="UpgradeSelect" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_1xvx8")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.039215688, 0.047058824, 0.05882353, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="OptionsPanel" type="VBoxContainer" parent="Center"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Heading" type="Label" parent="Center/OptionsPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.23137255, 0.8627451, 0.9019608, 1)
+theme_override_font_sizes/font_size = 26
+text = "CHOOSE AN ACCESSORY"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="Center/OptionsPanel"]
+custom_minimum_size = Vector2(0, 16)
+layout_mode = 2
+
+[node name="List" type="VBoxContainer" parent="Center/OptionsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10

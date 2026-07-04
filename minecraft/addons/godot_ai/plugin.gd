@@ -48,6 +48,7 @@ const Telemetry := preload("res://addons/godot_ai/telemetry.gd")
 const LogBuffer := preload("res://addons/godot_ai/utils/log_buffer.gd")
 const GameLogBuffer := preload("res://addons/godot_ai/utils/game_log_buffer.gd")
 const EditorLogBuffer := preload("res://addons/godot_ai/utils/editor_log_buffer.gd")
+const SurfacedErrorTracker := preload("res://addons/godot_ai/utils/surfaced_error_tracker.gd")
 const Dock := preload("res://addons/godot_ai/mcp_dock.gd")
 const DebuggerPlugin := preload("res://addons/godot_ai/debugger/mcp_debugger_plugin.gd")
 const ClientConfigurator := preload("res://addons/godot_ai/client_configurator.gd")
@@ -83,6 +84,8 @@ const EnvironmentHandler := preload("res://addons/godot_ai/handlers/environment_
 const TextureHandler := preload("res://addons/godot_ai/handlers/texture_handler.gd")
 const CurveHandler := preload("res://addons/godot_ai/handlers/curve_handler.gd")
 const ControlDrawRecipeHandler := preload("res://addons/godot_ai/handlers/control_draw_recipe_handler.gd")
+const TilemapHandler := preload("res://addons/godot_ai/handlers/tilemap_handler.gd")
+const TilesetHandler := preload("res://addons/godot_ai/handlers/tileset_handler.gd")
 
 ## The Python server writes its own PID here on startup (passed as
 ## `--pid-file`) and unlinks on clean exit. Deterministic replacement
@@ -156,6 +159,7 @@ var _telemetry
 var _log_buffer
 var _game_log_buffer
 var _editor_log_buffer
+var _surfaced_error_tracker
 var _editor_logger
 var _dock
 var _handlers: Array = []  # prevent GC of RefCounted handlers
@@ -211,17 +215,24 @@ func _enter_tree() -> void:
 	_startup_trace_phase("settings_registered")
 
 	_log_buffer = LogBuffer.new()
+	## Apply the persisted dock "Log" toggle before anything logs through the
+	## buffer. Without this the choice only took effect after a manual toggle
+	## and reset to noisy on every editor restart (#626).
+	_log_buffer.enabled = McpSettings.mcp_logging_enabled()
 	_start_server()
 	_startup_trace_phase("server_start")
 
 	_game_log_buffer = GameLogBuffer.new()
 	_editor_log_buffer = EditorLogBuffer.new()
+	_surfaced_error_tracker = SurfacedErrorTracker.new(_editor_log_buffer, _game_log_buffer)
 	_attach_editor_logger()
-	_dispatcher = Dispatcher.new(_log_buffer)
+	_dispatcher = Dispatcher.new(_log_buffer, _surfaced_error_tracker)
+	_dispatcher.mcp_logging = _log_buffer.enabled
 	_startup_trace_phase("core_objects")
 
 	_connection = Connection.new()
 	_connection.log_buffer = _log_buffer
+	_connection.surfaced_error_tracker = _surfaced_error_tracker
 	_connection.ws_port = _resolved_ws_port
 	_connection.connect_blocked = _lifecycle.is_connection_blocked()
 	_connection.connect_block_reason = _lifecycle.get_status_dict().get("message", "")
@@ -233,11 +244,11 @@ func _enter_tree() -> void:
 
 	_telemetry = Telemetry.new(_connection)
 
-	_debugger_plugin = DebuggerPlugin.new(_log_buffer, _game_log_buffer, _editor_log_buffer)
+	_debugger_plugin = DebuggerPlugin.new(_log_buffer, _game_log_buffer, _editor_log_buffer, _surfaced_error_tracker)
 	add_debugger_plugin(_debugger_plugin)
 	_ensure_game_helper_autoload()
 
-	var editor_handler := EditorHandler.new(_log_buffer, _connection, _debugger_plugin, _game_log_buffer, _editor_log_buffer)
+	var editor_handler := EditorHandler.new(_log_buffer, _connection, _debugger_plugin, _game_log_buffer, _editor_log_buffer, null, _surfaced_error_tracker)
 	var scene_handler := SceneHandler.new(_connection)
 	var node_handler := NodeHandler.new(get_undo_redo())
 	var project_handler := ProjectHandler.new(_connection, _debugger_plugin, _editor_log_buffer)
@@ -263,7 +274,9 @@ func _enter_tree() -> void:
 	var texture_handler := TextureHandler.new(get_undo_redo(), _connection)
 	var curve_handler := CurveHandler.new(get_undo_redo(), _connection)
 	var control_draw_recipe_handler := ControlDrawRecipeHandler.new(get_undo_redo())
-	_handlers = [editor_handler, scene_handler, node_handler, project_handler, client_handler, script_handler, resource_handler, api_handler, filesystem_handler, signal_handler, autoload_handler, input_handler, test_handler, batch_handler, ui_handler, theme_handler, animation_handler, material_handler, particle_handler, camera_handler, audio_handler, physics_shape_handler, environment_handler, texture_handler, curve_handler, control_draw_recipe_handler]
+	var tilemap_handler := TilemapHandler.new(get_undo_redo())
+	var tileset_handler := TilesetHandler.new()
+	_handlers = [editor_handler, scene_handler, node_handler, project_handler, client_handler, script_handler, resource_handler, api_handler, filesystem_handler, signal_handler, autoload_handler, input_handler, test_handler, batch_handler, ui_handler, theme_handler, animation_handler, material_handler, particle_handler, camera_handler, audio_handler, physics_shape_handler, environment_handler, texture_handler, curve_handler, control_draw_recipe_handler, tilemap_handler, tileset_handler]
 
 	_dispatcher.register("get_editor_state", editor_handler.get_editor_state)
 	_dispatcher.register("get_scene_tree", scene_handler.get_scene_tree)
@@ -394,6 +407,12 @@ func _enter_tree() -> void:
 	_dispatcher.register(
 		"control_draw_recipe", control_draw_recipe_handler.control_draw_recipe
 	)
+	_dispatcher.register("tilemap_set_cell",              tilemap_handler.set_cell)
+	_dispatcher.register("tilemap_set_cells_rect",        tilemap_handler.set_cells_rect)
+	_dispatcher.register("tilemap_clear",                 tilemap_handler.clear_layer)
+	_dispatcher.register("tilemap_get_cells",             tilemap_handler.get_used_cells)
+	_dispatcher.register("tileset_get_atlas_tiles",        tileset_handler.get_atlas_tiles)
+	_dispatcher.register("tileset_get_atlas_image",        tileset_handler.get_atlas_image)
 
 	_connection.dispatcher = _dispatcher
 	add_child(_connection)
@@ -490,6 +509,7 @@ func _exit_tree() -> void:
 	_log_buffer = null
 	_game_log_buffer = null
 	_editor_log_buffer = null
+	_surfaced_error_tracker = null
 
 	_stop_server()
 	## Symmetric with prepare_for_update_reload: the static guard persists
