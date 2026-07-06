@@ -1,0 +1,74 @@
+[gd_scene load_steps=14 format=3 uid="uid://dpjhbytcxw671"]
+
+[ext_resource type="Material" uid="uid://dwqmqssbjvp" path="res://Materials/explosion.tres" id="1_rpkh5"]
+[ext_resource type="Curve" uid="uid://b5mn2v41v5ida" path="res://Materials/DebrisTrailTaper.tres" id="2_c2ek5"]
+[ext_resource type="Material" uid="uid://dqmmyusccdyr4" path="res://Materials/Debris.tres" id="2_yd4x4"]
+
+[sub_resource type="Curve" id="Curve_73l6m"]
+_data = [Vector2(0, 0.98376626), 0.0, 0.0, 0, 0, Vector2(0.8823529, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_yd4x4"]
+curve = SubResource("Curve_73l6m")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_c2ek5"]
+gravity = Vector3(0, 0, 0)
+scale_curve = SubResource("CurveTexture_yd4x4")
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_nx8tc"]
+material = ExtResource("1_rpkh5")
+height = 1.0
+radial_segments = 16
+rings = 4
+
+[sub_resource type="Gradient" id="Gradient_nx8tc"]
+offsets = PackedFloat32Array(0, 0.00456621, 0.85, 1)
+colors = PackedColorArray(1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_4a2sn"]
+gradient = SubResource("Gradient_nx8tc")
+
+[sub_resource type="Curve" id="Curve_nx8tc"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.048319325, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), -2.952509, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_4a2sn"]
+curve = SubResource("Curve_nx8tc")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_4a2sn"]
+lifetime_randomness = 0.35
+angle_max = 360.0
+spread = 180.0
+initial_velocity_min = 20.0
+initial_velocity_max = 27.0
+angular_velocity_min = -540.0
+angular_velocity_max = 540.0
+scale_min = 0.19999999
+scale_max = 0.5
+scale_curve = SubResource("CurveTexture_4a2sn")
+color_ramp = SubResource("GradientTexture1D_4a2sn")
+
+[sub_resource type="RibbonTrailMesh" id="RibbonTrailMesh_8nh5r"]
+material = ExtResource("2_yd4x4")
+sections = 10
+section_length = 0.3
+curve = ExtResource("2_c2ek5")
+
+[node name="Small Explosion" type="GPUParticles3D"]
+emitting = false
+amount = 1
+one_shot = true
+process_material = SubResource("ParticleProcessMaterial_c2ek5")
+draw_pass_1 = SubResource("CapsuleMesh_nx8tc")
+
+[node name="Debris" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 16
+lifetime = 0.98
+one_shot = true
+explosiveness = 1.0
+transform_align = 2
+trail_enabled = true
+trail_lifetime = 0.35
+process_material = SubResource("ParticleProcessMaterial_4a2sn")
+draw_pass_1 = SubResource("RibbonTrailMesh_8nh5r")

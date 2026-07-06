@@ -16,6 +16,8 @@ public partial class Player : Entity
     [Export] public float HitstopMed  { get; set; } = 0.25f;
     [Export] public float HitstopHard { get; set; } = 0.5f;
 
+    [Export] public PackedScene SmallExplosionScene { get; set; }
+
     private const float JackhammerMaxCharge  = .5f;
     private const float JackhammerImpulseWeak = 35f;
     private const float JackhammerImpulseMed  = 60f;
@@ -259,16 +261,16 @@ public partial class Player : Entity
     {
         if (Camera == null) return;
 
-        bool         hitBlock = FindJackhammerBlock(out var blockPos);
-        List<Entity> targets  = FindJackhammerEntities();
-        if (!hitBlock && targets.Count == 0) return;
+        bool   hitBlock = FindJackhammerBlock(out var blockPos);
+        Entity target   = FindJackhammerEntity();
+        if (!hitBlock && target == null) return;
 
-        float scaledImpulse = targets.Count > 0
+        float scaledImpulse = target != null
             ? EffectiveSpeedTier switch { 2 => JackhammerImpulseHard, 1 => JackhammerImpulseMed, _ => JackhammerImpulseWeak }
             : JackhammerImpulseWeak;
         foreach (var a in _accessories) scaledImpulse = a.ModifyJackhammerImpulse(scaledImpulse);
 
-        float hitstop = targets.Count > 0
+        float hitstop = target != null
             ? EffectiveSpeedTier switch { 2 => HitstopHard, 1 => HitstopMed, _ => 0f }
             : 0f;
         if (hitstop > 0f)
@@ -298,22 +300,57 @@ public partial class Player : Entity
         var lookDir = -Camera.GlobalTransform.Basis.Z.Normalized();
 
         if (hitBlock)
-            Global.CubeManager.explode(blockPos, radius, 1f);
-
-        foreach (var entity in targets)
         {
-            var awayFromPlayer = (entity.GlobalPosition - GlobalPosition).Normalized();
-            entity.TakeDamage(damage, awayFromPlayer * scaledImpulse * 0.5f);
+            Global.CubeManager.explode(blockPos, radius, 1f);
+            SpawnSmallExplosion((Vector3)blockPos + Vector3.One * 0.5f);
         }
 
-        var impactPos = hitBlock ? (Vector3)blockPos : GlobalPosition;
+        var impactPos = hitBlock ? (Vector3)blockPos : target.GetCenter();
+
+        if (target != null)
+        {
+            var awayFromPlayer = (target.GlobalPosition - GlobalPosition).Normalized();
+            SpawnSmallExplosion(target.GetCenter()); // before TakeDamage — a lethal hit frees the entity
+            target.TakeDamage(damage, awayFromPlayer * scaledImpulse * 0.5f);
+        }
+
         foreach (var a in _accessories) a.OnJackhammerImpact(hitBlock ? blockPos : (Vector3I?)null, impactPos);
+    }
+
+    // One-shot VFX at a jackhammer impact point. The scene ships with emitting=false
+    // on the root and the Debris child, so both get kicked on here.
+    private void SpawnSmallExplosion(Vector3 pos)
+    {
+        SmallExplosionScene ??= GD.Load<PackedScene>("res://Assets/small_explosion.tscn");
+        if (SmallExplosionScene == null) return;
+
+        var fx = SmallExplosionScene.Instantiate<GpuParticles3D>();
+        GetTree().CurrentScene.AddChild(fx);
+        fx.GlobalPosition = pos; // after AddChild, like GrappleHook
+
+        fx.Emitting = true;
+        foreach (var child in fx.GetChildren())
+            if (child is GpuParticles3D p)
+                p.Emitting = true;
+
+        GetTree().CreateTimer(2f).Timeout += () =>
+        {
+            if (IsInstanceValid(fx)) fx.QueueFree();
+        };
     }
 
     private bool FindJackhammerBlock(out Vector3I hitBlock)
     {
         hitBlock = default;
         if (Camera == null) return false;
+
+        // The crosshair-selected block (interactions.gd's per-frame raycast) wins over
+        // the cone scan; re-check it still exists — selection is a frame stale in here.
+        if (SelectedCube != 0 && Global.CubeManager.get_block(SelectedCubePosition) != 0)
+        {
+            hitBlock = SelectedCubePosition;
+            return true;
+        }
 
         var   lookDir = -Camera.GlobalTransform.Basis.Z.Normalized();
         var   origin  = Camera.GlobalPosition;
@@ -342,14 +379,21 @@ public partial class Player : Entity
         return found;
     }
 
-    private List<Entity> FindJackhammerEntities()
+    // Single target only — splash damage is Super Slam's job (via ExplosionDamage).
+    // The crosshair-selected enemy (Player.UpdateEnemySelection: cone + block LOS)
+    // wins if it's within jackhammer reach; otherwise fall back to whatever's in the
+    // hit sphere, ranked by how centered it is in the look direction.
+    private Entity FindJackhammerEntity()
     {
-        var results = new List<Entity>();
-        if (Camera == null) return results;
+        if (Camera == null) return null;
 
-        var lookDir     = -Camera.GlobalTransform.Basis.Z.Normalized();
-        var sphereCenter = GlobalPosition + lookDir * (JackhammerConeRange * 0.5f);
-        float radius    = JackhammerConeRange * 0.6f;
+        if (SelectedEnemy != null && IsInstanceValid(SelectedEnemy)
+            && GlobalPosition.DistanceSquaredTo(SelectedEnemy.GetCenter()) <= JackhammerConeRange * JackhammerConeRange)
+            return SelectedEnemy;
+
+        var   lookDir      = -Camera.GlobalTransform.Basis.Z.Normalized();
+        var   sphereCenter = GlobalPosition + lookDir * (JackhammerConeRange * 0.5f);
+        float radius       = JackhammerConeRange * 0.6f;
 
         var query = new PhysicsShapeQueryParameters3D
         {
@@ -358,11 +402,15 @@ public partial class Player : Entity
             CollisionMask = 2
         };
 
+        Entity best    = null;
+        float  bestDot = -1f;
         foreach (var hit in GetWorld3D().DirectSpaceState.IntersectShape(query))
-            if (hit["collider"].AsGodotObject() is Entity entity)
-                results.Add(entity);
-
-        return results;
+        {
+            if (hit["collider"].AsGodotObject() is not Entity entity || entity == this) continue;
+            float dot = lookDir.Dot((entity.GetCenter() - Camera.GlobalPosition).Normalized());
+            if (dot > bestDot) { bestDot = dot; best = entity; }
+        }
+        return best;
     }
 
     // ── Laser ────────────────────────────────────────────────────────────────

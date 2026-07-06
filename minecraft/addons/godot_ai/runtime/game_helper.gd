@@ -37,12 +37,11 @@ const FLUSH_BATCH_LIMIT := 200
 ## generic timeout.
 const FIRST_FRAME_WAIT_SEC := 6.0
 
-const LoggerLoader := preload("res://addons/godot_ai/runtime/logger_loader.gd")
+const GameLogger := preload("res://addons/godot_ai/runtime/game_logger.gd")
 
 var _registered := false
-## Untyped because the McpGameLogger script is loaded dynamically (it
-## extends Logger, which only exists in Godot 4.5+).
-var _logger
+## Captures game-process print, warning, and error output for the editor.
+var _logger: Logger
 var _logger_attached := false
 ## Entries drained from the logger but not yet sent over the debugger
 ## channel. Holds the tail of one drain() so we can bleed it out across
@@ -77,17 +76,10 @@ func _ready() -> void:
 	_registered = true
 	## Capture print() / printerr() / push_error() / push_warning() and
 	## ferry them to the editor in mcp:log_batch messages flushed from
-	## _process. Logger subclassing was added in Godot 4.5 — gate on
-	## ClassDB so the rest of the helper still loads on older engines.
-	## game_logger.gd lives in the `.gdignore`'d runtime/loggers/ folder so
-	## it never parse-errors during a < 4.5 editor scan; LoggerLoader
-	## compiles it from source at runtime, only past this gate.
-	if ClassDB.class_exists("Logger") and OS.has_method("add_logger"):
-		var logger_script := LoggerLoader.build(LoggerLoader.GAME_LOGGER_PATH)
-		if logger_script != null:
-			_logger = logger_script.new()
-			OS.call("add_logger", _logger)
-			_logger_attached = true
+	## _process.
+	_logger = GameLogger.new()
+	OS.add_logger(_logger)
+	_logger_attached = true
 	## Routed to the editor's Output panel via Godot's remote-stdout
 	## forwarder — handy when diagnosing why capture timed out.
 	print("[godot_ai game_helper] registered mcp capture (debugger active=%s, logger=%s)"
@@ -122,16 +114,16 @@ func _exit_tree() -> void:
 	if _registered:
 		EngineDebugger.unregister_message_capture(CAPTURE_PREFIX)
 		_registered = false
-	if _logger_attached and _logger != null and OS.has_method("remove_logger"):
-		OS.call("remove_logger", _logger)
+	if _logger_attached and _logger != null:
+		OS.remove_logger(_logger)
 		_logger_attached = false
 		_logger = null
 
 
 ## Dispatched for messages prefixed "mcp:" on the debugger channel.
-## Different Godot versions pass either the tail ("take_screenshot") or the
-## full message ("mcp:take_screenshot") to the capture callable — accept
-## both forms so this works across 4.2/4.3/4.4/4.5.
+## Godot passes the full message ("mcp:take_screenshot") to the capture
+## callable; trim defensively so tests can still call the helper with either
+## form.
 func _on_debug_message(message: String, data: Array) -> bool:
 	var action := message.trim_prefix("mcp:")
 	match action:
@@ -244,6 +236,8 @@ func _handle_game_command(data: Array) -> void:
 			result = _game_input_mouse(json.data)
 		"input_gamepad":
 			result = _game_input_gamepad(json.data)
+		"input_action":
+			result = _game_input_action(json.data)
 		"input_state":
 			result = _game_input_state(json.data)
 		_:
@@ -485,7 +479,10 @@ func _game_input_key(params: Dictionary) -> Dictionary:
 
 func _game_input_mouse(params: Dictionary) -> Dictionary:
 	var event := str(params.get("event", "button"))
-	var pos := _dict_to_vector2(params.get("position", {}))
+	var pos_result := _resolve_mouse_position(params.get("position"))
+	if pos_result.has("error"):
+		return {"sent": false, "event": event, "error": pos_result.error}
+	var pos: Vector2 = pos_result.position
 	match event:
 		"motion":
 			var motion := InputEventMouseMotion.new()
@@ -531,6 +528,27 @@ func _game_input_gamepad(params: Dictionary) -> Dictionary:
 	return {"sent": false, "error": "Invalid gamepad control: %s" % control}
 
 
+func _game_input_action(params: Dictionary) -> Dictionary:
+	var action := str(params.get("action", ""))
+	if action.is_empty():
+		return {"sent": false, "error": "Missing action"}
+	if not InputMap.has_action(action):
+		return {"sent": false, "action": action, "error": "Unknown action: %s" % action}
+	var pressed := bool(params.get("pressed", true))
+	var strength := clampf(float(params.get("strength", 1.0)), 0.0, 1.0)
+	if pressed:
+		Input.action_press(action, strength)
+	else:
+		Input.action_release(action)
+	return {
+		"sent": true,
+		"action": action,
+		"pressed": pressed,
+		"strength": strength,
+		"delivery": "action_state",
+	}
+
+
 func _game_input_state(params: Dictionary) -> Dictionary:
 	var actions: Array = params.get("actions", [])
 	if actions.is_empty():
@@ -542,14 +560,41 @@ func _game_input_state(params: Dictionary) -> Dictionary:
 	return {"actions": states}
 
 
-func _dict_to_vector2(value: Variant) -> Vector2:
+## Resolve a mouse-position param. Absent (null, or an empty {}) falls back to
+## the live cursor position — a deliberate default. A present but wrong-shaped
+## value is rejected instead of silently substituting the cursor, which
+## previously hid caller bugs (#635). Accepts a {x, y} dict or an [x, y] array;
+## returns {position: Vector2} or {error: String}.
+func _resolve_mouse_position(value: Variant) -> Dictionary:
 	var viewport := get_viewport()
 	var fallback := viewport.get_mouse_position() if viewport != null else Vector2.ZERO
+	if value == null:
+		return {"position": fallback}
 	if value is Dictionary:
-		if value.is_empty() or (not value.has("x") and not value.has("y")):
-			return fallback
-		return Vector2(float(value.get("x", fallback.x)), float(value.get("y", fallback.y)))
-	return fallback
+		var dict: Dictionary = value
+		if dict.is_empty():
+			return {"position": fallback}
+		# A non-empty dict that carries neither coordinate is a caller mistake,
+		# not "use the default" — reject rather than silently substitute.
+		if not dict.has("x") and not dict.has("y"):
+			return {"error": "position object must have an 'x' and/or 'y' key (got keys %s)" % str(dict.keys())}
+		var x_val: Variant = dict.get("x", fallback.x)
+		var y_val: Variant = dict.get("y", fallback.y)
+		if not _is_number(x_val) or not _is_number(y_val):
+			return {"error": "position x/y must be numbers (got x=%s, y=%s)" % [type_string(typeof(x_val)), type_string(typeof(y_val))]}
+		return {"position": Vector2(float(x_val), float(y_val))}
+	if value is Array:
+		var arr: Array = value
+		if arr.size() != 2:
+			return {"error": "position array must be [x, y] (got %d elements)" % arr.size()}
+		if not _is_number(arr[0]) or not _is_number(arr[1]):
+			return {"error": "position array elements must be numbers (got [%s, %s])" % [type_string(typeof(arr[0])), type_string(typeof(arr[1]))]}
+		return {"position": Vector2(float(arr[0]), float(arr[1]))}
+	return {"error": "position must be a {x, y} object or [x, y] array (got %s)" % type_string(typeof(value))}
+
+
+func _is_number(v: Variant) -> bool:
+	return typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT
 
 
 func _mouse_button_index(name: String) -> int:

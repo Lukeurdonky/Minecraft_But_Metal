@@ -1,3 +1,8 @@
 [gd_resource type="StandardMaterial3D" format=3 uid="uid://dqmmyusccdyr4"]
 
 [resource]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.38857287, 0.38857287, 0.38857287, 0.19500001)
+use_particle_trails = true

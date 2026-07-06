@@ -19,7 +19,7 @@ The `godot-ai` MCP server is always available when Godot is open. Use it without
 
 ## What this project is
 
-A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minecraft clone. Game loop: choose a planet → fight → collect upgrades → next planet → boss. All combat, no crafting, no inventory. See `documents/design/NEW_VISION.md` for full design doc, `documents/project/PROGRESS.md` for current state, `documents/project/TODO.md` for next steps.
+A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minecraft clone. Game loop: choose a planet → fight → collect upgrades → next planet → boss. All combat, no crafting, no inventory. See `documents/design/NEW_VISION.md` for full design doc, `documents/project/PROGRESS.md` for current state, `documents/project/TODO.md` for next steps, and `documents/README.md` for the full documentation index (design, engineering specs, performance history, project tracking).
 
 ---
 
@@ -36,15 +36,30 @@ A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minec
 
 ```
 Scripts/
-├── Handlers/         Global.cs (autoload singleton), RunManager.cs (autoload, run flow), DebugMenu.gd
-├── The World/        Chunk_Manager.cs, Chunk.cs, Block_Registry.cs, Block_Model.cs
-│   └── Generation/   World_Generator.cs  ← 5-stage pipeline, ALL STAGES EMPTY
-├── Entities/         Entity.cs, GrappleHook.cs, Creature.cs, Projectile.cs
-│   └── Player/       Player.cs, PlayerAbilities.cs, interactions.gd, inventory.gd (ARCHIVED)
-└── Datasets/         Block_Registry.cs, Item_Registry.cs (ARCHIVED stub)
-Assets/               character.tscn, creature.tscn, GrappleHook.tscn
+├── Handlers/         Global.cs (autoload, world/run state), RunManager.cs (autoload, run flow — see "Run flow" below),
+│                     AtmosphereSystem.cs (biome → WorldEnvironment fog/light), MainMenu.gd, PlanetSelect.gd,
+│                     UpgradeSelect.gd, PlanetConfigMenu.gd (F3 debug menu), DebugMenu.gd, level.gd
+├── The World/        Chunk_Manager.cs (~1400 lines, terrain/damage — see below), Chunk.cs, Block_Definition.cs,
+│                     Block_Model.cs, BiomeDescriptor.cs, PlanetParams.cs
+│   └── Generation/   World_Generator.cs  ← 5-stage pipeline, ALL STAGES EMPTY (cave/abyss carving still lives
+│                     directly in Chunk_Manager.create_chunk_data — see documents/engineering/generation_plan.md),
+│                     Simplex4D.cs (4D simplex noise for seamless torus wrapping)
+├── Entities/         Entity.cs (base, manual AABB collision), Enemy.cs (LOD-cached AI base — see below),
+│                     Creature.cs, GrappleHook.cs, Projectile.cs, EnemySpawner.cs, EnemyBullet.cs, EnemyBolt.cs,
+│                     GroundRobotShooter.cs, HeavyEnemy.cs/RangedEnemy.cs/SwarmEnemy.cs (scripted, no model/scene yet)
+│   └── Player/       Player.cs, PlayerAbilities.cs, PlayerAccessories.cs, PlayerHUD.cs,
+│                     interactions.gd (camera/block targeting), inventory.gd (ARCHIVED)
+│       └── Accessories/  Accessory.cs (base class, lifecycle hooks) + one file per accessory — see "Accessories" below
+└── Datasets/         Block_Registry.cs, Biome_Registry.cs, Accessory_Registry.cs + AccessoryDescriptor.cs,
+                      Item_Registry.cs (ARCHIVED stub), Mob_Registry.cs (unused, TODO: repurpose or remove)
+Assets/               character.tscn, creature.tscn, GrappleHook.tscn, ground_robot_shooter.tscn,
                       left_arm.tscn, right_arm.tscn
-Scenes/               MainMenu.tscn (main scene) → PlanetSelect.tscn → CubeLand.tscn (gameplay)
+Scenes/               MainMenu.tscn (run/main_scene) → PlanetSelect.tscn → CubeLand.tscn (gameplay)
+                      → UpgradeSelect.tscn (post-stage-clear accessory pick, before next PlanetSelect)
+Materials/            Shaders (Fire.gdshader, BlockDamage.gdshader, Select.gdshader) + .tres materials
+                      (LaserMaterial, GrappleMaterial, explosion, Debris)
+documents/            All project docs except this file — see "Project Identity Documents" below and
+                      documents/README.md for the full index
 Washed Code/          Old/abandoned code — read-only reference, do not add to it
 ```
 
@@ -174,6 +189,16 @@ Rules for any **new** `Enemy` subclass (see the doc for the full numbered list):
 - `Player.Die()`'s jump-to-restart calls `RunManager.Instance.EndRun()` (resets stage index, `RunComplete`, used-biomes, `Global.EquippedAccessoryIds`) and goes to `MainMenu.tscn` — dying forfeits the whole run, not just the current planet. `PlanetSelect.gd`'s win-path "Return to Main Menu" button calls `EndRun()` too.
 - After every stage clear (including the last), `CompleteStage()` routes through `Scenes/UpgradeSelect.tscn` (pick 1 of 3 accessories not yet equipped) before `PlanetSelect.tscn` — see the Accessories section in `PROGRESS.md`.
 - **Editing `project.godot` while the editor is open:** use the godot-ai MCP `project_manage(op="settings_set")` / `autoload_manage` ops, not a raw file edit — the editor's live in-memory settings will silently re-clobber a manual text edit (`run/main_scene`, `[autoload]`) the next time any MCP call re-serializes the file.
+
+## Accessories — PlayerAccessories.cs + Accessory.cs
+
+Full design list and win-condition tie-in: `documents/design/NEW_VISION.md`. Live implementation status per accessory: the "Accessories" section of `documents/project/TODO.md`.
+
+- `Scripts/Entities/Player/Accessories/Accessory.cs` — abstract base with `OnEquip`/`OnUnequip`/`Process`/`PhysicsProcess` lifecycle plus a deliberately small set of discrete hooks (`ModifyJackhammerRadius/Damage/Impulse`, `OnJackhammerImpact`, `OnSpeedImpact`, `ModifyJumpStrength`, `ModifyLaserTunnelRadius`/`ModifyLaserBeamRadius`, `OnGrappleAttach`). Continuous effects (Glide, Little Friend, Tech Vision, Exo Suit) should read `Player`'s existing public state from inside a subclass's own `Process`/`PhysicsProcess` — only add a new hook to the base class when an accessory genuinely can't be expressed that way.
+- `Scripts/Datasets/AccessoryDescriptor.cs` + `Accessory_Registry.cs` — mirrors the `BiomeDescriptor`/`Biome_Registry` convention (`Name` is the lookup key, `CreateInstance` factory, `IconIndex` into `item_texture_atlas.png`'s 12×8 grid).
+- `Scripts/Entities/Player/PlayerAccessories.cs` — partial class of `Player` (same pattern as `PlayerAbilities.cs`): equip/unequip, `EquipStartingAccessories()`, and the hook-aggregation helpers. Wired into `Player.ImHere()`, `_Process`, `ApplyMovementFromInput`, and the grapple-attach/jackhammer-fire points in `PlayerAbilities.cs`.
+- Equipped state lives in `Global.EquippedAccessoryIds` (persists across planet loads within a run; cleared by `RunManager.ResetRunState()`). GDScript (F3 menu, HUD) must go through `Global.GetAllAccessoryNames()`/`IsAccessoryEquipped()`/`SetAccessoryEquipped()` — **GDScript can call methods on a C# autoload but cannot read its plain public properties**, confirmed empirically.
+- `PlayerHUD.cs` renders equipped accessories as atlas icons in `RunUI/AccessoryRow`, a real scene node in `character.tscn` (not runtime-only) — rebuilds children only when the equipped set changes.
 
 ## Chunk_Manager.cs — do not casually refactor
 
