@@ -172,6 +172,7 @@ public partial class Player : Entity
 		UpdateGrappleRope();
 		UpdateArmBlendShapes((float)delta);
 		UpdateLeftArmTracking((float)delta);
+		UpdateFovKick((float)delta);
 		ProcessAccessories((float)delta);
 		// ApplyStepTraversal((float)delta);
 	}

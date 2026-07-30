@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://dmhm1ql7cw68i"]
+[gd_scene load_steps=31 format=3 uid="uid://dmhm1ql7cw68i"]
 
 [ext_resource type="Script" uid="uid://cktjkangsagm0" path="res://Scripts/Entities/Player/Player.cs" id="1_x5jwr"]
 [ext_resource type="Script" uid="uid://c0c3u8xl17w3k" path="res://Scripts/Entities/Player/interactions.gd" id="2_0w0kd"]
@@ -11,6 +11,8 @@
 [ext_resource type="Script" uid="uid://woqvw4lelb31" path="res://Scripts/Entities/Player/inventory.gd" id="6_lgrlh"]
 [ext_resource type="PackedScene" uid="uid://bghnugice8y2l" path="res://Assets/right_arm.tscn" id="8_lgo0g"]
 [ext_resource type="PackedScene" uid="uid://crptx6d6mtcux" path="res://Assets/left_arm.tscn" id="8_xbmyk"]
+[ext_resource type="Curve" uid="uid://b5mn2v41v5ida" path="res://Materials/DebrisTrailTaper.tres" id="11_u2hv5"]
+[ext_resource type="Material" uid="uid://dqmmyusccdyr4" path="res://Materials/Debris.tres" id="12_n7xhe"]
 
 [sub_resource type="Animation" id="Animation_0qfhu"]
 resource_name = "JumpUIFalse"
@@ -246,6 +248,44 @@ _data = {
 [sub_resource type="BoxShape3D" id="BoxShape3D_sbtoq"]
 size = Vector3(0.75, 1.9, 0.75)
 
+[sub_resource type="Curve" id="Curve_4a2sn"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_qlf2g"]
+curve = SubResource("Curve_4a2sn")
+
+[sub_resource type="Curve" id="Curve_nx8tc"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.7478991, 0.89285713), 0.0, 0.0, 0, 0, Vector2(1, 0), -3.0544016, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_4a2sn"]
+curve = SubResource("Curve_nx8tc")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_4a2sn"]
+emission_shape_offset = Vector3(0, 0, -2.429)
+emission_shape_scale = Vector3(1, 1, 1.685)
+emission_shape = 6
+emission_ring_axis = Vector3(0, 0, 1)
+emission_ring_height = 1.0
+emission_ring_radius = 1.0
+emission_ring_inner_radius = 0.8
+emission_ring_cone_angle = 90.0
+direction = Vector3(0, 0, 1)
+spread = 0.0
+initial_velocity_min = 20.0
+initial_velocity_max = 40.0
+gravity = Vector3(0, 0, 0)
+scale_curve = SubResource("CurveTexture_4a2sn")
+alpha_curve = SubResource("CurveTexture_qlf2g")
+
+[sub_resource type="RibbonTrailMesh" id="RibbonTrailMesh_8nh5r"]
+material = ExtResource("12_n7xhe")
+size = 0.5
+sections = 10
+section_length = 0.15
+curve = ExtResource("11_u2hv5")
+
 [sub_resource type="BoxMesh" id="BoxMesh_x5jwr"]
 
 [node name="Character" type="CharacterBody3D" node_paths=PackedStringArray("Camera", "CollisionShape", "GrappleArmTip", "LaserTip", "RightArmMesh", "LeftArmMesh", "LaserOutlineMesh")]
@@ -271,15 +311,9 @@ follow_viewport_enabled = true
 
 [node name="Control Center" type="Control" parent="CanvasLayer" node_paths=PackedStringArray("JumpAnimPlayer", "EnemyIndicator", "Crosshair", "HpBarFg", "SpeedSection1", "SpeedSection2", "SpeedSection3", "HitFlash", "KillLabel", "TimerLabel")]
 layout_mode = 3
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -20.0
-offset_top = -20.0
-offset_right = 20.0
-offset_bottom = 20.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
@@ -359,32 +393,28 @@ libraries = {
 
 [node name="RunUI" type="Control" parent="CanvasLayer/Control Center"]
 anchors_preset = 0
-offset_left = -700.0
-offset_top = -385.0
-offset_right = 740.0
-offset_bottom = 425.0
 mouse_filter = 2
 
 [node name="Label" type="Label" parent="CanvasLayer/Control Center/RunUI"]
 layout_mode = 0
-offset_left = 483.0
-offset_right = 956.0
+offset_left = 721.0
+offset_right = 1194.0
 offset_bottom = 94.805
 horizontal_alignment = 1
 
 [node name="Label2" type="Label" parent="CanvasLayer/Control Center/RunUI"]
 layout_mode = 0
-offset_left = 481.0
+offset_left = 719.0
 offset_top = 34.0
-offset_right = 954.0
+offset_right = 1192.0
 offset_bottom = 128.805
 horizontal_alignment = 1
 
 [node name="AccessoryRow" type="HBoxContainer" parent="CanvasLayer/Control Center/RunUI"]
 layout_mode = 0
-offset_left = 829.0
+offset_left = 1067.0
 offset_top = -1.0
-offset_right = 1302.0
+offset_right = 1540.0
 offset_bottom = 31.0
 theme_override_constants/separation = 6
 
@@ -417,10 +447,10 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 1245.0
-offset_top = -789.0
-offset_right = 1425.0
-offset_bottom = -781.0
+offset_left = 1733.0
+offset_top = -1040.0
+offset_right = 1913.0
+offset_bottom = -1032.0
 grow_vertical = 0
 color = Color(0.07, 0.07, 0.07, 0.85)
 
@@ -429,10 +459,10 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 1245.0
-offset_top = -789.0
-offset_right = 1425.0
-offset_bottom = -781.0
+offset_left = 1733.0
+offset_top = -1040.0
+offset_right = 1913.0
+offset_bottom = -1032.0
 grow_vertical = 0
 color = Color(1, 0, 0, 1)
 
@@ -441,10 +471,10 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 1245.0
-offset_top = -772.0
-offset_right = 1425.0
-offset_bottom = -764.0
+offset_left = 1733.0
+offset_top = -1023.0
+offset_right = 1913.0
+offset_bottom = -1015.0
 grow_vertical = 0
 color = Color(0.07, 0.07, 0.07, 0.85)
 
@@ -453,10 +483,10 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 1245.0
-offset_top = -772.0
-offset_right = 1425.0
-offset_bottom = -764.0
+offset_left = 1733.0
+offset_top = -1023.0
+offset_right = 1913.0
+offset_bottom = -1015.0
 grow_vertical = 0
 color = Color(0.48677072, 0.7373294, 1, 1)
 
@@ -465,10 +495,10 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 1245.0
-offset_top = -755.0
-offset_right = 1303.0
-offset_bottom = -747.0
+offset_left = 1733.0
+offset_top = -1006.0
+offset_right = 1791.0
+offset_bottom = -998.0
 grow_vertical = 0
 color = Color(0.2, 0.85, 0.2, 1)
 
@@ -477,10 +507,10 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 1306.0
-offset_top = -755.0
-offset_right = 1364.0
-offset_bottom = -747.0
+offset_left = 1794.0
+offset_top = -1006.0
+offset_right = 1852.0
+offset_bottom = -998.0
 grow_vertical = 0
 color = Color(1, 0.85, 0, 1)
 
@@ -489,35 +519,35 @@ layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 1367.0
-offset_top = -755.0
-offset_right = 1425.0
-offset_bottom = -747.0
+offset_left = 1855.0
+offset_top = -1006.0
+offset_right = 1913.0
+offset_bottom = -998.0
 grow_vertical = 0
 color = Color(1, 0.2, 0.2, 1)
 
 [node name="JumpSection2" type="ColorRect" parent="CanvasLayer/BarContainer"]
 layout_mode = 0
-offset_left = 1303.0
-offset_top = 72.0
-offset_right = 1359.0
-offset_bottom = 80.0
+offset_left = 1795.0
+offset_top = 15.0
+offset_right = 1851.0
+offset_bottom = 22.999994
 color = Color(0.5, 0.9, 1, 1)
 
 [node name="JumpSection3" type="ColorRect" parent="CanvasLayer/BarContainer"]
 layout_mode = 0
-offset_left = 1361.0
-offset_top = 72.0
-offset_right = 1417.0
-offset_bottom = 80.0
+offset_left = 1857.0
+offset_top = 15.0
+offset_right = 1913.0
+offset_bottom = 23.0
 color = Color(0.5, 0.9, 1, 1)
 
 [node name="JumpSection1" type="ColorRect" parent="CanvasLayer/BarContainer"]
 layout_mode = 0
-offset_left = 1245.0
-offset_top = 72.0
-offset_right = 1301.0
-offset_bottom = 80.0
+offset_left = 1733.0
+offset_top = 15.0
+offset_right = 1789.0
+offset_bottom = 23.0
 color = Color(0.5, 0.9, 1, 1)
 
 [node name="HitFlash" type="ColorRect" parent="CanvasLayer"]
@@ -589,15 +619,41 @@ light_energy = 6.061
 spot_range = 230.474
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="."]
-offset_right = 1440.0
-offset_bottom = 810.0
+offset_right = 1920.0
+offset_bottom = 1080.0
 
 [node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
 transparent_bg = true
 handle_input_locally = false
 canvas_cull_mask = 4294934528
-size = Vector2i(1440, 810)
+size = Vector2i(1920, 1080)
 render_target_update_mode = 4
+
+[node name="Lunge" type="GPUParticles3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.623, 0)
+layers = 32768
+emitting = false
+amount = 16
+one_shot = true
+explosiveness = 1.0
+transform_align = 3
+trail_enabled = true
+process_material = SubResource("ParticleProcessMaterial_4a2sn")
+draw_pass_1 = SubResource("RibbonTrailMesh_8nh5r")
+
+[node name="Jackhammer Hit" type="GPUParticles3D" parent="SubViewportContainer/SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6468811, -2.860443)
+visible = false
+layers = 32768
+emitting = false
+amount = 16
+lifetime = 0.3
+explosiveness = 1.0
+transform_align = 2
+trail_enabled = true
+trail_lifetime = 0.1
+process_material = SubResource("ParticleProcessMaterial_4a2sn")
+draw_pass_1 = SubResource("RibbonTrailMesh_8nh5r")
 
 [node name="Camera3D" type="Camera3D" parent="SubViewportContainer/SubViewport"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.600134, 0)

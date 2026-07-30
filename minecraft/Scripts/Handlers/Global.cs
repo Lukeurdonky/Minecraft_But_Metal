@@ -125,13 +125,52 @@ public partial class Global : Node
 	public Node3D[] Portals;
 
 	// ── Hitstop ──────────────────────────────────────────────────────────────
+	// Particle freeze is global and automatic. Every GpuParticles3D entering the tree is
+	// auto-registered into HitstopParticleGroup by _OnNodeAdded, and the sweeps below run
+	// only on the hitstop start/end edges — never per frame. Any future particle effect
+	// participates with zero wiring; do not add per-effect hitstop handling.
+	//
+	// Note this uses SpeedScale, not Emitting: Emitting=false only stops NEW particles
+	// spawning, leaving everything already in flight moving through the freeze. SpeedScale=0
+	// zeroes the delta fed to the particle process shader, which is what actually stops them.
+	private const string HitstopParticleGroup = "hitstop_particles";
+	private const string BaseSpeedMeta        = "hitstop_base_speed";
+
 	private float _hitstopTimer = 0f;
 
 	public bool HitstopActive => _hitstopTimer > 0f;
 
 	public void TriggerHitstop(float duration)
 	{
-		_hitstopTimer = Mathf.Max(_hitstopTimer, duration);
+		if (duration <= 0f) return;
+		bool rising    = _hitstopTimer <= 0f; // re-triggering mid-stop only extends it
+		_hitstopTimer  = Mathf.Max(_hitstopTimer, duration);
+		if (rising) SetParticlesFrozen(true);
+	}
+
+	private void _OnNodeAdded(Node node)
+	{
+		if (node is not GpuParticles3D p) return;
+
+		// HasMeta guard: a reparented node fires NodeAdded again, and re-reading SpeedScale
+		// while frozen would latch base_speed to 0 and freeze the effect permanently.
+		if (!p.HasMeta(BaseSpeedMeta)) p.SetMeta(BaseSpeedMeta, p.SpeedScale);
+		p.AddToGroup(HitstopParticleGroup);
+
+		// Effects spawned mid-freeze must start frozen — a jackhammer impact triggers its own
+		// hitstop before spawning its explosion, so otherwise it plays out during its own stop.
+		if (HitstopActive) p.SpeedScale = 0f;
+	}
+
+	private void SetParticlesFrozen(bool frozen)
+	{
+		foreach (var node in GetTree().GetNodesInGroup(HitstopParticleGroup))
+		{
+			if (node is not GpuParticles3D p) continue;
+			// Restore the authored value — a blanket reset to 1 would clobber any effect
+			// deliberately authored at a different speed scale.
+			p.SpeedScale = frozen ? 0f : (float)p.GetMeta(BaseSpeedMeta, 1f);
+		}
 	}
 
 	// ── Camera shake ─────────────────────────────────────────────────────────
@@ -154,12 +193,19 @@ public partial class Global : Node
 	public override void _Ready()
 	{
 		Instance = this;
+		// Autoloads enter the tree before the main scene, so this catches every particle
+		// node the game ever creates — scene-authored or instantiated from code.
+		GetTree().NodeAdded += _OnNodeAdded;
 	}
 
 	public override void _Process(double delta)
 	{
 		float dt = (float)delta;
-		if (_hitstopTimer > 0f) _hitstopTimer = Mathf.Max(_hitstopTimer - dt, 0f);
+		if (_hitstopTimer > 0f)
+		{
+			_hitstopTimer = Mathf.Max(_hitstopTimer - dt, 0f);
+			if (_hitstopTimer <= 0f) SetParticlesFrozen(false);
+		}
 		if (_shakeTimer   > 0f) _shakeTimer   = Mathf.Max(_shakeTimer   - dt, 0f);
 		if (Player != null)     RunTimer      += dt;
 	}

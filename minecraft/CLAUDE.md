@@ -37,8 +37,9 @@ A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minec
 ```
 Scripts/
 ├── Handlers/         Global.cs (autoload, world/run state), RunManager.cs (autoload, run flow — see "Run flow" below),
-│                     AtmosphereSystem.cs (biome → WorldEnvironment fog/light), MainMenu.gd, PlanetSelect.gd,
-│                     UpgradeSelect.gd, PlanetConfigMenu.gd (F3 debug menu), DebugMenu.gd, level.gd
+│                     AtmosphereSystem.cs (biome → WorldEnvironment fog/light), MainMenu.gd,
+│                     LoadingScreen.gd (travel animation + accessory pick), PlanetSelect.gd (SHELVED),
+│                     UpgradeSelect.gd (superseded), PlanetConfigMenu.gd (F3 debug menu), DebugMenu.gd, level.gd
 ├── The World/        Chunk_Manager.cs (~1400 lines, terrain/damage — see below), Chunk.cs, Block_Definition.cs,
 │                     Block_Model.cs, BiomeDescriptor.cs, PlanetParams.cs
 │   └── Generation/   World_Generator.cs  ← 5-stage pipeline, ALL STAGES EMPTY (cave/abyss carving still lives
@@ -54,8 +55,9 @@ Scripts/
                       Item_Registry.cs (ARCHIVED stub), Mob_Registry.cs (unused, TODO: repurpose or remove)
 Assets/               character.tscn, creature.tscn, GrappleHook.tscn, ground_robot_shooter.tscn,
                       left_arm.tscn, right_arm.tscn
-Scenes/               MainMenu.tscn (run/main_scene) → PlanetSelect.tscn → CubeLand.tscn (gameplay)
-                      → UpgradeSelect.tscn (post-stage-clear accessory pick, before next PlanetSelect)
+Scenes/               MainMenu.tscn (run/main_scene) → CubeLand.tscn (gameplay) → LoadingScreen.tscn
+                      (travel animation + post-stage-clear accessory pick) → CubeLand.tscn ...
+                      PlanetSelect.tscn (SHELVED) and UpgradeSelect.tscn (superseded) are unreachable
 Materials/            Shaders (Fire.gdshader, BlockDamage.gdshader, Select.gdshader) + .tres materials
                       (LaserMaterial, GrappleMaterial, explosion, Debris)
 documents/            All project docs except this file — see "Project Identity Documents" below and
@@ -179,15 +181,17 @@ Rules for any **new** `Enemy` subclass (see the doc for the full numbered list):
 
 ---
 
-## Run flow — MainMenu → PlanetSelect → CubeLand
+## Run flow — MainMenu → CubeLand → LoadingScreen → CubeLand
 
 `RunManager.cs` (autoload, registered right after `Global` in `project.godot`) drives the demo's linear **3-planet-stage + placeholder boss** loop. `MainMenu.tscn` is `run/main_scene` — the game no longer boots directly into `CubeLand.tscn`.
 
-- `RunManager.CurrentOptions` is a generic `List<StageOption>`, never a hardcoded 3-tuple. `PlanetSelect.gd` only ever reads it through `GetOptionsForUI()` and calls `ChooseOption(index)` — it has no idea stages are linear. `CompleteStage()` is the only method that assumes "next stage = index + 1"; that's the intended seam for swapping in a real branching node-graph map later without touching anything else.
-- `ChooseOption(index)` → `Global.Instance.ApplyPlanetParams(descriptor.MakePlanetParams(seed))` → `ChangeSceneToFile(CubeLand.tscn)`. Same `ApplyPlanetParams` tail the F3 debug menu (`PlanetConfigMenu.gd` → `Global.SetPlanetConfig`) already used — don't duplicate the reset logic (`WorldSpawn`/`KillCount`/`RunTimer`) anywhere else.
-- Stage-clear is currently a placeholder: `RunManager._Process` polls `Global.KillCount` against a per-stage constant. There is no `PlanetDescriptor` yet, so the difficulty label shown on `PlanetSelect` is cosmetic only.
-- `Player.Die()`'s jump-to-restart calls `RunManager.Instance.EndRun()` (resets stage index, `RunComplete`, used-biomes, `Global.EquippedAccessoryIds`) and goes to `MainMenu.tscn` — dying forfeits the whole run, not just the current planet. `PlanetSelect.gd`'s win-path "Return to Main Menu" button calls `EndRun()` too.
-- After every stage clear (including the last), `CompleteStage()` routes through `Scenes/UpgradeSelect.tscn` (pick 1 of 3 accessories not yet equipped) before `PlanetSelect.tscn` — see the Accessories section in `PROGRESS.md`.
+- **Planets are chosen randomly; the player never picks one.** `GoToRandomPlanet()` is the single entry point into a planet: rolls a biome not yet seen this run → `Global.Instance.ApplyPlanetParams(descriptor.MakePlanetParams(seed))` → `ChangeSceneToFile(CubeLand.tscn)`. Same `ApplyPlanetParams` tail the F3 debug menu (`PlanetConfigMenu.gd` → `Global.SetPlanetConfig`) already used — don't duplicate the reset logic (`WorldSpawn`/`KillCount`/`RunTimer`) anywhere else.
+- `MainMenu.gd`'s "New Run" calls `StartNewRun()` and **does not change scene itself** — `StartNewRun()` owns the transition via `GoToRandomPlanet()`. Same for `LoadingScreen.gd`'s accessory pick → `ChooseAccessory()`. Adding a `change_scene_to_file` alongside either call races the one already queued.
+- `Scenes/LoadingScreen.tscn` is the only between-planets screen: a looping 2-frame `AnimatedSprite2D` (`Sprites/loading frame 1|2.png`, `travel` animation) behind the pick-1-of-3 accessory list, plus a hidden `Complete` panel it swaps to when `RunComplete`. It is **not** tied to real chunk generation — CubeLand still builds its own terrain after the scene change.
+- **Player-facing planet selection is SHELVED, not deleted.** `PlanetSelect.tscn`/`.gd`, `RunManager.CurrentOptions`, `GetOptionsForUI()`, `ChooseOption()` and `GenerateOptionsForStage()` are all still present and correct, just unreachable. Re-enabling = point `StartNewRun`/`ChooseAccessory` back at `PlanetSelect.tscn`. Keep `CurrentOptions` a generic `List<StageOption>` and keep `CompleteStage()` the only method that assumes "next stage = index + 1" — that's still the seam for a real branching node-graph map.
+- `Scenes/UpgradeSelect.tscn` + `UpgradeSelect.gd` are **superseded** by LoadingScreen and orphaned. Safe to delete.
+- Stage-clear is currently a placeholder: `RunManager._Process` polls `Global.KillCount` against a per-stage constant. There is no `PlanetDescriptor` yet, so `DifficultyLabels` is cosmetic and currently unused.
+- `Player.Die()`'s jump-to-restart calls `RunManager.Instance.EndRun()` (resets stage index, `RunComplete`, used-biomes, `Global.EquippedAccessoryIds`) and goes to `MainMenu.tscn` — dying forfeits the whole run, not just the current planet. `LoadingScreen.gd`'s win-path "Return to Main Menu" button calls `EndRun()` too.
 - **Editing `project.godot` while the editor is open:** use the godot-ai MCP `project_manage(op="settings_set")` / `autoload_manage` ops, not a raw file edit — the editor's live in-memory settings will silently re-clobber a manual text edit (`run/main_scene`, `[autoload]`) the next time any MCP call re-serializes the file.
 
 ## Accessories — PlayerAccessories.cs + Accessory.cs
@@ -199,6 +203,18 @@ Full design list and win-condition tie-in: `documents/design/NEW_VISION.md`. Liv
 - `Scripts/Entities/Player/PlayerAccessories.cs` — partial class of `Player` (same pattern as `PlayerAbilities.cs`): equip/unequip, `EquipStartingAccessories()`, and the hook-aggregation helpers. Wired into `Player.ImHere()`, `_Process`, `ApplyMovementFromInput`, and the grapple-attach/jackhammer-fire points in `PlayerAbilities.cs`.
 - Equipped state lives in `Global.EquippedAccessoryIds` (persists across planet loads within a run; cleared by `RunManager.ResetRunState()`). GDScript (F3 menu, HUD) must go through `Global.GetAllAccessoryNames()`/`IsAccessoryEquipped()`/`SetAccessoryEquipped()` — **GDScript can call methods on a C# autoload but cannot read its plain public properties**, confirmed empirically.
 - `PlayerHUD.cs` renders equipped accessories as atlas icons in `RunUI/AccessoryRow`, a real scene node in `character.tscn` (not runtime-only) — rebuilds children only when the equipped set changes.
+
+## Hitstop — global, automatic for particles
+
+`Global.TriggerHitstop(duration)` sets a timer (`Global.HitstopActive`); systems that must freeze read that flag. Player deliberately keeps processing through it (`Entity.FreezeDuringHitstop => false` on Player, plus input buffering in `Player.cs`), which is why `Engine.TimeScale` / `GetTree().Paused` are **not** used — tree pause would also stall the chunk generation threads and the `_readyToPromote` drain queue.
+
+**Particle freezing needs no per-effect code.** `Global._OnNodeAdded` (wired to `SceneTree.NodeAdded` in `_Ready()`) auto-registers every `GpuParticles3D` entering the tree into the `hitstop_particles` group. `SetParticlesFrozen` then sweeps that group on the hitstop **start/end edges only** — never per frame.
+
+- **Use `SpeedScale`, not `Emitting`.** `Emitting = false` only stops *new* particles spawning; everything already in flight keeps moving through the freeze. `SpeedScale = 0` zeroes the delta fed to the particle process shader, which is what actually stops them.
+- Each node's authored speed is stashed in a `hitstop_base_speed` meta on registration and restored from it — a blanket reset to `1.0` would clobber effects authored at another value (Creature's `EmberParticles` runs at `2.0`).
+- Effects instantiated *during* a freeze start frozen too — a jackhammer impact triggers its own hitstop before spawning its explosion, so otherwise the explosion would play out during the stop it caused.
+- Groups auto-clean on node free, so there are no dangling references to sweep.
+- **Do not add hitstop handling to individual effects or enemy scripts.** `Enemy._Process` gates particles on `Lod` only, for this reason. The legacy `UniParticles3D` type is not covered by the group, but it's deprecated project-wide (see the Enemy LOD section).
 
 ## Chunk_Manager.cs — do not casually refactor
 

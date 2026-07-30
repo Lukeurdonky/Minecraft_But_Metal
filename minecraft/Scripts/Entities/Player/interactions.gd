@@ -50,10 +50,13 @@ func _process(delta):
 			pd.SelectedCube = 0
 			pd.SelectedCubePosition = Vector3i(0, 0, 0)
 
+	# pd.FovKick is an additive punch (lunge etc.) that decays to 0 on the C# side. Folded into
+	# the lerp target rather than written straight to fov, which this lerp would erase next frame.
+	var kick = pd.FovKick
 	if pd.IsSprinting:
-		fov = floor(lerp(fov, baseFOV + sprintFOVAdd+.0, .2))
+		fov = floor(lerp(fov, baseFOV + sprintFOVAdd + kick, .2))
 	else:
-		fov = floor(lerp(fov, baseFOV+.0, .2))
+		fov = floor(lerp(fov, baseFOV + kick, .2))
 
 
 # ARCHIVED — Minecraft item interaction handlers. Superseded by weapon/ability system.

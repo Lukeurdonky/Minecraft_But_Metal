@@ -1,65 +1,55 @@
-[gd_scene load_steps=2 format=3 uid="uid://3w3c2trvluvg"]
+[gd_scene load_steps=4 format=3 uid="uid://3w3c2trvluvg"]
 
 [ext_resource type="Script" uid="uid://cu7gxyunxeqck" path="res://Scripts/Handlers/MainMenu.gd" id="1_tt5f1"]
+[ext_resource type="Texture2D" uid="uid://dyvula4si6nfk" path="res://Sprites/star bg menu.png" id="2_853f1"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8saeu"]
+bg_color = Color(0, 0, 0, 1)
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_right = 480.0
+offset_bottom = 270.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_tt5f1")
 
-[node name="Background" type="ColorRect" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-color = Color(0.039215688, 0.047058824, 0.05882353, 1)
+[node name="StarBg" type="Sprite2D" parent="."]
+position = Vector2(960, 540)
+texture = ExtResource("2_853f1")
 
-[node name="Center" type="CenterContainer" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="Content" type="VBoxContainer" parent="Center"]
-layout_mode = 2
-theme_override_constants/separation = 14
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_left = 710.0
+offset_top = 400.0
+offset_right = 1210.0
+offset_bottom = 748.00073
+theme_override_constants/separation = 18
 alignment = 1
 
-[node name="Title" type="Label" parent="Center/Content"]
+[node name="NewRunButton" type="Button" parent="VBoxContainer"]
+custom_minimum_size = Vector2(220, 104.97)
 layout_mode = 2
-theme_override_colors/font_color = Color(0.23137255, 0.8627451, 0.9019608, 1)
-theme_override_font_sizes/font_size = 34
-text = "ANTITHESIS CONQUERING SIMULATOR"
-horizontal_alignment = 1
-
-[node name="Subtitle" type="Label" parent="Center/Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.54509807, 0.5803922, 0.6392157, 1)
-text = "you're in your spaceship. you go to randomly generated planets. you kill things."
-horizontal_alignment = 1
-
-[node name="Spacer" type="Control" parent="Center/Content"]
-custom_minimum_size = Vector2(0, 24)
-layout_mode = 2
-
-[node name="NewRunButton" type="Button" parent="Center/Content"]
-custom_minimum_size = Vector2(220, 44)
-layout_mode = 2
+theme_override_font_sizes/font_size = 57
+theme_override_styles/normal = SubResource("StyleBoxFlat_8saeu")
 text = "New Run"
 
-[node name="QuitButton" type="Button" parent="Center/Content"]
-custom_minimum_size = Vector2(220, 44)
+[node name="Settings" type="Button" parent="VBoxContainer"]
+custom_minimum_size = Vector2(220, 104.97)
 layout_mode = 2
+theme_override_font_sizes/font_size = 57
+theme_override_styles/normal = SubResource("StyleBoxFlat_8saeu")
+text = "Settings"
+
+[node name="QuitButton" type="Button" parent="VBoxContainer"]
+custom_minimum_size = Vector2(220, 104.97)
+layout_mode = 2
+theme_override_font_sizes/font_size = 57
+theme_override_styles/normal = SubResource("StyleBoxFlat_8saeu")
 text = "Quit"
 
-[connection signal="pressed" from="Center/Content/NewRunButton" to="." method="_on_new_run_button_pressed"]
-[connection signal="pressed" from="Center/Content/QuitButton" to="." method="_on_quit_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/NewRunButton" to="." method="_on_new_run_button_pressed"]
+[connection signal="pressed" from="VBoxContainer/QuitButton" to="." method="_on_quit_button_pressed"]

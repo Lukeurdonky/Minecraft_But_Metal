@@ -3,12 +3,19 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-// Drives the demo run: a linear sequence of TotalStages planet stages, each
-// offering a choice of CurrentOptions (biome + cosmetic difficulty), followed
-// by a placeholder end-state until a real boss exists. CurrentOptions is a
-// plain List, and CompleteStage() is the only place that assumes "next stage
-// = index + 1" — swapping in a real branching node graph later only means
-// changing that one method and adding a NextNodeId to StageOption.
+// Drives the demo run: a linear sequence of TotalStages planet stages on randomly
+// chosen biomes, separated by LoadingScreen (accessory pick), followed by a
+// placeholder end-state until a real boss exists.
+//
+//   MainMenu -> CubeLand -> LoadingScreen -> CubeLand -> ... -> LoadingScreen (complete)
+//
+// Player-facing planet selection is SHELVED, not removed: PlanetSelect.tscn/.gd,
+// CurrentOptions, GetOptionsForUI() and ChooseOption() are all still here and still
+// correct, just no longer reachable from the flow. Re-enabling means pointing
+// StartNewRun/ChooseAccessory back at PlanetSelect.tscn instead of calling
+// GoToRandomPlanet(). Keep CurrentOptions a plain List and keep CompleteStage() the
+// only place that assumes "next stage = index + 1" — that's still the seam for a real
+// branching node graph later.
 public partial class RunManager : Node
 {
 	public static RunManager Instance { get; private set; }
@@ -56,11 +63,31 @@ public partial class RunManager : Node
 		Global.Instance.EquippedAccessoryIds.Clear();
 	}
 
-	// Called by MainMenu's "New Run" button.
+	// Called by MainMenu's "New Run" button. Drops straight into the first planet — the
+	// loading screen is the *between*-planets beat (its art is a destroyed planet receding
+	// behind the ship), so it has nothing to show before planet one.
 	public void StartNewRun()
 	{
 		ResetRunState();
-		GenerateOptionsForStage();
+		GoToRandomPlanet();
+	}
+
+	// The single entry point into a planet now that the player doesn't pick one. Same tail as
+	// ChooseOption below — biome descriptor -> ApplyPlanetParams -> CubeLand — so the two stay
+	// interchangeable if planet selection is un-shelved.
+	private void GoToRandomPlanet()
+	{
+		// Prefer biomes not seen this run so a 3-stage run never repeats itself; with 9 biomes
+		// the fallback is unreachable today, but it keeps this safe if TotalStages grows.
+		var pool = Biome_Registry.All.Where(b => !_usedBiomes.Contains(b.Name)).ToList();
+		if (pool.Count == 0) pool = Biome_Registry.All.ToList();
+
+		var descriptor = pool[_rng.Next(pool.Count)];
+		_usedBiomes.Add(descriptor.Name);
+		Global.Instance.ApplyPlanetParams(descriptor.MakePlanetParams(_rng.Next()));
+		_stageKillTarget = StageKillTargets[Math.Min(CurrentStageIndex, StageKillTargets.Length - 1)];
+		_stageActive = true;
+		GetTree().ChangeSceneToFile("res://Scenes/CubeLand.tscn");
 	}
 
 	// Called on death (Player.Die()) and on returning to MainMenu after a run-complete —
@@ -70,8 +97,9 @@ public partial class RunManager : Node
 		ResetRunState();
 	}
 
-	// Picks 3 biomes not yet seen this run (falls back to the full pool once
-	// exhausted, since there are only 9 biomes total across a 3-stage run).
+	// SHELVED (see header): picks 3 biomes not yet seen this run, falling back to the full
+	// pool once exhausted. Kept intact for when planet selection comes back; nothing in the
+	// current flow calls it.
 	private void GenerateOptionsForStage()
 	{
 		var pool = Biome_Registry.All.Where(b => !_usedBiomes.Contains(b.Name)).ToList();
@@ -127,15 +155,16 @@ public partial class RunManager : Node
 		return arr;
 	}
 
-	// Called by UpgradeSelect when the player picks one of CurrentAccessoryOptions.
+	// Called by LoadingScreen when the player picks one of CurrentAccessoryOptions. The pick
+	// is the only gate between planets, so equipping it also launches the next one.
 	public void ChooseAccessory(int index)
 	{
 		if (index < 0 || index >= CurrentAccessoryOptions.Count) return;
 		Global.Instance.SetAccessoryEquipped(CurrentAccessoryOptions[index], true);
-		GetTree().ChangeSceneToFile("res://Scenes/PlanetSelect.tscn");
+		GoToRandomPlanet();
 	}
 
-	// Called by PlanetSelect when the player picks one of CurrentOptions.
+	// SHELVED (see header): called by PlanetSelect when the player picks one of CurrentOptions.
 	public void ChooseOption(int index)
 	{
 		if (index < 0 || index >= CurrentOptions.Count) return;
@@ -156,12 +185,11 @@ public partial class RunManager : Node
 		CurrentStageIndex++;
 		if (CurrentStageIndex >= TotalStages)
 			RunComplete = true; // placeholder end-state — no boss stage yet
-		else
-			GenerateOptionsForStage();
 
-		// Upgrade pick always comes first — UpgradeSelect.ChooseAccessory() is what
-		// actually transitions on to PlanetSelect.tscn (next options or complete panel).
+		// LoadingScreen reads RunComplete to decide between the accessory pick (which calls
+		// ChooseAccessory -> GoToRandomPlanet) and the end-of-run panel, so options are
+		// generated unconditionally and simply go unused on the final clear.
 		GenerateAccessoryOptions();
-		GetTree().ChangeSceneToFile("res://Scenes/UpgradeSelect.tscn");
+		GetTree().ChangeSceneToFile("res://Scenes/LoadingScreen.tscn");
 	}
 }

@@ -134,7 +134,10 @@ public partial class Enemy : Entity
             _lastAnimateState = shouldAnimate;
         }
 
-        bool shouldEmit = Lod == LodTier.Near && !hitstop;
+        // Pure LOD gating — hitstop is NOT handled here. Freezing particles during hitstop is
+        // global (Global's hitstop_particles group sweep, SpeedScale=0). Emitting=false only
+        // gates new spawns and would leave in-flight particles moving through the freeze.
+        bool shouldEmit = Lod == LodTier.Near;
         if (shouldEmit != _lastEmitState)
         {
             foreach (var node in _particles)

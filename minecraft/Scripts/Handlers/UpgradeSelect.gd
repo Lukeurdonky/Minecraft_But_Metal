@@ -1,8 +1,11 @@
 extends Control
 
-# Shown after every planet clear (RunManager.CompleteStage), before PlanetSelect.
-# Picking one calls RunManager.ChooseAccessory(index), which equips it and
-# transitions on to PlanetSelect.tscn.
+# SUPERSEDED by Scripts/Handlers/LoadingScreen.gd, which does the same accessory pick over the
+# travel animation. Nothing reaches this scene any more; it's left on disk only because deleting
+# it wasn't asked for. Safe to remove along with Scenes/UpgradeSelect.tscn.
+#
+# Was: shown after every planet clear (RunManager.CompleteStage), before PlanetSelect.
+# Picking one calls RunManager.ChooseAccessory(index), which equips it.
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

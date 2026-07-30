@@ -93,6 +93,11 @@ public partial class Player : Entity
     [Export] public MeshInstance3D LeftArmMesh    { get; set; }
     [Export] public MeshInstance3D LaserOutlineMesh { get; set; }
 
+    // First-person lunge VFX. Lives in character.tscn's arm SubViewport at a fixed offset in
+    // front of the SubViewport camera; PlayLungeVfx aims it per fire (position is left alone).
+    // Left unassigned in the Inspector it resolves by path, like PlayerHUD's bar nodes.
+    [Export] public GpuParticles3D LungeParticles { get; set; }
+
     private GrappleHook _activeHook;
     private Entity      _grappledEntity = null;
     public  Entity      GrappledEntity  => _grappledEntity;
@@ -337,6 +342,55 @@ public partial class Player : Entity
         {
             if (IsInstanceValid(fx)) fx.QueueFree();
         };
+    }
+
+    // Additive FOV kick in degrees, consumed by interactions.gd. That script owns the camera's
+    // per-frame FOV lerp, so writing Camera.Fov directly from here would be overwritten on the
+    // very next frame — it folds this into its base/sprint target instead of fighting it.
+    public float FovKick { get; private set; } = 0f;
+
+    private const float LungeFovKick     = 7f; // degrees punched out on a heavy-entity lunge
+    private const float FovKickDecayRate = 45f; // degrees/sec back to neutral (~0.27s recovery)
+
+    private void UpdateFovKick(float delta)
+    {
+        if (FovKick > 0f) FovKick = Mathf.MoveToward(FovKick, 0f, FovKickDecayRate * delta);
+    }
+
+    // Lunge feel: one-shot first-person burst + an FOV punch, fired when the player lunges at
+    // a heavy enemy. Restart() rather than Emitting = true — the node is one_shot, so re-arming
+    // a burst that hasn't finished would otherwise be ignored; Restart() resets the cycle and
+    // re-fires on every lunge, including rapid consecutive ones.
+    private void PlayLungeVfx(Vector3 worldDir)
+    {
+        LungeParticles ??= GetNodeOrNull<GpuParticles3D>("SubViewportContainer/SubViewport/Lunge");
+
+        if (LungeParticles != null)
+        {
+            // Aim the burst at the target. The SubViewport's own camera sits at an identity
+            // basis and is never rotated, so SubViewport space IS main-camera-local space —
+            // the same equivalence UpdateLaserBeam relies on. Converting the world direction
+            // into camera space therefore gives the node's local rotation directly.
+            if (Camera != null)
+            {
+                var d = (Camera.GlobalTransform.Basis.Inverse() * worldDir).Normalized();
+
+                // Yaw is degenerate when the target is exactly vertical: X and Z are both zero
+                // and Atan2(-0, -0) returns -PI, not 0 — which would spin a straight-up lunge to
+                // (90°, 180°) instead of (90°, 0°). Collapse that case to zero yaw.
+                float horizontal = new Vector2(d.X, d.Z).Length();
+
+                // Node rotation_order is YXZ (yaw then pitch), which is what this
+                // decomposition assumes. Dead ahead → (0, 0); directly overhead → (90°, 0).
+                LungeParticles.Rotation = new Vector3(
+                    Mathf.Asin(Mathf.Clamp(d.Y, -1f, 1f)),                    // pitch
+                    horizontal < 0.0001f ? 0f : Mathf.Atan2(-d.X, -d.Z),      // yaw
+                    0f);
+            }
+            LungeParticles.Restart();
+        }
+
+        FovKick = LungeFovKick; // set, not accumulate — back-to-back lunges re-punch, never stack
     }
 
     private bool FindJackhammerBlock(out Vector3I hitBlock)
@@ -672,7 +726,11 @@ public partial class Player : Entity
                         // Lunge player toward heavy entity on release
                         var toEntity = GrappleAnchor - GlobalPosition;
                         if (toEntity.LengthSquared() > 0.001f)
-                            Velocity = toEntity.Normalized() * HeavyEntityReelSpeed;
+                        {
+                            var lungeDirection = toEntity.Normalized();
+                            Velocity = lungeDirection * HeavyEntityReelSpeed;
+                            PlayLungeVfx(lungeDirection);
+                        }
                         ReleaseGrappledEntity();
                         CurrentGrappleState = GrappleState.Idle;
                         _grappleCooldown    = GrappleCooldownMax;

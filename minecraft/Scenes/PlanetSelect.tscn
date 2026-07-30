@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3 uid="uid://byalv31mpqowo"]
+[gd_scene load_steps=4 format=3 uid="uid://byalv31mpqowo"]
 
 [ext_resource type="Script" uid="uid://bvtiexeecpad5" path="res://Scripts/Handlers/PlanetSelect.gd" id="1_anvey"]
+[ext_resource type="Texture2D" uid="uid://buhhrucy4e2kx" path="res://Sprites/space map 1 dark.png" id="2_g1udp"]
+[ext_resource type="Texture2D" uid="uid://c5iu4fuk2dt3i" path="res://Sprites/evil plan 1.png" id="3_488vs"]
 
 [node name="PlanetSelect" type="Control"]
 layout_mode = 3
@@ -21,6 +23,10 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0.039215688, 0.047058824, 0.05882353, 1)
 
+[node name="Sprite2D" type="Sprite2D" parent="."]
+position = Vector2(960, 540)
+texture = ExtResource("2_g1udp")
+
 [node name="Center" type="CenterContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -36,7 +42,7 @@ alignment = 1
 
 [node name="Heading" type="Label" parent="Center/OptionsPanel"]
 layout_mode = 2
-theme_override_colors/font_color = Color(0.23137255, 0.8627451, 0.9019608, 1)
+theme_override_colors/font_color = Color(0.28627452, 0.5647059, 0.16862746, 1)
 theme_override_font_sizes/font_size = 26
 text = "CHOOSE A PLANET"
 horizontal_alignment = 1
@@ -70,4 +76,19 @@ custom_minimum_size = Vector2(260, 44)
 layout_mode = 2
 text = "Return to Main Menu"
 
+[node name="EvilPlan1" type="Sprite2D" parent="."]
+position = Vector2(957, 538)
+texture = ExtResource("3_488vs")
+
+[node name="ToggleButton" type="Button" parent="EvilPlan1"]
+offset_left = 592.0
+offset_top = -58.0
+offset_right = 648.0
+offset_bottom = 128.0
+tooltip_text = "Evil plan"
+focus_mode = 0
+mouse_default_cursor_shape = 2
+flat = true
+
 [connection signal="pressed" from="Center/CompletePanel/ReturnButton" to="." method="_on_return_button_pressed"]
+[connection signal="pressed" from="EvilPlan1/ToggleButton" to="." method="_on_evil_plan_toggle_pressed"]
