@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar System Run Structure — Design Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0a0b0d;
+    --bg-raised: #131519;
+    --bg-card: #17191e;
+    --line: #2a2d34;
+    --line-soft: #1f2126;
+    --text: #e9eaec;
+    --text-dim: #9a9ea8;
+    --text-faint: #6b6f78;
+    --cyan: #45e0d4;
+    --magenta: #ff4f92;
+    --amber: #ffb648;
+    --red: #ff5c5c;
+    --green: #6fe07a;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans); line-height:1.6; font-size:16px;
+    background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size: 48px 48px;
+    background-attachment: fixed;
+  }
+  .page{ max-width:1180px; margin:0 auto; padding:0 24px 120px; }
+
+  /* ===== Masthead ===== */
+  .masthead{
+    padding:64px 0 40px; border-bottom:1px solid var(--line);
+    margin-bottom:8px;
+  }
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--cyan); margin:0 0 14px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow::before{ content:"◆"; color:var(--magenta); font-size:10px; }
+  h1{
+    font-family:var(--sans); font-weight:700; font-size:clamp(32px,4.5vw,52px);
+    line-height:1.08; margin:0 0 18px; letter-spacing:-0.02em;
+    background:linear-gradient(90deg,var(--text) 40%,var(--cyan));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .masthead-meta{
+    display:flex; flex-wrap:wrap; gap:10px 28px; font-family:var(--mono);
+    font-size:13px; color:var(--text-dim); margin-top:20px;
+  }
+  .masthead-meta span b{ color:var(--text); font-weight:600; }
+  .status-banner{
+    margin-top:28px; padding:14px 18px; background:var(--bg-raised);
+    border:1px solid var(--line); border-left:3px solid var(--amber);
+    font-size:14px; color:var(--text-dim); font-family:var(--sans);
+  }
+  .status-banner b{ color:var(--amber); font-family:var(--mono); font-size:12px; letter-spacing:.06em; }
+
+  /* ===== TOC ===== */
+  .toc{
+    display:flex; flex-wrap:wrap; gap:8px 8px; padding:20px 0 40px;
+    border-bottom:1px solid var(--line); margin-bottom:48px;
+  }
+  .toc a{
+    font-family:var(--mono); font-size:12.5px; color:var(--text-dim);
+    text-decoration:none; padding:7px 12px; border:1px solid var(--line);
+    background:var(--bg-raised); transition:.15s;
+  }
+  .toc a:hover{ color:var(--cyan); border-color:var(--cyan); }
+
+  section{ margin-bottom:72px; scroll-margin-top:24px; }
+  .sec-head{ margin-bottom:28px; }
+  .sec-head .eyebrow{ margin-bottom:10px; }
+  h2{ font-size:26px; margin:0; letter-spacing:-0.01em; font-weight:700; }
+  .sec-intro{ color:var(--text-dim); max-width:760px; margin-top:12px; font-size:15px; }
+
+  /* ===== Problem list ===== */
+  .problem-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+  .problem-card{
+    background:var(--bg-card); border:1px solid var(--line); padding:18px 20px;
+  }
+  .problem-card .tag{ font-family:var(--mono); font-size:11px; color:var(--magenta); letter-spacing:.06em; }
+  .problem-card p{ margin:8px 0 0; font-size:14.5px; color:var(--text-dim); }
+
+  /* ===== Loop flow ===== */
+  .loop-block{ margin-bottom:36px; }
+  .loop-block h3{
+    font-family:var(--mono); font-size:14px; color:var(--cyan); letter-spacing:.06em;
+    text-transform:uppercase; margin:0 0 18px; padding-bottom:10px; border-bottom:1px dashed var(--line);
+  }
+  .flow{ display:flex; flex-direction:column; gap:0; }
+  .flow-step{
+    display:grid; grid-template-columns:40px 1fr; gap:16px; padding:14px 0;
+    border-bottom:1px solid var(--line-soft); position:relative;
+  }
+  .flow-step:last-child{ border-bottom:none; }
+  .flow-num{
+    font-family:var(--mono); font-size:13px; color:var(--bg); background:var(--cyan);
+    width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+    font-weight:700;
+  }
+  .flow-step p{ margin:0; font-size:14.5px; }
+  .flow-step b{ color:var(--text); }
+  .flow-step .note{ display:block; margin-top:4px; color:var(--text-faint); font-size:13px; }
+
+  /* ===== Decision cards ===== */
+  .decision{
+    display:grid; grid-template-columns:52px 1fr auto; gap:18px; align-items:start;
+    padding:18px 0; border-bottom:1px solid var(--line-soft);
+  }
+  .decision-num{ font-family:var(--mono); color:var(--text-faint); font-size:13px; padding-top:3px; }
+  .decision h4{ margin:0 0 6px; font-size:15.5px; font-weight:600; }
+  .decision .why{ color:var(--text-dim); font-size:14px; margin:0; }
+  .decision .why b{ color:var(--text); font-weight:600; }
+  .badge{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+    padding:5px 10px; white-space:nowrap; height:fit-content; border:1px solid transparent;
+  }
+  .badge.locked{ color:var(--green); border-color:var(--green); background:rgba(111,224,122,.08); }
+  .badge.leaning{ color:var(--cyan); border-color:var(--cyan); background:rgba(69,224,212,.08); }
+  .badge.tentative{ color:var(--amber); border-color:var(--amber); background:rgba(255,182,72,.08); }
+
+  /* ===== Rejected ===== */
+  .rejected-list{ display:flex; flex-direction:column; gap:2px; }
+  .rejected-item{
+    display:grid; grid-template-columns:24px 1fr; gap:14px; padding:16px 18px;
+    background:rgba(255,92,92,.04); border:1px solid rgba(255,92,92,.25); border-left:3px solid var(--red);
+    margin-bottom:10px;
+  }
+  .rejected-item .x{ color:var(--red); font-family:var(--mono); font-weight:700; }
+  .rejected-item b{ color:var(--text); display:block; margin-bottom:4px; font-size:14.5px; }
+  .rejected-item span{ color:var(--text-dim); font-size:13.5px; }
+
+  /* ===== Open questions ===== */
+  .oq-group{ margin-bottom:28px; }
+  .oq-group h4{
+    font-family:var(--mono); font-size:12.5px; color:var(--amber); letter-spacing:.06em;
+    text-transform:uppercase; margin:0 0 12px;
+  }
+  .oq-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:9px; }
+  .oq-list li{
+    display:grid; grid-template-columns:16px 1fr; gap:12px; font-size:14.5px; color:var(--text-dim);
+    align-items:start;
+  }
+  .oq-list li::before{
+    content:""; width:12px; height:12px; border:1.5px solid var(--amber); margin-top:3px;
+  }
+  .oq-list li b{ color:var(--text); font-weight:600; }
+
+  /* ===== Glossary ===== */
+  .glossary{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); }
+  .gterm{ background:var(--bg-card); padding:16px 20px; }
+  .gterm dt{ font-family:var(--mono); font-size:13px; color:var(--cyan); font-weight:600; margin-bottom:6px; }
+  .gterm dd{ margin:0; font-size:13.5px; color:var(--text-dim); }
+
+  /* ===== Mapping table ===== */
+  table{ width:100%; border-collapse:collapse; font-size:14px; }
+  th{
+    font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--text-faint); text-align:left; padding:10px 14px; border-bottom:1px solid var(--line);
+  }
+  td{ padding:12px 14px; border-bottom:1px solid var(--line-soft); color:var(--text-dim); vertical-align:top; }
+  td.strong{ color:var(--text); font-weight:600; }
+
+  footer{
+    margin-top:80px; padding-top:24px; border-top:1px solid var(--line);
+    font-family:var(--mono); font-size:12px; color:var(--text-faint);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;
+  }
+
+  @media (max-width:640px){
+    .decision{ grid-template-columns:1fr; }
+    .decision-num{ display:none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <p class="eyebrow">Antithesis Conquering Simulator — Design Log</p>
+    <h1>Solar System Run Structure</h1>
+    <div class="masthead-meta">
+      <span>Session: <b>Run structure rework — solar systems, time-as-resource, XP/currency split</b></span>
+      <span>Addendum to: <b>NEW_VISION.md</b></span>
+      <span>Status: <b>Design exploration — not implemented, not fully numbered</b></span>
+    </div>
+    <div class="status-banner">
+      <b>READ ME FIRST —</b> This document is a working synthesis of one design conversation, not a locked spec. It replaces the flat "10 planets, choose 1 of 3 worlds" loop from NEW_VISION.md with a two-tier structure (persistent meta-progression + single-system attempts). Several mechanics are agreed in shape but not in number — see <a href="#open" style="color:var(--amber)">Open Questions</a> before treating anything here as final. Ideas explicitly discarded during this session are logged in <a href="#rejected" style="color:var(--amber)">Rejected Ideas</a> so they aren't re-proposed without new information.
+    </div>
+  </header>
+
+  <nav class="toc">
+    <a href="#problem">Why This Changed</a>
+    <a href="#loop">The Two Loops</a>
+    <a href="#economy">Currency &amp; XP</a>
+    <a href="#decisions">Decision Log</a>
+    <a href="#rejected">Rejected Ideas</a>
+    <a href="#open">Open Questions</a>
+    <a href="#glossary">Glossary</a>
+    <a href="#mapping">Maps to Existing Systems</a>
+  </nav>
+
+  <!-- ============ PROBLEM ============ -->
+  <section id="problem">
+    <div class="sec-head">
+      <p class="eyebrow">Starting point</p>
+      <h2>Why the old loop needed rework</h2>
+      <p class="sec-intro">NEW_VISION.md's loop — choose 1 of 3 worlds → difficulty → clear/survive → upgrade → next world → boss — reveals everything one screen at a time. Nothing about it was broken exactly, but five gaps in it drove this whole session.</p>
+    </div>
+    <div class="problem-grid">
+      <div class="problem-card"><span class="tag">GAP 01</span><p><b>No preview.</b> Each "choose 1 of 3 worlds" screen is rolled fresh when it opens. A player never sees more than the immediate next choice — no way to know what a run holds.</p></div>
+      <div class="problem-card"><span class="tag">GAP 02</span><p><b>No progress legibility.</b> Nothing shows a player where they are relative to where they're going, run to run.</p></div>
+      <div class="problem-card"><span class="tag">GAP 03</span><p><b>Thin content at scale.</b> 10 fixed planets total doesn't hold up across repeat runs.</p></div>
+      <div class="problem-card"><span class="tag">GAP 04</span><p><b>No reason to linger.</b> Clearing a planet's threshold and leaving immediately was always strictly correct — nothing rewarded staying longer.</p></div>
+      <div class="problem-card"><span class="tag">GAP 05</span><p><b>"The Encounter" problem.</b> Already a known con in NEW_VISION.md — a good run ruined by a poorly-balanced final boss with no structural cushion.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ THE TWO LOOPS ============ -->
+  <section id="loop">
+    <div class="sec-head">
+      <p class="eyebrow">Core structure</p>
+      <h2>The two loops</h2>
+      <p class="sec-intro">Everything resolves into a persistent meta-loop (The Ship, between attempts) and a self-contained attempt-loop (one attempt = one solar system). This is the roguelite pattern already named in NEW_VISION.md's pillars — permadeath per attempt, meta-progression across attempts — applied literally, rather than the "one continuous marathon run" alternative that was considered and set aside.</p>
+    </div>
+
+    <div class="loop-block">
+      <h3>Meta loop — persists across attempts, lives at The Ship</h3>
+      <div class="flow">
+        <div class="flow-step"><div class="flow-num">01</div><p><b>Every attempt ends at the Ship</b> — win, death, or timeout all route back here.<span class="note">Currency banked: full amount + an "Efficiency Bonus" on unspent currency for a clean win; partial amount on death or timeout.</span></p></div>
+        <div class="flow-step"><div class="flow-num">02</div><p><b>Currency buys permanent capability</b>, not just stat totals — new accessories entering the pool, new biome types becoming available, a second accessory slot, and the meta-thresholds that let Plant-corrupted systems start appearing.<span class="note">Deliberately not just "numbers go up" — capability unlocks give a stronger reason to keep playing than raw stat inflation.</span></p></div>
+        <div class="flow-step"><div class="flow-num">03</div><p><b>Offered 3 fresh solar system topologies</b> to start the next attempt. Regenerated every time — no fixed roster to memorize or get stuck with.<span class="note">Optional currency-cost reroll if none of the 3 fit what you want to play right now.</span></p></div>
+        <div class="flow-step"><div class="flow-num">04</div><p><b>Offer skew shifts with meta-progress.</b> Early on, offers are mostly clean systems. Deeper into meta-progression, more of the 3 offered are Plant-corrupted (harder).<span class="note">Never forced — normal systems and reroll remain available at any point.</span></p></div>
+        <div class="flow-step"><div class="flow-num">05</div><p><b>Difficulty scaling reuses existing planned systems</b> — EnemyHostility, EnvironmentHostility/TerrainDensity, Gravity, and the modifier framework (Low Gravity, Heavy Fog, Alien Surface) already scoped in the engineering docs. Meta-progression just widens the ranges RunManager rolls from.<span class="note">Clock length is a minor dial here, not a primary one — see Decision 18.</span></p></div>
+      </div>
+    </div>
+
+    <div class="loop-block">
+      <h3>Attempt loop — one attempt = one solar system</h3>
+      <div class="flow">
+        <div class="flow-step"><div class="flow-num">01</div><p><b>Pick 1 of 3 solar system topologies.</b> Vague info only — planet count (7–20), rough difficulty spread, distance/time cost between nodes, biome-flavor read, corrupted or not. Commit; no switching, no returning to the ones you passed on.</p></div>
+        <div class="flow-step"><div class="flow-num">02</div><p><b>Enter with local fog.</b> Current planet fully known. Next planet known roughly. Everything past that is hidden until you get closer.<span class="note">Chosen specifically to preserve preparation without collapsing all discovery — see Decision 03.</span></p></div>
+        <div class="flow-step"><div class="flow-num">03</div><p><b>Shared clock starts</b> (10 minutes was the original working number — treat as unset, see Open Questions).</p></div>
+        <div class="flow-step"><div class="flow-num">04</div><p><b>Per planet:</b> fight until the kill-threshold clears, unlocking the hop — or keep fighting past it. Kills feed XP, which is the actual reason to linger.<span class="note">Hopping likely costs clock time and reveals the next-next planet's rough info.</span></p></div>
+        <div class="flow-step"><div class="flow-num">05</div><p><b>Occasional waystation nodes</b> — visible on the topology, not on every hop — host the shop. Detouring to one costs clock time on purpose: a real routing decision, not a menu tax.</p></div>
+        <div class="flow-step"><div class="flow-num">06</div><p><b>Reach the sun, destroy it.</b> That's a clean clear. If the clock hits zero first, you're forced into the sun fight early at a defined disadvantage (mechanics still TBD — see Open Questions).</p></div>
+        <div class="flow-step"><div class="flow-num">07</div><p><b>Die, or lose the forced-early sun fight</b> → attempt ends, partial currency banked, back to the Ship.</p></div>
+        <div class="flow-step"><div class="flow-num">08</div><p><b>Clear enough Plant-corrupted systems across separate attempts</b> (not within one sitting) → Plant's own system starts appearing as an offer. Clearing that is where THE PLANT fight lives — the actual final boss of the meta-progression, not of any single attempt.</p></div>
+        <div class="flow-step"><div class="flow-num">09</div><p><b>Beating THE PLANT is additive, not a reset.</b> Nothing already unlocked is lost. Leans on COSMOS_LORE.md's existing language — "the next run's planets may be slightly different... nothing confirmed, nothing explained" — rather than a new story-unlock screen. Fits "fun over narrative" better than an invented reward beat.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ECONOMY ============ -->
+  <section id="economy">
+    <div class="sec-head">
+      <p class="eyebrow">Resources</p>
+      <h2>Currency &amp; XP — two pools, not three</h2>
+      <p class="sec-intro">The instinct going in was three currencies (in-run money, meta money, in-run levels). It collapses cleanly into two, because in-run currency and meta-currency were already agreed to be the same pool, Dead Cells–style.</p>
+    </div>
+    <div class="glossary" style="margin-bottom:0;">
+      <div class="gterm"><dt>XP — in-run only, resets every attempt</dt><dd>Earned from kills. Spent on accessory picks and upgrades as you level. This is the deliberate answer to "why linger on a planet" — more kills, more XP, a stronger loadout for the next planet. Can be topped off with Currency at a deliberately bad conversion rate, as a smoothing tool for a sparse planet — not a competing strategy to actually fighting.</dd></div>
+      <div class="gterm"><dt>Currency — earned in-run, dual-purpose</dt><dd>Spendable at waystation shops mid-attempt (health, temporary boosts). Whatever's unspent when the attempt ends converts into the Ship's meta-currency — partial on death/timeout, full plus an Efficiency Bonus on a clean clear. One resource doing both the spend-now and hoard-for-later jobs on purpose, to keep that tension real.</dd></div>
+    </div>
+  </section>
+
+  <!-- ============ DECISION LOG ============ -->
+  <section id="decisions">
+    <div class="sec-head">
+      <p class="eyebrow">Reference — read before re-litigating</p>
+      <h2>Decision log</h2>
+      <p class="sec-intro">Each entry: what was decided, why, and how settled it is. <span style="color:var(--green)">Locked-in</span> = strongly converged on, low ambiguity left. <span style="color:var(--cyan)">Leaning</span> = the direction chosen, but implementation details still open. <span style="color:var(--amber)">Tentative</span> = raised and plausible, not stress-tested yet.</p>
+    </div>
+
+    <div class="decision"><div class="decision-num">01</div><div><h4>Solar systems are procedurally generated per-offer, not a fixed roster</h4><p class="why">A small fixed set of hand-built systems would mean some are just permanently worse, and repeat plays become memorization. <b>Fresh generation per offer means a bad draw is this attempt's luck, not a standing flaw.</b></p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">02</div><div><h4>Topology preview shows category, not contents</h4><p class="why">Planet count, difficulty tier, distance/time cost, flavor — never the actual terrain or enemy composition. <b>Keeps local discovery alive even with a map in front of you</b> (the FTL / Slay the Spire pattern, not the Mario-map pattern).</p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">03</div><div><h4>Local fog: current planet known, next known roughly, rest hidden</h4><p class="why">Full visibility kills tension; full mystery makes preparation impossible. <b>Knowing your immediate next stop lets you prepare without collapsing the "I don't fully know what's out there" feeling.</b></p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">04</div><div><h4>One attempt = one solar system, not a chain of systems</h4><p class="why">A marathon run chaining multiple 7–20-planet systems (plus 3 Plant systems) directly conflicts with the stated "fast paced" goal. <b>Keeping an attempt to a single system, bounded by the clock, is what makes fast and roguelite compatible at all.</b></p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">05</div><div><h4>Meta-progression model (Dead Cells / Hades pattern), not single-marathon-run model</h4><p class="why">NEW_VISION.md already says <i>roguelite</i>, not roguelike — permadeath plus persistent meta-progression is the more literal reading of the game's own stated pillar, not a compromise on it.</p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">06</div><div><h4>Single currency pool serves both in-run spending and meta-banking</h4><p class="why">Avoids inventing a third resource. <b>Creates a real spend-now-vs-hoard-for-later tension</b> instead of two disconnected economies.</p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">07</div><div><h4>XP is tied to kills, not to leaving a planet early</h4><p class="why">A free level-up (or cash bonus) for hopping immediately directly opposes kill-based XP — same decision point, opposite incentives, and whichever resource is worth more wins outright. <b>Kills-as-XP is the actual answer to "why would anyone linger."</b> The clock already rewards speed on its own; it doesn't need a second explicit payout stacked on top.</p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">08</div><div><h4>Per-planet time bonus is a flat threshold, not a continuous scale</h4><p class="why">A continuously-scaled "faster = more bonus" is mathematically identical to the leave-early bonus already rejected in Decision 07, just relabeled. <b>A flat par-time bonus (Dead Cells Timed Doors model)</b> is a discrete skill check with no race-to-zero, and doesn't re-create the same conflict.</p></div><span class="badge leaning">Leaning</span></div>
+
+    <div class="decision"><div class="decision-num">09</div><div><h4>Accessories split into Unique (finite) and Generic stat (unlimited) tiers</h4><p class="why">10 unique accessories can't sustain level-ups across a system that may run 20 planets deep — the pool runs dry around planet 10. <b>An unlimited, stackable generic tier (damage%, health%, etc.) keeps every level-up meaningful</b> without requiring dozens more unique accessory designs.</p></div><span class="badge leaning">Leaning</span></div>
+
+    <div class="decision"><div class="decision-num">10</div><div><h4>Shop is occasional, tied to waystation nodes, not every hop</h4><p class="why">A full shop screen on every single planet transition would invert "all combat, no filler" into a menu simulator with combat breaks. <b>Gating it to specific nodes visible on the topology map</b> turns "detour to shop or push to the sun" into a real map-driven decision instead of a universal interruption.</p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">11</div><div><h4>Accessory picks at hops stay fast and lightweight (3-choice, no menu)</h4><p class="why">Different cadence from the shop on purpose — this happens often and needs to stay a beat, not an interruption. <b>Vampire Survivors' level-up screen, not a browsing menu.</b></p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">12</div><div><h4>Unspent currency at a clean clear converts to an "Efficiency Bonus," win-only</h4><p class="why">Fixes a real problem — finishing a whole system with nothing to show for it is discouraging. Kept win-only (not on death/timeout) so a full clear reads as clearly better than a partial one. <b>Must stay tuned conservatively</b> — the bigger this bonus, the more it tells players to never use the shop at all, undercutting Decision 10.</p></div><span class="badge tentative">Tentative — size unset</span></div>
+
+    <div class="decision"><div class="decision-num">13</div><div><h4>Death and timeout still bank partial currency, not zero</h4><p class="why"><b>A failed attempt should still feel like forward motion</b>, not a wipe. Softens the sting of permadeath without weakening in-attempt stakes — you still lose the build and the run.</p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">14</div><div><h4>Plant-corrupted systems escalate across separate attempts, not within one</h4><p class="why">Chaining Plant-system clears inside a single sitting was the rejected marathon model. <b>Paced across attempts instead</b>, it keeps the "I need to progress toward this" motivation intact without violating the fast-paced, single-system-per-attempt structure.</p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">15</div><div><h4>Beating THE PLANT is additive (prestige), not a reset</h4><p class="why">Consistent with every other no-punish choice already made (partial banking on death, etc.) — a reset would be a different psychological contract with the player, introduced without a clear reason to want it.</p></div><span class="badge leaning">Leaning</span></div>
+
+    <div class="decision"><div class="decision-num">16</div><div><h4>THE PLANT's aftermath leans on existing lore, not a new unlock screen</h4><p class="why">COSMOS_LORE.md already states what happens: planets shift slightly, nothing is confirmed or explained. <b>Reusing that is more consistent with "fun over narrative" than inventing a story-reveal screen would be.</b></p></div><span class="badge locked">Locked-in</span></div>
+
+    <div class="decision"><div class="decision-num">17</div><div><h4>Meta-difficulty scaling reuses already-planned systems</h4><p class="why">EnemyHostility, EnvironmentHostility, TerrainDensity, Gravity, and the modifier framework (Low Gravity / Heavy Fog / Alien Surface) are already scoped in the engineering docs. <b>No new systems needed — just widen the ranges RunManager rolls from as meta-progress deepens.</b></p></div><span class="badge leaning">Leaning</span></div>
+
+    <div class="decision"><div class="decision-num">18</div><div><h4>Shortened clock time is a minor difficulty dial, not a primary one</h4><p class="why">Enemy density/hostility/environment scale <i>challenge</i>. A shorter clock mostly scales <i>stress</i>, which fights the "fast paced, fun" pillar past a certain point. <b>Lean on density/hostility/environment to carry most of the difficulty curve.</b></p></div><span class="badge tentative">Tentative</span></div>
+  </section>
+
+  <!-- ============ REJECTED ============ -->
+  <section id="rejected">
+    <div class="sec-head">
+      <p class="eyebrow">Do not re-propose without new information</p>
+      <h2>Rejected ideas</h2>
+      <p class="sec-intro">Each of these was considered directly in this session and set aside for a stated reason. Logged so a future pass doesn't re-litigate the same ground from scratch.</p>
+    </div>
+    <div class="rejected-list">
+      <div class="rejected-item"><span class="x">✕</span><div><b>Free level-up or cash bonus for leaving a planet the moment you cross the kill-threshold</b><span>Directly opposes kill-based XP (Decision 07) — rewards both directions of the same choice, so whichever payout is bigger wins and the other stops mattering.</span></div></div>
+      <div class="rejected-item"><span class="x">✕</span><div><b>Continuously-scaled "beat expected time by more, get more bonus"</b><span>Mathematically the same conflict as the leave-early bonus above, just relabeled as a speedrun split. Replaced with a flat threshold (Decision 08).</span></div></div>
+      <div class="rejected-item"><span class="x">✕</span><div><b>Marathon model: one run chains multiple full solar systems, including 3 Plant systems, before the final boss</b><span>Too long and high-dedication per sitting; conflicts with the stated "fast paced progression" goal. Replaced by one-system-per-attempt plus cross-attempt meta-progression (Decisions 04–05, 14).</span></div></div>
+      <div class="rejected-item"><span class="x">✕</span><div><b>Fully authored, fixed planet rosters (hand-built, no regeneration)</b><span>Would collapse replayability once the roster of ~10 planets is memorized. Procedural-per-offer generation preferred, optionally drawing from the curated biome-preset library that already exists.</span></div></div>
+      <div class="rejected-item"><span class="x">✕</span><div><b>Full-visibility topology map, no fog at all</b><span>Removes all in-run discovery once a system is entered. Local fog (Decision 03) keeps preparation and mystery both alive.</span></div></div>
+      <div class="rejected-item"><span class="x">✕</span><div><b>A new story-unlock screen for beating THE PLANT</b><span>COSMOS_LORE.md already specifies subtler aftermath — slightly shifted planets, nothing confirmed or explained. Inventing a reveal screen would fight "fun over narrative" rather than serve it.</span></div></div>
+    </div>
+  </section>
+
+  <!-- ============ OPEN QUESTIONS ============ -->
+  <section id="open">
+    <div class="sec-head">
+      <p class="eyebrow">Punch list</p>
+      <h2>Open questions</h2>
+      <p class="sec-intro">Everything below is agreed in direction but not in number, or flagged but not yet answered at all.</p>
+    </div>
+
+    <div class="oq-group">
+      <h4>Numbers &amp; thresholds still undefined</h4>
+      <ul class="oq-list">
+        <li><b>Per-planet kill-threshold</b> to unlock a hop — needs to be low enough that a player having fun clears it naturally, never a farming chore.</li>
+        <li><b>Clock duration baseline</b> — 10 minutes was the original working number, never validated.</li>
+        <li><b>"Severe disadvantage" for a forced-early sun fight</b> — needs a concrete mechanic (fewer accessories than a full run would give? a skipped-straight-to-hard boss phase? an environmental hazard tied to proximity to a sun?), not just the adjective.</li>
+        <li><b>Accessory-upgrade frequency</b> relative to system size — every hop? Every N planets? Scaled to system length?</li>
+        <li><b>How many Plant-corrupted systems is "enough"</b> to unlock Plant's own system.</li>
+        <li><b>Reroll cost</b> for rejecting a bad set of 3 system offers.</li>
+        <li><b>Efficiency Bonus size</b> — must stay modest; oversized and it silently kills the shop's spend-vs-hoard tension (Decision 12).</li>
+        <li><b>Par-time formula</b> — intended to derive from EnemyDensity and the kill-quota threshold rather than being hand-authored per planet, but the actual derivation isn't specified.</li>
+        <li><b>Generic-accessory stacking model</b> — additive or multiplicative; produces very different numbers by planet 15+.</li>
+        <li><b>Accessory pool weighting curve</b> — unique-weighted early (build identity forms fast) vs. generic-weighted late (uniques scarce by then) was suggested, not confirmed.</li>
+        <li><b>XP-topoff conversion rate</b> — must stay inefficient relative to actual combat XP, or it becomes a competing strategy to fighting rather than a smoothing tool.</li>
+      </ul>
+    </div>
+
+    <div class="oq-group">
+      <h4>Design questions not yet answered</h4>
+      <ul class="oq-list">
+        <li><b>Reward legibility.</b> With the Efficiency Bonus, par-time bonus, base kill economy, and XP-topoff spending all live at once, does a player still know <i>why</i> they got what they got in the moment — or does it blur into "numbers happened"?</li>
+        <li><b>Whether topology mood tags communicate directly</b> (e.g. a visible "short / brutal" vs "long / manageable" read on the offer itself) so choosing among the 3 offers <i>is</i> the input into run shape, rather than relying only on reroll as an escape hatch.</li>
+        <li><b>Win condition mapping.</b> Exploration / Survival / Combat (NEW_VISION.md) were never explicitly redefined against the clock-and-hop-threshold model — this mapping is still open.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ GLOSSARY ============ -->
+  <section id="glossary">
+    <div class="sec-head">
+      <p class="eyebrow">Reference</p>
+      <h2>Glossary</h2>
+    </div>
+    <div class="glossary">
+      <div class="gterm"><dt>Attempt</dt><dd>One playthrough of a single solar system, bounded by the shared clock. Ends in a win (sun destroyed), a death, or a timeout.</dd></div>
+      <div class="gterm"><dt>The Ship</dt><dd>Persistent hub between attempts. No combat here — where meta-currency gets spent on permanent unlocks.</dd></div>
+      <div class="gterm"><dt>Solar System</dt><dd>A procedurally generated topology of 7–20 planets arranged around a sun. The container for one attempt.</dd></div>
+      <div class="gterm"><dt>Topology Preview</dt><dd>The vague, pre-commitment view of a solar system's shape — planet count, rough difficulty, distance/time costs, flavor tags. Contents stay hidden.</dd></div>
+      <div class="gterm"><dt>Local Fog</dt><dd>Current planet known in full; next planet known roughly; everything beyond that hidden until reached.</dd></div>
+      <div class="gterm"><dt>Waystation Node</dt><dd>An occasional non-combat node hosting the shop. Visible on the topology; detouring to it costs clock time.</dd></div>
+      <div class="gterm"><dt>XP</dt><dd>In-run only resource, earned via kills, spent on accessory picks and upgrades. Resets every attempt.</dd></div>
+      <div class="gterm"><dt>Currency</dt><dd>Earned in-run, spendable at waystations, converts to meta-currency at attempt end — partial on death/timeout, full plus Efficiency Bonus on a clean win.</dd></div>
+      <div class="gterm"><dt>Unique Accessory</dt><dd>One of the ~10 named, build-defining accessories (Super Jump, Little Friend, etc.). Finite pool.</dd></div>
+      <div class="gterm"><dt>Generic / Stat Accessory</dt><dd>Percentage-based stat boosts (damage, health, etc.). Unlimited, stackable pool — solves late-system pool exhaustion.</dd></div>
+      <div class="gterm"><dt>Plant-Corrupted System</dt><dd>A harder-difficulty solar system variant that appears with increasing frequency as meta-progress deepens.</dd></div>
+      <div class="gterm"><dt>Plant's System / THE PLANT</dt><dd>The meta-progression's final unlock and final boss, gated behind clearing enough Plant-corrupted systems across separate attempts.</dd></div>
+      <div class="gterm"><dt>Sun</dt><dd>The per-attempt capstone objective. Destroying it clears the solar system.</dd></div>
+    </div>
+  </section>
+
+  <!-- ============ MAPPING ============ -->
+  <section id="mapping">
+    <div class="sec-head">
+      <p class="eyebrow">Continuity check</p>
+      <h2>How this maps onto what's already built or planned</h2>
+      <p class="sec-intro">Nothing here requires new foundational tech — it reframes systems already scoped in <code>generation_plan.md</code> and <code>TODO.md</code>.</p>
+    </div>
+    <table>
+      <tr><th>Existing system</th><th>Status today</th><th>Role in this structure</th></tr>
+      <tr><td class="strong">RunManager</td><td>Not built — biome+seed+modifier pipeline architected only</td><td>Extends to pick topology, planet sequence, and clock state per attempt, not just biome + seed</td></tr>
+      <tr><td class="strong">PlanetDescriptor / PlanetParams</td><td>Descriptor is a stub; Params built</td><td>EnemyDensity and the kill-quota threshold are the intended source for the par-time formula (see Open Questions)</td></tr>
+      <tr><td class="strong">BiomeDescriptor / Biome_Registry</td><td>9 hardcoded presets built (Moss Grotto, Dark Descent, The Virus, Lava Walls, etc.)</td><td>Already a small curated library — a natural seed source for individual planets within a generated system</td></tr>
+      <tr><td class="strong">RunManager modifier framework</td><td>Planned: Low Gravity, Heavy Fog, Alien Surface</td><td>The intended lever for meta-progression difficulty scaling (Decision 17) — no new modifiers required to start</td></tr>
+      <tr><td class="strong">Win conditions (Exploration / Survival / Combat)</td><td>Defined in NEW_VISION.md, not implemented</td><td>Not yet reconciled with the clock/hop-threshold model — flagged as an open question above</td></tr>
+      <tr><td class="strong">"10 planets need to be wiped out" (NEW_VISION.md)</td><td>Current stated scope</td><td>Superseded by the 7–20-planets-per-system, procedurally-generated model — NEW_VISION.md should be revised to match when this structure is finalized</td></tr>
+      <tr><td class="strong">Accessories (10 defined, 0 implemented)</td><td>All in NEW_VISION.md, none built</td><td>Becomes the "Unique" tier under Decision 09; a new Generic/stat tier needs to be designed alongside it</td></tr>
+    </table>
+  </section>
+
+  <footer>
+    <span>Antithesis Conquering Simulator — internal design log</span>
+    <span>Working document — cross-reference against NEW_VISION.md before treating any entry as final</span>
+  </footer>
+
+</div>
+</body>
+</html>

@@ -108,8 +108,9 @@ public partial class Player : Entity
 		{
 			if (Input.IsActionJustPressed("jump"))
 			{
-				RunManager.Instance?.EndRun();
-				GetTree().ChangeSceneToFile("res://Scenes/MainMenu.tscn");
+				// Dying forfeits the whole attempt, and every ending returns to the ship.
+				// ReturnToShip owns the scene change.
+				RunManager.Instance?.ReturnToShip();
 			}
 			return;
 		}

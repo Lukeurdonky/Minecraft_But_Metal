@@ -109,16 +109,97 @@
 - [ ] `FeatureStage` biome features — modular self-contained feature classes (`VineFeature`, `SpikeFeature`, `PillarFeature`, `GlowVeinFeature`, etc.); `BiomeDescriptor` holds a feature list; `FeatureStage` iterates and places. Each feature has `Place(chunkData, chunkPos, rng, density)`.
 - [ ] Wire `World_Generator.cs` into `Chunk_Manager` (shrink `create_chunk_data` as each stage absorbs its piece)
 - [ ] Surface block palette on `BiomeDescriptor` — replace single `SurfaceBlock` with a small list (2–3 natural candidates per biome); `MakePlanetParams` picks one via seed
-- [ ] Atlas expansion — `atlas_width`/`atlas_height` in `Block_Registry.cs` must be resized before any new blocks can be added (currently full at 16/16 slots)
+- [x] Atlas expansion — grew to 12×16 cells on 2026-08-04, i.e. 32 block slots. **25 used (ids 1–25), 7 free.** New art must go *below* the existing rows or every UV in the game shifts.
+- [x] Blocks 21–25 (2026-08-05): EmptyCrate, GreenEnergy, Plate, Glass, Frame — atlas indices 20–24 (index is always `Id - 1`; Air owns no art).
+
+### Block transparency (2026-08-05)
+
+- [x] `Block_Definition.Transparent` / `.Alpha` + `Block_Registry.TransparentById` flat lookup. Render-only — transparent blocks stay fully solid to collision, grapple, explosions and damage.
+- [x] `Chunk_Manager.FaceVisible` — opaque neighbours hide everything; transparent neighbours hide only an identical block type. Verified numerically in all four directions (glass shell = 96 faces, stone encased in glass keeps all 6 faces, glass|glass culls the seam, glass|frame draws both).
+- [x] Two-surface chunk meshes (opaque + alpha) with per-surface materials via `SurfaceSetMaterial`; transparent surface skipped when a chunk has no glass, so plain terrain is unchanged (measured: 583 chunk meshes → 583 surfaces, 60 fps).
+- [x] `Materials/block_texture_atlas_transparent.tres` (`ALPHA_DEPTH_PRE_PASS` + vertex-colour albedo), wired as `TransparentMat` on `CubeLand.tscn` and `StructureBuilder.tscn`.
+- [x] `IsFullySolid` now means fully *opaque* — a chunk of glass no longer takes the invisible solid fast-path, and placing glass into a solid chunk clears the flag.
+- [ ] Damage overlays on transparent blocks render an opaque crack box. Works and doesn't error, just looks odd on glass — needs an alpha variant of `damageOverlayMaterial` if it ever matters.
+- [ ] Mipmaps are on for the atlas; at distance, alpha can bleed between neighbouring atlas cells and soften Frame's cut-out holes. Not observed as a problem yet — fix by padding the atlas or disabling mipmaps if it shows up.
+- [ ] Per-triangle sorting within the transparent surface is not done (Godot sorts per object). `ALPHA_DEPTH_PRE_PASS` hides this for the current art; deeply stacked translucent volumes could still show ordering artifacts.
 - [ ] Enemy type tags on `BiomeDescriptor` — list of enemy archetypes valid for this biome; wired to `EnemySpawner` once enemy variety designs exist (deferred)
 - [ ] Finite planet-shaped world (not infinite flat terrain)
 - [ ] Underground depth zones (Underground Forest −10 to −300, Purple Crystal −310 to −600)
+
+### Structures (2026-08-05)
+
+- [x] `Scripts/The World/Structure.cs` — `Resource` holding a tight voxel box (`Size`, `Anchor`, `Voxels`), indexed the same way `Chunk_Manager` indexes a chunk. Two write paths: `Stamp()` into a live world via `place_block`, and `StampIntoChunk()` straight into a raw chunk `byte[]` — the latter is the seam `FeatureStage` will use, since a generation worker has no `Chunk_Manager` to talk to.
+- [x] `Scripts/Datasets/Structure_Registry.cs` (autoload) — file-backed registry over `res://Structures/*.tres` (falls back to `user://Structures` in an exported build, where `res://` is read-only). `Get(name)` / `StampByName()` for gameplay; `CaptureAndSave()` / `LoadIntoBuildVolume()` / `ClearVolume()` for the builder. Capture trims empty margins, so an 8-block hut saved out of a 32³ volume is 8 blocks.
+- [x] `Scenes/StructureBuilder.tscn` + `StructureBuilder.gd` + `BuilderCamera.gd` — offline authoring tool, reachable from the "Builder" button on `MainMenu.tscn`. Runs the real `Chunk_Manager` on a flat featureless plate (`noise_scale`/`height_amp` = 0), noclip flycam, DDA block targeting, cyan wireframe cage marking exactly what Save captures. Not part of the run — never touches `RunManager` (`_stageActive` is false outside a planet, so its `_Process` poll stays inert).
+- [x] `Global.StreamingAnchor` — chunk streaming follows this `Node3D` when there's no `Player`. `Player` still wins when both exist; gameplay scenes never set it.
+- [ ] `FeatureStage` consumes structures — biome-driven scatter using `StampIntoChunk` for every chunk a structure's box overlaps. Needs a placement rule (surface-snap? density?) before it's worth building.
+- [ ] Anchor is bottom-centre on capture and only editable in the Inspector afterwards — an in-builder anchor marker would be better once structures need precise docking points.
+- [ ] Structures are stamped additively (`clearAir = false`) by default; anything with an interior needs `clearAir = true` so the hillside it lands in doesn't fill the rooms.
+- [x] `Structure_Registry.CaptureAndSave` uses `TakeOverPath`, not `ResourcePath = path` — re-saving a structure leaves an older instance of it in the resource cache, and assigning the path directly errors with "Another resource is loaded from path" (the write still lands, but the cache keeps handing back the stale copy).
+
+### Ship hub (2026-08-06)
+
+- [x] `Scenes/Ship.tscn` + `Scripts/Handlers/Ship.gd` — between-runs hub. `RunManager.StartNewRun()` now lands here instead of `SolarSelect`; offers are rolled on the way in so they don't reshuffle each time you walk up to the console and back out.
+- [x] The ship is the `"Ship"` structure stamped into an empty world, not modelled geometry — it collides/meshes/lights exactly like terrain, and editing it means rebuilding it in the builder.
+- [x] `PlanetParams.VoidWorld` (config key `void_world`) — `create_chunk_data` returns the zeroed array immediately. No terrain at any altitude; all-air chunks build no mesh, so a void world is cheaper than any planet.
+- [x] `Chunk_Manager.is_chunk_ready(worldPos)` — chunks are created on a timer in `_Process` and `set_block` silently no-ops on a missing chunk, so a stamp from `_ready()` writes nothing. Callers poll this over the footprint (`Structure_Registry.GetStampBounds`) rather than guessing a frame count. `get_block` can't answer it: 0 means both "no chunk" and "air".
+- [x] `SolarSelect.gd` gained `overlay_mode` (mirrors `SolarMap.gd`) — pauses the tree, relabels BACK to "BACK TO SHIP", closes on Esc, emits `select_closed`. Committing unpauses before `ChooseSystem`, since `paused` is a tree flag that would otherwise freeze `SolarMap`.
+- [x] `interact` action bound to E.
+- [ ] Mission control is the only interactable. A second interaction point would justify a small trigger-volume system instead of the current distance test.
+
+### Run entry/exit through the ship (2026-08-06)
+
+- [x] `RunManager.ReturnToShip()` — the single exit from an attempt. Abandoning (`SolarMap`), finishing (`LoadingScreen`'s end-of-run Return), backing out of full-screen `SolarSelect`, `PlanetSelect` (shelved) and dying (`Player`'s death-restart) all route through it. `StartNewRun()` is an alias: starting and ending a run are the same event.
+- [x] Rolls fresh offers on the way in, so a finished attempt is never re-offered the system it just played; forces `Paused = false` since `paused` is a tree flag that survives a scene change and the overlays set it.
+- [x] Only remaining exit to `MainMenu.tscn` is the structure builder's quit — correct, it's a dev tool, not a run.
+- [x] Verified live: MainMenu → Ship → SolarMap → **abandon** → Ship (254 blocks, console found, offers reshuffled); LoadingScreen → **Return** → Ship; CubeLand → **death** → jump → Ship with run state cleared. Whole session's log info-only, 60 fps.
+- [x] **Latent bug fixed:** `Global.Player` now validates on read via `IsInstanceValid`. A freed Player leaves a non-null C# wrapper around a disposed object, so `Player != null` passed and the next access threw `ObjectDisposedException`. Harmless while every run ended at MainMenu; the moment ship → planet → ship became possible it broke chunk streaming on the return (streaming reads `GetPlayerPos()` while the field still points at the previous scene's corpse) and the ship silently failed to stamp.
+- [ ] Death drops straight to the ship with no run summary — no score, no "you died on planet 4". The end-of-run panel in `LoadingScreen` is the natural place for that once there's anything to report.
+
+### Terrain destruction toggle (2026-08-06)
+
+- [x] `[Export] Chunk_Manager.TerrainDestructible` (default true), set false on `Ship.tscn`'s Game node. Universal per-scene switch: gates `break_block` (the choke point every destruction path ends at) plus `explode`, `damage_block` and `damage_check` so blocks don't accumulate cracks while never breaking. Verified in the hub: break/damage_check/damage_block/an 8-radius explode all left the ship untouched.
+- [x] Gated at `Chunk_Manager` rather than by disabling player abilities — destruction comes from jackhammer, laser tunnel, ram-into-block, the explode key, Super Slam and Explosive Bounce, and disabling one leaves the rest live.
+- [x] Blocks destruction only; `set_block`/`place_block` stay open so `Structure.Stamp` can still build the ship.
+- [ ] **Key collision:** `interactions.gd` uses raw keycode 69 (E) as an alternate explode trigger, the same key `interact` is bound to. Harmless in the hub (destruction off) but they collide in any destructible scene — rebind one.
+- [ ] Enemies/projectiles aren't considered by the flag; nothing spawns them in the hub today, but a scene wanting "no destruction" *and* combat would need the enemy damage paths checked too.
+
+### Marker blocks (2026-08-06)
+
+- [x] Block ids 26–30 = `Marker1`..`Marker5` (atlas indices 25–29). **Atlas now 30/32 used, 2 free.** Ordinary placeable blocks in the builder; `Block_Definition.IsMarker` mirrored into `Block_Registry.MarkerById[]` (same convention as `TransparentById`).
+- [x] `Structure.Stamp` / `StampIntoChunk` skip markers — they exist while authoring and never in a live world. `create_chunk_data` never emits them, so a gameplay world can't contain one.
+- [x] Markers stay in the saved `Voxels` rather than being stripped at capture, so a builder Load → edit → Save round-trip preserves them. Verified: re-saving after a load kept Marker1.
+- [x] `Structure.FindMarkers(number, worldPos)` + `Structure_Registry.GetMarkers(name, number, worldPos)` — world positions for a stamp that put `Anchor` on `worldPos`. Empty for a missing structure or marker.
+- [x] `Ship.gd` locates mission control via Marker1 (`console_marker` export) instead of a hand-written offset. No fallback position: a missing marker shows an on-screen error and leaves the console disabled.
+- [x] `Ship.tres` carries a Marker1 at structure-local height 2 above the floor; verified the stamped world contains **zero** marker blocks and the marker's cell reads as air.
+- [x] `Ship.gd`'s `console_visual` is an exported `Node3D` — drag any node in (currently `Assets/Console.glb` with a green `OmniLight3D` child). Script hides it on load and moves it onto the marker, so its authored scene position doesn't matter. Typed `Node3D`, not `NodePath`, because that's what gives the Inspector a drag-and-drop slot.
+- [ ] **Atlas art for Marker1–5** (indices 25–29) — check they're painted; a marker with blank art is invisible in the builder and effectively unplaceable.
+- [ ] A marker replaces the block in its cell and the stamp skips it, so one buried in a wall leaves a hole. Place them in air.
+- [ ] The console model is centred on the marker cell, so a `.glb` whose pivot isn't at its base floats or sinks. Currently corrected by moving the marker block; a `console_visual_offset` export would fix it at the pivot instead if that gets fiddly.
+- [ ] Nothing in the hub reflects run state yet — no crew, no upgrades, no record of previous attempts. The waystation/shop work is the natural place for that to land.
+- [ ] The player carries its full combat HUD (kill counter, run clock, health bars) into the hub, where none of it means anything.
+- [x] Spawn is `SHIP_ORIGIN.y + SPAWN_HEIGHT` (2). Measured: the player's resting origin on the deck is y≈10 with the floor block at y=8 — the old `+1` was spawning them *inside* the floor block, since manual AABB collision doesn't push a body out of geometry it starts in.
 
 ---
 
 ## Run Structure
 
-> Demo scope is confirmed as a linear 3-planet-stage run followed by a boss (Inscryption-style funnel, not the full ~10-planet vision). See `../design/NEW_VISION.md` and the "Game Loop" note below.
+> **Superseded 2026-08-04.** The linear 3-planet-stage demo is replaced by the solar-system model in `../design/solar-system-run-structure-design-log.html`: one attempt = one procedurally generated solar system of 5–20 planets plus waystations, ending at the sun. `RunManager.TotalStages`/`StageKillTargets` are gone — run length is whatever the generated node list says. See the Solar System block below.
+
+### Solar system run structure (2026-08-04)
+
+- [x] `Scripts/Datasets/SolarSystemDescriptor.cs` — seeded generator + data model. `SystemNodeKind` (Planet/Waystation/Sun), `SystemNodeState` (Locked/Current/Cleared), `SystemNodeFog` (Known/Rough/Hidden). `Tiers` table: Easy 5–7 planets / 1 waystation, Medium 10–12 / 2, Hard 16–20 / 3. Waystations spaced evenly through the planet sequence, so a single one lands mid-system. Biomes drawn without replacement from a bag that refills (a 20-planet system needs more than the 9 registered biomes). Same seed always rebuilds the same system, which is what lets SolarSelect preview a real topology.
+- [x] `Scenes/SolarSelect.tscn` + `SolarSelect.gd` — first screen of an attempt. The three art sheets (`Sprites/solar select easy|medium|hard.png`) are each full 1920x1080 layers, transparent outside their own vertical third (measured: 0–644 / 645–1284 / 1285–1919), so they stack into one composed screen. Idle `modulate` 0.6314 grey, hovered tweens to `(1,1,1)`. Preview shows planet count, waystations, clock and modifiers — never biomes or enemy composition (Decision 02).
+- [x] `Scenes/SolarMap.tscn` + `SolarMap.gd` — the topology map, one scene used two ways: `MODE_ROUTE` (full screen after committing, ends in LAUNCH) and overlay (`overlay_mode = true`, instanced over CubeLand on the `toggle_map` action / **M**, pauses the tree). Fixed 250px node pitch means the rail *scrolls* rather than compressing — a 24-node Hard system is a 6190px track at the same node scale as a 9-node Easy one. Drag, wheel and A/D all pan; RECENTER snaps to the current node. Per-node state signifiers: CLEARED / YOU ARE HERE / fogged.
+- [x] Local fog (Decision 03) — `RunManager.FogFor()`. Current + cleared nodes Known (biome and kill target visible), next node Rough (terrain family and difficulty band only, biome blanked server-side so the UI never receives it), rest Hidden. The sun stays Rough from the start since it's the stated objective.
+- [x] Shared clock — `RunManager.ClockRemaining`, ticks only while a node is actually being played, so it doesn't drain behind the map overlay or the accessory pick. Easy 8:00 / Medium 13:00 / Hard 18:00, all **untuned placeholders**.
+- [ ] Waystation shop — waystation nodes are currently auto-skipped (marked Cleared and stepped over) by `RunManager.SkipWaystation()` and the loop in `CompleteStage()`. That's the one place to change when the shop exists.
+- [ ] Timeout behaviour — clock expiry sets `ClockExpired` and surfaces on the map, but nothing is forced. The design log leaves the "forced-early sun fight at a defined disadvantage" mechanic as an open question.
+- [ ] Real sun encounter — `LaunchCurrentNode()` currently plays the sun as a final planet on the Lava Walls biome with a doubled kill target (`PickSunBiome()`).
+- [ ] Feed `EnemyDensityScale` / `Modifiers` into actual generation — both are carried through the descriptor and shown in the UI, but nothing consumes them yet.
+- [ ] Currency / XP / Efficiency Bonus — reserved, labelled slots exist in `SolarMap.tscn`'s footer showing placeholder values.
+
+### Earlier (3-stage demo — historical)
 
 - [x] Debug planet config menu (F3) — interim stand-in for manual planet configuration; still used for ad-hoc testing, no longer the only way to start a planet
 - [x] `MainMenu.tscn` + `MainMenu.gd` — new `run/main_scene` (previously booted directly into `CubeLand.tscn`, no menu existed). "New Run" calls `RunManager.StartNewRun()`; "Quit".

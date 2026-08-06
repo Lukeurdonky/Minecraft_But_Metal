@@ -11,7 +11,26 @@ public partial class Global : Node
 
 	public static Global Instance { get; private set; }
 
-	public Player Player      { get; set; }
+	private Player _player;
+
+	// Reads as null once the Player has been freed, which a scene change does without anyone
+	// clearing this. In C# the wrapper outlives the native node as a NON-null reference to a
+	// disposed object, so `Player != null` passes and the very next member access throws
+	// ObjectDisposedException. Every consumer already guards with `!= null`; validating here
+	// makes that guard mean what it looks like it means, at the one place they all go through.
+	//
+	// This bites specifically when two scenes with a Chunk_Manager run back-to-back (ship ->
+	// planet -> ship): chunk streaming reads GetPlayerPos() on the new scene's first frames,
+	// while this still points at the previous scene's corpse.
+	public Player Player
+	{
+		get
+		{
+			if (_player != null && !IsInstanceValid(_player)) _player = null;
+			return _player;
+		}
+		set => _player = value;
+	}
 	public int    EnemyCount  { get; set; } = 0;
 	public int    KillCount   { get; set; } = 0;
 	public float  RunTimer    { get; set; } = 0f;
@@ -58,6 +77,7 @@ public partial class Global : Node
 		var p = new PlanetParams();
 		if (config.ContainsKey("biome"))           p.Biome           = config["biome"].AsString();
 		if (config.ContainsKey("template"))        p.Template        = config["template"].AsString();
+		if (config.ContainsKey("void_world"))        p.VoidWorld       = config["void_world"].AsBool();
 		if (config.ContainsKey("fill_solid"))       p.FillSolid       = config["fill_solid"].AsBool();
 		if (config.ContainsKey("surface_block"))    p.SurfaceBlock    = (byte)config["surface_block"].AsInt32();
 		if (config.ContainsKey("noise_scale"))      p.NoiseScale      = config["noise_scale"].AsSingle();
@@ -210,10 +230,20 @@ public partial class Global : Node
 		if (Player != null)     RunTimer      += dt;
 	}
 
+	// Chunk streaming only ever needs "where is the camera", not a Player. The structure
+	// builder has no Player at all, so it registers its flycam here instead. Player always
+	// wins when both exist — gameplay scenes never set this.
+	public Node3D StreamingAnchor { get; set; }
+
 	public Vector3 GetPlayerPos()
 	{
 		if (Player == null)
 		{
+			if (StreamingAnchor != null && IsInstanceValid(StreamingAnchor))
+			{
+				_prevPos = StreamingAnchor.GlobalTransform.Origin;
+				return _prevPos;
+			}
 			GD.Print("NO PLAYER");
 			return _prevPos;
 		}

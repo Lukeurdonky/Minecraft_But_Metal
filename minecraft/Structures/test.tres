@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="Structure" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/The World/Structure.cs" id="1_yvjm0"]
+
+[resource]
+script = ExtResource("1_yvjm0")
+Name = "test"
+Size = Vector3i(2, 2, 2)
+Anchor = Vector3i(1, 0, 1)
+Voxels = PackedByteArray(25, 25, 25, 25, 25, 25, 25, 25)

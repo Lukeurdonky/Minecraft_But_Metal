@@ -32,7 +32,28 @@ public partial class Chunk_Manager : Node
 	private ConcurrentDictionary<Vector3I, byte> loadingQueue = new();
 
 	[Export] public Material Mat;
+
+	// Alpha-blended sibling of Mat, used for the transparent surface of every chunk mesh.
+	// Left unassigned, transparent blocks fall back to Mat and simply render opaque — a
+	// visibly wrong but non-crashing degradation, which is what a scene that forgot to wire
+	// it should do.
+	[Export] public Material TransparentMat;
+
 	[Export] public int RenderDistance = 5;
+
+	// Whether a face between `self` and `neighbor` gets drawn.
+	//
+	// Opaque neighbours hide everything behind them, as before. A transparent neighbour hides
+	// nothing except an identical block type — so a solid pane of glass doesn't waste geometry
+	// (and overdraw) on its own internal seams, while glass against frame still draws both,
+	// and stone behind glass is correctly visible through it.
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private static bool FaceVisible(byte self, byte neighbor)
+	{
+		if (neighbor == 0) return true;
+		if (!Block_Registry.TransparentById[neighbor]) return false;
+		return self != neighbor;
+	}
 	public enum RenderMode
 	{
 		Cylinder,
@@ -211,32 +232,221 @@ public partial class Chunk_Manager : Node
 	// Large Object Heap threshold (85 KB), so allocating them per-build churns the LOH and
 	// causes steadily-worsening frame times as you travel. ThreadStatic keeps each mesh
 	// thread's buffers private, so no locking is needed.
-	[ThreadStatic] private static float[] _tlVerts;
-	[ThreadStatic] private static float[] _tlNormals;
-	[ThreadStatic] private static float[] _tlUvs;
-	[ThreadStatic] private static int[]   _tlIndices;
-	[ThreadStatic] private static byte[]  _tlVoxels;
+	//
+	// One scratch per render pass: a chunk is meshed into an opaque surface and (only when it
+	// actually contains transparent blocks) an alpha-blended one. The transparent scratch
+	// starts small — most chunks have no glass at all — and grows on demand like the opaque one.
+	private sealed class MeshScratch
+	{
+		public float[] Verts;
+		public float[] Normals;
+		public float[] Uvs;
+		public float[] Colors;   // null on the opaque scratch — it needs no vertex colours
+		public int[]   Indices;
+
+		public int VertFloats;   // 3 per vertex
+		public int UvFloats;     // 2 per vertex
+		public int ColorFloats;  // 4 per vertex
+		public int IndexCount;
+
+		public MeshScratch(int vertexCapacity, bool withColors)
+		{
+			Verts   = new float[vertexCapacity * 3];
+			Normals = new float[vertexCapacity * 3];
+			Uvs     = new float[vertexCapacity * 2];
+			Indices = new int[vertexCapacity * 3 / 2];
+			if (withColors) Colors = new float[vertexCapacity * 4];
+		}
+
+		public void Reset()
+		{
+			VertFloats = 0;
+			UvFloats   = 0;
+			ColorFloats = 0;
+			IndexCount = 0;
+		}
+
+		// Rare: a chunk exceeds the pre-sized scratch. Grow and keep the larger buffer — the
+		// instance is thread-static, so the growth persists into every later build too.
+		private void EnsureRoom()
+		{
+			if (VertFloats + 12 > Verts.Length)
+			{
+				Array.Resize(ref Verts,   Verts.Length   * 2);
+				Array.Resize(ref Normals, Normals.Length * 2);
+			}
+			if (UvFloats + 8 > Uvs.Length)
+				Array.Resize(ref Uvs, Uvs.Length * 2);
+			if (Colors != null && ColorFloats + 16 > Colors.Length)
+				Array.Resize(ref Colors, Colors.Length * 2);
+			if (IndexCount + 6 > Indices.Length)
+				Array.Resize(ref Indices, Indices.Length * 2);
+		}
+
+		public void AddFace(Block_Model model, int face, float fx, float fy, float fz, Vector2[] faceUv, float alpha)
+		{
+			EnsureRoom();
+
+			int baseVertex = VertFloats / 3;
+			int vertStart  = face * 4;
+
+			for (int i = 0; i < 4; i++)
+			{
+				Vector3 vert = model.Vertices[vertStart + i];
+				Vector3 norm = model.Normals[vertStart + i];
+
+				Verts[VertFloats]     = vert.X + fx;
+				Verts[VertFloats + 1] = vert.Y + fy;
+				Verts[VertFloats + 2] = vert.Z + fz;
+
+				Normals[VertFloats]     = norm.X;
+				Normals[VertFloats + 1] = norm.Y;
+				Normals[VertFloats + 2] = norm.Z;
+
+				VertFloats += 3;
+
+				Uvs[UvFloats++] = faceUv[i].X;
+				Uvs[UvFloats++] = faceUv[i].Y;
+
+				if (Colors != null)
+				{
+					// White tint; only alpha carries information. StandardMaterial3D's
+					// vertex_color_use_as_albedo multiplies this onto the atlas sample, so
+					// rgb must be 1 or the block's art gets darkened.
+					Colors[ColorFloats++] = 1f;
+					Colors[ColorFloats++] = 1f;
+					Colors[ColorFloats++] = 1f;
+					Colors[ColorFloats++] = alpha;
+				}
+			}
+
+			int indicesStart = face * 6;
+			for (int i = 0; i < 6; i++)
+				Indices[IndexCount++] = baseVertex + (model.Indices[indicesStart + i] - vertStart);
+		}
+	}
+
+	[ThreadStatic] private static MeshScratch _tlOpaque;
+	[ThreadStatic] private static MeshScratch _tlTransparent;
+	[ThreadStatic] private static byte[]      _tlVoxels;
 
 	private static readonly ArrayPool<Vector3> Vector3Pool = ArrayPool<Vector3>.Shared;
 	private static readonly ArrayPool<Vector2> Vector2Pool = ArrayPool<Vector2>.Shared;
 	private static readonly ArrayPool<int> IntPool = ArrayPool<int>.Shared;
 	private static readonly ArrayPool<byte> BytePool = ArrayPool<byte>.Shared;
 
-	public class MeshBuffers
+	// One finished render surface, ready for AddSurfaceFromArrays. Arrays must be exactly
+	// sized — Godot reads their full length — which is what TakeExact enforces.
+	private class SurfaceBuffers
 	{
 		public Vector3[] Vertices;
 		public Vector3[] Normals;
 		public Vector2[] UVs;
-		public int[] Indices;
+		public Color[]   Colors;   // transparent surface only; null on the opaque one
+		public int[]     Indices;
 		// Self-contained counts so promotion never depends on out-of-band CallDeferred args.
-		// VertexCount == 0 marks an empty/solid chunk (no mesh — just mark loaded).
 		public int VertexCount;
 		public int UvCount;
 		public int IndexCount;
 		public bool VerticesFromPool;
 		public bool NormalsFromPool;
 		public bool UVsFromPool;
+		public bool ColorsFromPool;
 		public bool IndicesFromPool;
+
+		public bool IsEmpty => VertexCount == 0 || IndexCount == 0;
+
+		// Flat scratch floats -> typed exact-length arrays.
+		public void FillFrom(MeshScratch s)
+		{
+			VertexCount = s.VertFloats / 3;
+			UvCount     = s.UvFloats / 2;
+			IndexCount  = s.IndexCount;
+			if (IsEmpty)
+			{
+				// Counts already tell promotion to skip this surface; leave the arrays null
+				// so Release() has nothing to hand back.
+				VertexCount = 0;
+				IndexCount  = 0;
+				return;
+			}
+
+			Vector3[] rv = ArrayPool<Vector3>.Shared.Rent(VertexCount);
+			Vector3[] rn = ArrayPool<Vector3>.Shared.Rent(VertexCount);
+			Vector2[] ru = ArrayPool<Vector2>.Shared.Rent(UvCount);
+			int[]     ri = ArrayPool<int>.Shared.Rent(IndexCount);
+
+			for (int i = 0; i < VertexCount; i++)
+			{
+				int k = i * 3;
+				rv[i] = new Vector3(s.Verts[k],   s.Verts[k + 1],   s.Verts[k + 2]);
+				rn[i] = new Vector3(s.Normals[k], s.Normals[k + 1], s.Normals[k + 2]);
+			}
+			for (int i = 0; i < UvCount; i++)
+			{
+				int k = i * 2;
+				ru[i] = new Vector2(s.Uvs[k], s.Uvs[k + 1]);
+			}
+			Array.Copy(s.Indices, ri, IndexCount);
+
+			Vertices = TakeExact(rv, VertexCount, out VerticesFromPool);
+			Normals  = TakeExact(rn, VertexCount, out NormalsFromPool);
+			UVs      = TakeExact(ru, UvCount,     out UVsFromPool);
+			Indices  = TakeExact(ri, IndexCount,  out IndicesFromPool);
+
+			if (s.Colors != null)
+			{
+				Color[] rc = ArrayPool<Color>.Shared.Rent(VertexCount);
+				for (int i = 0; i < VertexCount; i++)
+				{
+					int k = i * 4;
+					rc[i] = new Color(s.Colors[k], s.Colors[k + 1], s.Colors[k + 2], s.Colors[k + 3]);
+				}
+				Colors = TakeExact(rc, VertexCount, out ColorsFromPool);
+			}
+		}
+
+		// The pool hands back a bucket-sized array, which is only usable directly when it
+		// happens to match the exact count; otherwise copy out and return the rental.
+		private static T[] TakeExact<T>(T[] rented, int count, out bool fromPool)
+		{
+			if (rented.Length == count)
+			{
+				fromPool = true;
+				return rented;
+			}
+			var exact = new T[count];
+			Array.Copy(rented, exact, count);
+			ArrayPool<T>.Shared.Return(rented, clearArray: true);
+			fromPool = false;
+			return exact;
+		}
+
+		public void Release()
+		{
+			if (VerticesFromPool && Vertices != null) ArrayPool<Vector3>.Shared.Return(Vertices, clearArray: true);
+			if (NormalsFromPool  && Normals  != null) ArrayPool<Vector3>.Shared.Return(Normals,  clearArray: true);
+			if (UVsFromPool      && UVs      != null) ArrayPool<Vector2>.Shared.Return(UVs,      clearArray: true);
+			if (ColorsFromPool   && Colors   != null) ArrayPool<Color>.Shared.Return(Colors,     clearArray: true);
+			if (IndicesFromPool  && Indices  != null) ArrayPool<int>.Shared.Return(Indices,      clearArray: true);
+			Vertices = null; Normals = null; UVs = null; Colors = null; Indices = null;
+			VerticesFromPool = NormalsFromPool = UVsFromPool = ColorsFromPool = IndicesFromPool = false;
+		}
+	}
+
+	private class MeshBuffers
+	{
+		public readonly SurfaceBuffers Opaque      = new SurfaceBuffers();
+		public readonly SurfaceBuffers Transparent = new SurfaceBuffers();
+
+		// Both surfaces empty marks an empty/solid chunk (no mesh — just mark loaded).
+		public bool IsEmpty => Opaque.IsEmpty && Transparent.IsEmpty;
+
+		public void Release()
+		{
+			Opaque.Release();
+			Transparent.Release();
+		}
 	}
 
 	// Diagnostic: toggle to hide all damage overlays at runtime. Lets us A/B test whether the
@@ -244,6 +454,19 @@ public partial class Chunk_Manager : Node
 	// chunk geometry itself.
 	[Export] public bool ShowDamageOverlays = false;
 	private bool _lastShowDamageOverlays = false;
+
+	// Per-world switch for player destruction. False makes terrain indestructible: the ship hub
+	// is a set, not a level, and letting the player jackhammer a hole in the floor would drop
+	// them into an infinite void with no way back.
+	//
+	// Gated at the Chunk_Manager rather than by disabling the player's abilities, because
+	// destruction arrives from a lot of directions — jackhammer, laser tunnel, ram-into-block,
+	// the explode key, Super Slam and Explosive Bounce — and they all funnel through here.
+	// Turning off one ability would leave the others working.
+	//
+	// This blocks *destruction* only. set_block/place_block stay open, or Structure.Stamp
+	// couldn't build the ship in the first place.
+	[Export] public bool TerrainDestructible = true;
 
 	// pending buffers passed from worker threads to main thread, keyed by chunk position
 	private ConcurrentDictionary<Vector3I, MeshBuffers> pendingBuffers = new ConcurrentDictionary<Vector3I, MeshBuffers>();
@@ -324,7 +547,7 @@ public partial class Chunk_Manager : Node
 				continue;
 			}
 			// Empty/solid promotions are ~free; only real mesh builds are throttled.
-			bool expensive = pb.VertexCount != 0 && pb.IndexCount != 0;
+			bool expensive = !pb.IsEmpty;
 			if (expensive && _promotionsThisFrame > 0)
 			{
 				// Stop once this frame's time budget (or the safety ceiling) is spent.
@@ -719,12 +942,21 @@ public partial class Chunk_Manager : Node
 		// Single pass tracking both uniformity flags. Break early only once the chunk is
 		// confirmed mixed (saw both a solid and an air block) — the common, expensive case
 		// still exits fast. A uniformly-solid or uniformly-air chunk runs the full scan.
+		//
+		// IsFullySolid means fully *opaque*, not merely non-air: it drives two skips (this
+		// chunk builds no mesh, and adjacent_chunks_solid lets neighbours skip too), both of
+		// which would wrongly erase geometry for a chunk made of glass.
 		bool isFullySolid = true;
 		bool isAllAir = true;
 		for (int i = 0; i < data.Length; i++)
 		{
-			if (data[i] == 0) isFullySolid = false;
-			else              isAllAir = false;
+			byte id = data[i];
+			if (id == 0) isFullySolid = false;
+			else
+			{
+				isAllAir = false;
+				if (Block_Registry.TransparentById[id]) isFullySolid = false;
+			}
 			if (!isFullySolid && !isAllAir) break;
 		}
 
@@ -764,20 +996,18 @@ public partial class Chunk_Manager : Node
 		if ((chunk.IsFullySolid && adjacent_chunks_solid(position)) || chunk.IsAllAir)
 			{
 				// Empty/solid chunk — no mesh. Queue an empty marker for promotion.
-				pendingBuffers[position] = new MeshBuffers { VertexCount = 0 };
+				pendingBuffers[position] = new MeshBuffers();
 				_readyToPromote.Enqueue(position);
 				return;
 			}
 
-		int vertexCount = 0;
-		int uvCount = 0;
-		int indexCount = 0;
-
 		// Reuse this thread's scratch buffers (see field declarations) — never allocate per build.
-		float[] meshVerticesFlat = _tlVerts   ??= new float[8192 * 3];
-		float[] meshNormalsFlat  = _tlNormals ??= new float[8192 * 3];
-		float[] meshUvsFlat      = _tlUvs     ??= new float[8192 * 2];
-		int[]   meshIndicesArray = _tlIndices ??= new int[12288];
+		// The transparent scratch starts far smaller: most chunks contain no glass at all, and
+		// it grows itself on demand for the ones that do.
+		MeshScratch opaque      = _tlOpaque      ??= new MeshScratch(8192, withColors: false);
+		MeshScratch transparent = _tlTransparent ??= new MeshScratch(1024, withColors: true);
+		opaque.Reset();
+		transparent.Reset();
 
 		// Snapshot voxel data to avoid races with main-thread mutations (reused per thread).
 		byte[] voxels = null;
@@ -837,6 +1067,11 @@ public partial class Chunk_Manager : Node
 					int numFaces = model.Vertices.Length / 4;
 					bool isCube = model.type == Block_Model.Type.Cube;
 
+					// Route the whole block to one surface or the other. Picked per block, not
+					// per face, so a block's faces never straddle two surfaces.
+					MeshScratch target = Block_Registry.TransparentById[blockId] ? transparent : opaque;
+					float alpha = blockDef.Alpha;
+
 					for (int face = 0; face < numFaces; face++)
 					{
 						if (isCube && face < 6)
@@ -846,10 +1081,10 @@ public partial class Chunk_Manager : Node
 							int ny = y + offset.Y;
 							int nz = z + offset.Z;
 
-							bool isAir;
+							byte neighborId;
 							if ((uint)nx < CHUNK_SIZE && (uint)ny < CHUNK_SIZE && (uint)nz < CHUNK_SIZE)
 							{
-								isAir = voxels[voxel_index(nx, ny, nz)] == 0;
+								neighborId = voxels[voxel_index(nx, ny, nz)];
 							}
 							else
 							{
@@ -858,158 +1093,32 @@ public partial class Chunk_Manager : Node
 								byte[] nv = neighborVoxels[face];
 								if (nv == null)
 								{
-									isAir = true;
+									neighborId = 0;
 								}
 								else
 								{
 									int lx = nx < 0 ? nx + CHUNK_SIZE : (nx >= CHUNK_SIZE ? nx - CHUNK_SIZE : nx);
 									int ly = ny < 0 ? ny + CHUNK_SIZE : (ny >= CHUNK_SIZE ? ny - CHUNK_SIZE : ny);
 									int lz = nz < 0 ? nz + CHUNK_SIZE : (nz >= CHUNK_SIZE ? nz - CHUNK_SIZE : nz);
-									isAir = nv[voxel_index(lx, ly, lz)] == 0;
+									neighborId = nv[voxel_index(lx, ly, lz)];
 								}
 							}
 
-							if (!isAir) continue;
+							if (!FaceVisible(blockId, neighborId)) continue;
 						}
 
-						int neededVertices = vertexCount + 12;
-						int neededUvs = uvCount + 8;
-						int neededIndices = indexCount + 6;
-
-						// Rare: a chunk exceeds the pre-sized scratch. Grow and persist the larger
-						// buffer back to the thread-static field so it's reused next build too.
-						if (neededVertices > meshVerticesFlat.Length)
-						{
-							Array.Resize(ref meshVerticesFlat, meshVerticesFlat.Length * 2);
-							Array.Resize(ref meshNormalsFlat, meshNormalsFlat.Length * 2);
-							_tlVerts = meshVerticesFlat;
-							_tlNormals = meshNormalsFlat;
-						}
-						if (neededUvs > meshUvsFlat.Length)
-						{
-							Array.Resize(ref meshUvsFlat, meshUvsFlat.Length * 2);
-							_tlUvs = meshUvsFlat;
-						}
-						if (neededIndices > meshIndicesArray.Length)
-						{
-							Array.Resize(ref meshIndicesArray, meshIndicesArray.Length * 2);
-							_tlIndices = meshIndicesArray;
-						}
-
-						int baseVertex = vertexCount / 3;
-						float fx = x, fy = y, fz = z;
-
-						int vertStart = face * 4;
 						Vector2[][] uvs = blockDef.faceUVs;
 						int uvFace = face < uvs.Length ? face : face % 6;
 
-						for (int i = 0; i < 4; i++)
-						{
-							Vector3 vert = model.Vertices[vertStart + i];
-							Vector3 norm = model.Normals[vertStart + i];
-
-							meshVerticesFlat[vertexCount++] = vert.X + fx;
-							meshVerticesFlat[vertexCount++] = vert.Y + fy;
-							meshVerticesFlat[vertexCount++] = vert.Z + fz;
-
-							meshNormalsFlat[vertexCount - 3] = norm.X;
-							meshNormalsFlat[vertexCount - 2] = norm.Y;
-							meshNormalsFlat[vertexCount - 1] = norm.Z;
-
-							meshUvsFlat[uvCount++] = uvs[uvFace][i].X;
-							meshUvsFlat[uvCount++] = uvs[uvFace][i].Y;
-						}
-
-						int indicesStart = face * 6;
-						for (int i = 0; i < 6; i++)
-						{
-							meshIndicesArray[indexCount++] = baseVertex + (model.Indices[indicesStart + i] - vertStart);
-						}
+						target.AddFace(model, face, x, y, z, uvs[uvFace], alpha);
 					}
 				}
 			}
 		}
 
-		int vCount = vertexCount / 3;
-		int uCount = uvCount / 2;
-
-		// Rent typed arrays from ArrayPool where possible to reduce allocations
-		var buffers = new MeshBuffers { VertexCount = vCount, UvCount = uCount, IndexCount = indexCount };
-
-		Vector3[] rentedVerts = ArrayPool<Vector3>.Shared.Rent(vCount);
-		Vector3[] rentedNormals = ArrayPool<Vector3>.Shared.Rent(vCount);
-		Vector2[] rentedUVs = ArrayPool<Vector2>.Shared.Rent(uCount);
-		int[] rentedIndices = ArrayPool<int>.Shared.Rent(indexCount);
-
-		for (int i = 0; i < vCount; i++)
-		{
-			int idx = i * 3;
-			rentedVerts[i] = new Vector3(meshVerticesFlat[idx], meshVerticesFlat[idx + 1], meshVerticesFlat[idx + 2]);
-			rentedNormals[i] = new Vector3(meshNormalsFlat[idx], meshNormalsFlat[idx + 1], meshNormalsFlat[idx + 2]);
-		}
-
-		for (int i = 0; i < uCount; i++)
-		{
-			int idx = i * 2;
-			rentedUVs[i] = new Vector2(meshUvsFlat[idx], meshUvsFlat[idx + 1]);
-		}
-
-		for (int i = 0; i < indexCount; i++)
-			rentedIndices[i] = meshIndicesArray[i];
-
-		// If the rented arrays are exactly the requested size, mark them as from-pool and pass directly.
-		// Otherwise create exact-sized arrays and copy the used portion, returning rented arrays.
-		if (rentedVerts.Length == vCount)
-		{
-			buffers.Vertices = rentedVerts;
-			buffers.VerticesFromPool = true;
-		}
-		else
-		{
-			buffers.Vertices = new Vector3[vCount];
-			Array.Copy(rentedVerts, buffers.Vertices, vCount);
-			ArrayPool<Vector3>.Shared.Return(rentedVerts, clearArray: true);
-			buffers.VerticesFromPool = false;
-		}
-
-		if (rentedNormals.Length == vCount)
-		{
-			buffers.Normals = rentedNormals;
-			buffers.NormalsFromPool = true;
-		}
-		else
-		{
-			buffers.Normals = new Vector3[vCount];
-			Array.Copy(rentedNormals, buffers.Normals, vCount);
-			ArrayPool<Vector3>.Shared.Return(rentedNormals, clearArray: true);
-			buffers.NormalsFromPool = false;
-		}
-
-		if (rentedUVs.Length == uCount)
-		{
-			buffers.UVs = rentedUVs;
-			buffers.UVsFromPool = true;
-		}
-		else
-		{
-			buffers.UVs = new Vector2[uCount];
-			Array.Copy(rentedUVs, buffers.UVs, uCount);
-			ArrayPool<Vector2>.Shared.Return(rentedUVs, clearArray: true);
-			buffers.UVsFromPool = false;
-		}
-
-		if (rentedIndices.Length == indexCount)
-		{
-			buffers.Indices = rentedIndices;
-			buffers.IndicesFromPool = true;
-		}
-		else
-		{
-			buffers.Indices = new int[indexCount];
-			Array.Copy(rentedIndices, buffers.Indices, indexCount);
-			ArrayPool<int>.Shared.Return(rentedIndices, clearArray: true);
-			buffers.IndicesFromPool = false;
-		}
+		var buffers = new MeshBuffers();
+		buffers.Opaque.FillFrom(opaque);
+		buffers.Transparent.FillFrom(transparent);
 
 		// Hand off to the main-thread promotion drain (see _Process). No CallDeferred —
 		// the buffer carries its own counts, so nothing can be stranded by a lost deferred call.
@@ -1023,19 +1132,16 @@ public partial class Chunk_Manager : Node
 	{
 		if (!chunks.TryGetValue(position, out var chunk))
 		{
-			// ensure buffers are freed if present
-			if (pendingBuffers.TryRemove(position, out var _)) { }
+			// Chunk went away mid-flight — still hand its pooled arrays back.
+			if (pendingBuffers.TryRemove(position, out var orphaned))
+				orphaned.Release();
 			return false;
 		}
 
 		if (!pendingBuffers.TryRemove(position, out var buffers))
 			return false; // already consumed (duplicate enqueue) — nothing to do
 
-		int vertCount = buffers.VertexCount;
-		int uvCount   = buffers.UvCount;
-		int idxCount  = buffers.IndexCount;
-
-		if (vertCount == 0 || idxCount == 0)
+		if (buffers.IsEmpty)
 			{
 			if (chunk.MeshInstance != null && GodotObject.IsInstanceValid(chunk.MeshInstance))
 			{
@@ -1050,7 +1156,7 @@ public partial class Chunk_Manager : Node
 			return false;
 		}
 
-		Mesh newMesh = create_mesh_from_data(buffers.Vertices, buffers.Normals, buffers.UVs, buffers.Indices, vertCount, uvCount, idxCount);
+		Mesh newMesh = build_chunk_mesh(buffers);
 		_meshRebuildsThisSecond++;
 
 		if (chunk.MeshInstance != null && GodotObject.IsInstanceValid(chunk.MeshInstance))
@@ -1060,7 +1166,8 @@ public partial class Chunk_Manager : Node
 		else
 		{
 			chunk.MeshInstance = new MeshInstance3D();
-			chunk.MeshInstance.MaterialOverride = Mat;
+			// No MaterialOverride: it would win over the per-surface materials that
+			// build_chunk_mesh assigns, collapsing opaque and transparent back into one look.
 			chunk.MeshInstance.Transform = new Transform3D(chunk.MeshInstance.Transform.Basis, position * new Vector3(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE));
 			chunk.MeshInstance.Mesh = newMesh;
 			AddChild(chunk.MeshInstance);
@@ -1074,17 +1181,7 @@ public partial class Chunk_Manager : Node
 		}
 
 		// Return rented buffers to pools when applicable
-		if (buffers != null)
-		{
-			if (buffers.VerticesFromPool && buffers.Vertices != null)
-				ArrayPool<Vector3>.Shared.Return(buffers.Vertices, clearArray: true);
-			if (buffers.NormalsFromPool && buffers.Normals != null)
-				ArrayPool<Vector3>.Shared.Return(buffers.Normals, clearArray: true);
-			if (buffers.UVsFromPool && buffers.UVs != null)
-				ArrayPool<Vector2>.Shared.Return(buffers.UVs, clearArray: true);
-			if (buffers.IndicesFromPool && buffers.Indices != null)
-				ArrayPool<int>.Shared.Return(buffers.Indices, clearArray: true);
-		}
+		buffers.Release();
 
 		return true;
 	}
@@ -1093,6 +1190,11 @@ public partial class Chunk_Manager : Node
 	{
 		var p = Global.Instance.ActivePlanet;
 		byte[] data = new byte[CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE];
+
+		// A void world has no terrain to sample: the array is already all-zero, so returning
+		// it here skips the whole noise/cave/chasm pass. generate_data then flags the chunk
+		// IsAllAir and no mesh is ever built.
+		if (p.VoidWorld) return data;
 
 		float twoPi = 2f * Mathf.Pi;
 		float invW  = twoPi / Global.PlanetWidth;
@@ -1180,24 +1282,52 @@ public partial class Chunk_Manager : Node
 		return data;
 	}
 
-	public Mesh create_mesh_from_data(Vector3[] vertices, Vector3[] normals, Vector2[] uvs, int[] indices, int vertCount, int uvCount, int idxCount)
+	// One ArrayMesh, up to two surfaces: opaque first, then the alpha-blended one. Materials
+	// are set on the surfaces rather than as a MaterialOverride on the MeshInstance3D, which
+	// is the only way the two passes can differ. Either surface is skipped when empty, so a
+	// chunk with no glass costs exactly what it did before.
+	private Mesh build_chunk_mesh(MeshBuffers b)
 	{
-		// Use provided arrays directly (they are sized to the exact counts)
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-		arrays[(int)Mesh.ArrayType.Normal] = normals;
-		arrays[(int)Mesh.ArrayType.TexUV] = uvs;
-		arrays[(int)Mesh.ArrayType.Index] = indices;
-
 		var arrayMesh = new ArrayMesh();
-		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-
+		add_mesh_surface(arrayMesh, b.Opaque, Mat);
+		add_mesh_surface(arrayMesh, b.Transparent, TransparentMat ?? Mat);
 		return arrayMesh;
 	}
 
+	private static void add_mesh_surface(ArrayMesh mesh, SurfaceBuffers s, Material mat)
+	{
+		if (s.IsEmpty) return;
+
+		// Arrays are used directly — they are sized to the exact counts (see TakeExact).
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+
+		arrays[(int)Mesh.ArrayType.Vertex] = s.Vertices;
+		arrays[(int)Mesh.ArrayType.Normal] = s.Normals;
+		arrays[(int)Mesh.ArrayType.TexUV]  = s.UVs;
+		if (s.Colors != null)
+			arrays[(int)Mesh.ArrayType.Color] = s.Colors;
+		arrays[(int)Mesh.ArrayType.Index]  = s.Indices;
+
+		mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		if (mat != null)
+			mesh.SurfaceSetMaterial(mesh.GetSurfaceCount() - 1, mat);
+	}
+
 	// Disk persistence removed — chunks are kept in memory metadata only.
+
+	// True once the chunk containing this world position exists and holds generated voxels.
+	//
+	// Stamping a Structure needs this: set_block silently returns when the chunk isn't in
+	// `chunks`, and chunks are created on a timer in _Process rather than in _Ready, so a
+	// stamp issued from a scene's _ready() writes nothing and fails silently. Callers poll
+	// this instead of guessing a frame count. get_block can't answer the question — it
+	// returns 0 for "no chunk" and for "air" alike, which are the same value in a void world.
+	public bool is_chunk_ready(Vector3I position)
+	{
+		var chunkPos = world_to_chunk(position);
+		return chunks.TryGetValue(chunkPos, out var chunk) && chunk.Generated && chunk.Voxels != null;
+	}
 
 	public int get_block(Vector3I position)
 	{
@@ -1241,6 +1371,11 @@ public partial class Chunk_Manager : Node
 		// Mark that this chunk has been edited by the player
 		chunks[chunkPos].WasEdited = true;
 
+		// Placing a transparent block breaks full solidity exactly as removing one does — the
+		// chunk now has something to draw. Without this a glass block placed into a solid
+		// chunk would be swallowed by the solid fast-path.
+		bool clearsSolid = blockId == 0 || Block_Registry.TransparentById[(byte)blockId];
+
 		// Persist the edit in canonical store so it survives unload and shows on future laps.
 		// Clear IsFullySolid on removal too, or a reused edited chunk would wrongly take the
 		// solid fast-path on reload and render invisible.
@@ -1249,8 +1384,8 @@ public partial class Chunk_Manager : Node
 			if (_canonicalStore.TryGetValue(Global.CanonicalChunkPos(chunkPos), out var cd))
 			{
 				cd.WasEdited = true;
-				if (blockId == 0) cd.IsFullySolid = false;
-				else              cd.IsAllAir = false;
+				if (clearsSolid)   cd.IsFullySolid = false;
+				if (blockId != 0)  cd.IsAllAir     = false;
 			}
 		}
 
@@ -1270,8 +1405,8 @@ public partial class Chunk_Manager : Node
 		if (localPos.Y < 0) localPos.Y += CHUNK_SIZE;
 		if (localPos.Z < 0) localPos.Z += CHUNK_SIZE;
 
-		if (blockId == 0) chunks[chunkPos].IsFullySolid = false;
-		else              chunks[chunkPos].IsAllAir = false;
+		if (clearsSolid)  chunks[chunkPos].IsFullySolid = false;
+		if (blockId != 0) chunks[chunkPos].IsAllAir     = false;
 		chunks[chunkPos].Voxels[voxel_index(localPos)] = (byte)blockId;
 
 		if (localPos.X == 0) mark_neighbor_dirty(chunkPos + new Vector3I(-1, 0, 0));
@@ -1347,6 +1482,8 @@ public partial class Chunk_Manager : Node
 
 	public void explode(Vector3I center, float radius, float damage)
 	{
+		if (!TerrainDestructible) return;
+
 		int r = Mathf.CeilToInt(radius);
 		float r2 = radius * radius;
 		var batch = new List<(Vector3I pos, int blockId)>();
@@ -1563,6 +1700,10 @@ public partial class Chunk_Manager : Node
 
 	public void damage_block(Vector3I position, float damage)
 	{
+		// Gated as well as break_block: without this, blocks would still accumulate damage state
+		// and visible cracks while never actually breaking.
+		if (!TerrainDestructible) return;
+
 		int blockType = get_block(position);
 		if (blockType == 0) return;
 
@@ -1786,6 +1927,10 @@ public partial class Chunk_Manager : Node
 
 	public bool damage_check(Vector3I position, float damage)
 	{
+		// False = "nothing was destroyed", which is exactly what the jackhammer's caller expects
+		// when it hits something it can't break.
+		if (!TerrainDestructible) return false;
+
 		int blockType = get_block(position);
 		if (blockType == 0) return false;
 
@@ -1982,6 +2127,9 @@ public partial class Chunk_Manager : Node
 
 	public void break_block(Vector3I position)
 	{
+		// The real choke point — every destruction path in the game ends here.
+		if (!TerrainDestructible) return;
+
 		int brokenType = get_block(position);
 		RemoveBlockDamage(position);
 		set_block(position, 0);

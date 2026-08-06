@@ -113,7 +113,9 @@ public partial class PlayerHUD : Control
         }
     }
 
-    private static readonly Color JumpColor    = new Color(0.5f, 0.9f, 1.0f);
+    // Was light blue; moved onto the main-menu green so the HUD matches the menus.
+    // Kept paler than the laser bar's neon so the two meters stay tellable apart.
+    private static readonly Color JumpColor    = new Color(0.6f, 1.0f, 0.6f);
     private const float JumpSectionDim = 0.12f;
 
     private void UpdateJumpMeter()
@@ -132,7 +134,10 @@ public partial class PlayerHUD : Control
         rect.Color = c;
     }
 
-    private static readonly Color LaserColorReady    = new Color(0.2f, 0.5f, 1.0f);
+    // Was blue. Full neon green — the "ready" pop. Note this now sits in the same hue
+    // family as SpeedColorWeak below; they're in different HUD regions, but if they
+    // ever read as one thing, shift the speed tier rather than this.
+    private static readonly Color LaserColorReady    = new Color(0, 1.0f, 0);
     private static readonly Color LaserColorRecharge = new Color(0.35f, 0.35f, 0.35f);
 
     private void UpdateLaserBar()

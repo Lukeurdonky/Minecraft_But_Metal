@@ -1,0 +1,95 @@
+[gd_scene load_steps=12 format=3 uid="uid://by1eb7ui6cfns"]
+
+[ext_resource type="Script" uid="uid://bslwxsvkq8u0s" path="res://Scripts/Handlers/Ship.gd" id="1_root"]
+[ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/The World/Chunk_Manager.cs" id="2_chunk"]
+[ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/block_texture_atlas.tres" id="3_atlas"]
+[ext_resource type="Material" path="res://Materials/block_texture_atlas_transparent.tres" id="4_atlast"]
+[ext_resource type="Texture2D" uid="uid://dwam68po60hgu" path="res://Sprites/block breaking.png" id="5_damage"]
+[ext_resource type="Texture2D" uid="uid://csdb5hawdq708" path="res://Sprites/empty space.png" id="6_bndfx"]
+[ext_resource type="PackedScene" uid="uid://b3v0l5vq0w8qp" path="res://Assets/Console.glb" id="6_by1o1"]
+
+[sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_bkhhj"]
+panorama = ExtResource("6_bndfx")
+
+[sub_resource type="Sky" id="Sky_301fx"]
+sky_material = SubResource("PanoramaSkyMaterial_bkhhj")
+
+[sub_resource type="Environment" id="Environment_space"]
+background_mode = 2
+background_color = Color(0.011764706, 0.015686275, 0.03137255, 1)
+sky = SubResource("Sky_301fx")
+ambient_light_source = 2
+ambient_light_color = Color(0.42352942, 0.4745098, 0.5647059, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 2
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_by1o1"]
+size = Vector3(2, 1, 1)
+
+[node name="Ship" type="Node3D" node_paths=PackedStringArray("console_visual")]
+script = ExtResource("1_root")
+console_visual = NodePath("ConsoleContainer")
+
+[node name="Game" type="Node3D" parent="."]
+script = ExtResource("2_chunk")
+Mat = ExtResource("3_atlas")
+TransparentMat = ExtResource("4_atlast")
+RenderDistance = 2
+DamageTexture = ExtResource("5_damage")
+TerrainDestructible = false
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Game"]
+environment = SubResource("Environment_space")
+
+[node name="Players" type="Node" parent="Game"]
+
+[node name="StreamAnchor" type="Node3D" parent="."]
+
+[node name="ConsoleContainer" type="Node3D" parent="."]
+
+[node name="Console" parent="ConsoleContainer" instance=ExtResource("6_by1o1")]
+transform = Transform3D(-4.371139e-08, 0, -1, 0, 1, 0, 1, 0, -4.371139e-08, 0, -0.5, -0.5)
+
+[node name="ConsoleGlow" type="OmniLight3D" parent="ConsoleContainer/Console"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2327042, 0)
+light_color = Color(0, 1, 0, 1)
+light_energy = 2.5
+omni_range = 7.0
+
+[node name="Area3D" type="StaticBody3D" parent="ConsoleContainer/Console"]
+collision_layer = 3
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ConsoleContainer/Console/Area3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+shape = SubResource("BoxShape3D_by1o1")
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Prompt" type="Label" parent="UI"]
+visible = false
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -150.0
+offset_bottom = -96.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0, 1, 0, 1)
+theme_override_font_sizes/font_size = 28
+text = "[E]   SOLAR SELECT"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Status" type="Label" parent="UI"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.3529412, 0.15686275, 1)
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3

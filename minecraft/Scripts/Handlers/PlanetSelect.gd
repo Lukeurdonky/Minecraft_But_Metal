@@ -53,5 +53,5 @@ func _on_evil_plan_toggle_pressed() -> void:
 
 
 func _on_return_button_pressed() -> void:
-	RunManager.EndRun()
-	get_tree().change_scene_to_file("res://Scenes/MainMenu.tscn")
+	# SHELVED screen — kept working rather than deleted. ReturnToShip owns the scene change.
+	RunManager.ReturnToShip()

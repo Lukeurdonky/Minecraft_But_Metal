@@ -39,9 +39,11 @@ Scripts/
 ├── Handlers/         Global.cs (autoload, world/run state), RunManager.cs (autoload, run flow — see "Run flow" below),
 │                     AtmosphereSystem.cs (biome → WorldEnvironment fog/light), MainMenu.gd,
 │                     LoadingScreen.gd (travel animation + accessory pick), PlanetSelect.gd (SHELVED),
-│                     UpgradeSelect.gd (superseded), PlanetConfigMenu.gd (F3 debug menu), DebugMenu.gd, level.gd
+│                     UpgradeSelect.gd (superseded), PlanetConfigMenu.gd (F3 debug menu), DebugMenu.gd, level.gd,
+│                     StructureBuilder.gd + BuilderCamera.gd (dev tool — see "Structure builder" below),
+│                     Ship.gd (between-runs hub — see "Ship hub" below)
 ├── The World/        Chunk_Manager.cs (~1400 lines, terrain/damage — see below), Chunk.cs, Block_Definition.cs,
-│                     Block_Model.cs, BiomeDescriptor.cs, PlanetParams.cs
+│                     Block_Model.cs, BiomeDescriptor.cs, PlanetParams.cs, Structure.cs
 │   └── Generation/   World_Generator.cs  ← 5-stage pipeline, ALL STAGES EMPTY (cave/abyss carving still lives
 │                     directly in Chunk_Manager.create_chunk_data — see documents/engineering/generation_plan.md),
 │                     Simplex4D.cs (4D simplex noise for seamless torus wrapping)
@@ -52,7 +54,9 @@ Scripts/
 │                     interactions.gd (camera/block targeting), inventory.gd (ARCHIVED)
 │       └── Accessories/  Accessory.cs (base class, lifecycle hooks) + one file per accessory — see "Accessories" below
 └── Datasets/         Block_Registry.cs, Biome_Registry.cs, Accessory_Registry.cs + AccessoryDescriptor.cs,
-                      Item_Registry.cs (ARCHIVED stub), Mob_Registry.cs (unused, TODO: repurpose or remove)
+                      Structure_Registry.cs, Item_Registry.cs (ARCHIVED stub),
+                      Mob_Registry.cs (unused, TODO: repurpose or remove)
+Structures/           Authored structures (.tres). Written by the structure builder, read by Structure_Registry.
 Assets/               character.tscn, creature.tscn, GrappleHook.tscn, ground_robot_shooter.tscn,
                       left_arm.tscn, right_arm.tscn
 Scenes/               MainMenu.tscn (run/main_scene) → CubeLand.tscn (gameplay) → LoadingScreen.tscn
@@ -203,6 +207,193 @@ Full design list and win-condition tie-in: `documents/design/NEW_VISION.md`. Liv
 - `Scripts/Entities/Player/PlayerAccessories.cs` — partial class of `Player` (same pattern as `PlayerAbilities.cs`): equip/unequip, `EquipStartingAccessories()`, and the hook-aggregation helpers. Wired into `Player.ImHere()`, `_Process`, `ApplyMovementFromInput`, and the grapple-attach/jackhammer-fire points in `PlayerAbilities.cs`.
 - Equipped state lives in `Global.EquippedAccessoryIds` (persists across planet loads within a run; cleared by `RunManager.ResetRunState()`). GDScript (F3 menu, HUD) must go through `Global.GetAllAccessoryNames()`/`IsAccessoryEquipped()`/`SetAccessoryEquipped()` — **GDScript can call methods on a C# autoload but cannot read its plain public properties**, confirmed empirically.
 - `PlayerHUD.cs` renders equipped accessories as atlas icons in `RunUI/AccessoryRow`, a real scene node in `character.tscn` (not runtime-only) — rebuilds children only when the equipped set changes.
+
+## Block transparency
+
+Transparency is a **render concern only**. A glass block is fully solid to collision, grapple,
+explosions, `damage_block` and every other `get_block` consumer — nothing outside the mesher and
+the material knows or cares.
+
+- **`Block_Definition.Transparent`** — the authoritative flag. Two consequences: the block meshes
+  into a separate alpha-blended surface, and it stops hiding the face of whatever is behind it.
+- **`Block_Definition.Alpha`** (default 1) — uniform tint alpha, delivered as vertex colour and
+  multiplied onto the atlas texture's own per-pixel alpha. Anything below 1 implies `Transparent`,
+  so setting `Alpha` alone is enough. **Glass and Frame carry their alpha in the art** (Glass is
+  painted ~33% with opaque pane edges; Frame is a hard cut-out with alpha-0 holes) — they are left
+  at `Alpha = 1` so the art renders as painted. Lower it to fade a block without repainting.
+- **`Block_Registry.TransparentById`** — flat `bool[]` mirror of the flag, built once at the end of
+  the static ctor. The mesher reads it once per face per block; use it there, not `Blocks[id].Transparent`.
+- **Face culling (`Chunk_Manager.FaceVisible`)** — an opaque neighbour hides everything, as before.
+  A transparent neighbour hides *nothing except an identical block type*: a solid pane of glass
+  doesn't draw its own internal seams, glass against frame draws both, and stone behind glass stays
+  visible. Verified numerically — a 4×4×4 glass cube meshes to exactly its 96-face shell.
+- **Two surfaces per chunk mesh** — opaque (`Mat`) then transparent (`TransparentMat`), assigned via
+  `ArrayMesh.SurfaceSetMaterial`. **Never set `MeshInstance3D.MaterialOverride` on a chunk** — it
+  wins over per-surface materials and collapses both passes into one look. The transparent surface
+  is skipped entirely when a chunk has no transparent blocks, so ordinary terrain still builds one
+  surface and costs exactly what it did before.
+- **`Materials/block_texture_atlas_transparent.tres`** — `transparency = 4`
+  (`ALPHA_DEPTH_PRE_PASS`) so near-opaque pixels still write depth (Frame's struts, Glass's pane
+  edges) while the translucent interior blends; `vertex_color_use_as_albedo = true` for the `Alpha`
+  knob. A scene that forgets to wire `TransparentMat` falls back to `Mat` and renders transparent
+  blocks opaque — wrong-looking but non-crashing, by design.
+- **`IsFullySolid` means fully *opaque*.** It drives two skips (this chunk builds no mesh; and via
+  `adjacent_chunks_solid`, neighbours skip too), both of which would erase a glass chunk's geometry.
+  `generate_data` and `set_block` both account for this — placing a transparent block clears it just
+  like removing a block does.
+- Per-thread mesh scratch is now one `MeshScratch` per pass (`_tlOpaque` / `_tlTransparent`), still
+  `[ThreadStatic]` and still grown-and-kept rather than reallocated. The transparent one starts at
+  1/8 the capacity since most chunks have no glass.
+
+## Structure builder — Scenes/StructureBuilder.tscn (dev tool)
+
+Reachable from the "Builder" button on `MainMenu.tscn`. Build a thing by hand, save it as a
+`Structure` resource, stamp it back into the world from code. Not part of the run flow — it
+never touches `RunManager`.
+
+- **`Structure.cs`** (`Resource`, `[GlobalClass]`) — `Size` / `Anchor` / `Voxels`. Voxels are
+  indexed `x + z*SX + y*SX*SZ`, deliberately identical to `Chunk_Manager.voxel_index`, which is
+  what makes `StampIntoChunk` a straight copy loop. Two write paths:
+  - `Stamp(cm, worldPos, clearAir)` — live world, via `place_block`. `worldPos` is where `Anchor`
+    lands, not the min corner.
+  - `StampIntoChunk(chunkVoxels, chunkPos, worldPos, clearAir)` — writes into one raw chunk array,
+    clipped to that chunk. No `Chunk_Manager`, no meshing, no main thread. **This is the seam
+    `FeatureStage` should use** — a generation worker has no `Chunk_Manager` to call.
+  - `clearAir = false` (default) is additive; pass `true` for anything with an interior, or the
+    terrain it lands in fills the rooms.
+- **`Structure_Registry.cs`** (autoload) — same "Name is the lookup key" convention as
+  `Biome_Registry`, but file-backed: scans `res://Structures/*.tres`, plus `user://Structures`
+  because `res://` is read-only in an exported build (`GetSaveDir()` picks the right one).
+  `CaptureAndSave` trims empty margins, so volume size costs nothing in the saved file, and sets
+  `Anchor` to bottom-centre (editable in the Inspector after).
+- **The builder world is a flat plate**, not a planet: `StructureBuilder.gd._enter_tree()` calls
+  `Global.SetPlanetConfig` with `noise_scale`/`height_amp` = 0. It must be `_enter_tree` — children
+  are ready before their parent and `Chunk_Manager._Ready` starts the generation threads.
+- **The base plate (y ≤ 0) sits outside the build volume** (`VOLUME_FLOOR_Y = 1`) so it can't be
+  captured or dug through. Every edit is clamped to the volume; the cyan cage is exactly what Save
+  captures.
+- **Movement is Minecraft creative flight**, not a look-direction flycam: WASD is strictly
+  horizontal (derived from yaw, so looking straight down doesn't degenerate the forward vector),
+  Space/Shift are the only vertical control, Ctrl boosts, Alt is precision. The modifiers are read
+  as raw keys rather than through `sprint`/`crouch` — those actions are Shift/Ctrl in combat and
+  mean something different here.
+- **Escape unwinds one layer at a time**: quit prompt → panel → ask about quitting. Nothing in the
+  builder is auto-saved, so leaving is always the last step and always confirmed
+  (`UI/QuitConfirm`, focus defaults to "Keep Building" so a stray Enter can't discard a build).
+- **`Global.StreamingAnchor`** — chunk streaming follows this `Node3D` when `Global.Player` is null,
+  which is how a scene with no Player streams at all. `Player` wins when both exist; gameplay scenes
+  must not set it. `BuilderCamera` clears it in `_exit_tree`.
+- GDScript reaching C# here goes through **instance methods on the autoload**
+  (`Structure_Registry.GetSaveDir()`, `Block_Registry.GetBlockName()`) — statics are never in the
+  generated per-instance member switch, so `Structure_Registry.SaveDir` would silently fail.
+- **Gotcha:** editing a `.gd` that names a C# autoload right after an out-of-band `dotnet build`
+  can recompile it against a stale global-class table — "Identifier not found: Structure_Registry"
+  even though the autoload is correctly registered in `project.godot`. Fix is
+  `filesystem_manage(op="scan")` (the headless equivalent of the editor regaining focus), not
+  re-registering the autoload.
+
+## Ship hub — Scenes/Ship.tscn
+
+The between-runs hub. `RunManager.StartNewRun()` lands here (not on `SolarSelect` any more);
+walking up to mission control opens the system-select screen **as an overlay**, so backing out
+returns you to the ship instead of the main menu.
+
+- **The ship is voxels, not a model.** It's the `"Ship"` structure authored in the builder,
+  stamped into an empty world — so it collides, meshes, lights and streams exactly like terrain.
+  Changing the ship = rebuild it in the builder and press Save; `Ship.gd` never knows its shape.
+- **`PlanetParams.VoidWorld`** (config key `void_world`) makes `create_chunk_data` return the
+  zeroed array immediately — no terrain at any altitude, so a stamped structure is the only solid
+  thing in the world. Cheaper than any terrain: an all-air chunk builds no mesh at all.
+- **Two ordering traps, both already handled — don't "simplify" either away:**
+  - Chunks are created on a timer in `Chunk_Manager._Process`, not `_Ready`, and `set_block`
+    silently no-ops on a chunk that doesn't exist. Stamping from `_ready()` writes **nothing**.
+    `Ship.gd` polls **`Chunk_Manager.is_chunk_ready(worldPos)`** over the structure's footprint
+    (`Structure_Registry.GetStampBounds`) instead of sleeping a fixed number of frames.
+    `get_block` can't answer this — it returns 0 for "no chunk" and "air" alike.
+  - Streaming follows `Global.GetPlayerPos()`, and the player can't spawn until there's a floor to
+    stand on. Without `Global.StreamingAnchor` pointed at the ship first, the world generates
+    around `(0,0,0)`, the ship's chunks never arrive and the stamp waits forever. The player is
+    spawned **after** the stamp for the same reason — spawn first and it falls through the void.
+- **Mission control is a distance test**, not an `Area3D` — one interaction point, so no collision
+  layers or masks that could silently stop matching. Its position comes from a **marker block**
+  (below), not from a hand-written offset.
+- **`console_visual` is an exported `Node3D`** — drag any node onto it in the Inspector (a light,
+  a mesh, an imported `.glb`, a whole instanced scene). The script hides it on load and moves it
+  onto the marker when the marker resolves, so its authored position in the scene is irrelevant
+  and it can't sit glowing in the wrong place when there's no marker. Optional; empty = no visual.
+  Typed `Node3D` rather than `NodePath` specifically because that's what gives the Inspector a
+  drag-and-drop slot.
+- **`SolarSelect.gd` has an `overlay_mode`**, mirroring `SolarMap.gd`'s: pauses the tree, relabels
+  BACK to "BACK TO SHIP", closes on Esc, emits `select_closed`. Committing to a system must
+  **unpause before `ChooseSystem`** — `paused` is a tree flag, not a scene one, and it would
+  otherwise carry into `SolarMap` and freeze its buttons.
+
+## The ship is the only way in and out of a run
+
+`RunManager.ReturnToShip()` is the **single exit from an attempt** — abandoning, dying, and
+clearing the sun all land back on `Ship.tscn`. `StartNewRun()` is just an alias for it, because
+starting a run and ending one are the same event: "be on the ship with fresh offers".
+
+- Callers **defer to it** and never change scene themselves (same convention as `ChooseSystem`
+  and `ChooseAccessory`) — a `ChangeSceneToFile` alongside it races the one it queues. Wired
+  into `SolarMap._on_abandon_button_pressed`, `LoadingScreen._on_return_button_pressed`,
+  `SolarSelect._on_back_button_pressed` (full-screen route), `PlanetSelect` (shelved) and
+  `Player`'s death-restart.
+- It rolls fresh offers, so a finished attempt is never re-offered the system it just played,
+  and it forces `Paused = false` — `paused` is a tree flag that survives a scene change, and the
+  map/select overlays set it.
+- The only remaining exit to `MainMenu.tscn` is the structure builder's quit, which is correct:
+  the builder is a dev tool, not a run.
+- **`Global.Player` validates on read.** A freed Player leaves a NON-null C# wrapper around a
+  disposed object, so `Player != null` passes and the next member access throws
+  `ObjectDisposedException`. The getter nulls it via `IsInstanceValid`. This only started
+  mattering when two `Chunk_Manager` scenes could run back-to-back (ship → planet → ship):
+  chunk streaming calls `GetPlayerPos()` on the new scene's first frames while the field still
+  points at the previous scene's corpse, which silently broke streaming and stopped the ship
+  from ever stamping.
+
+## Terrain destruction — per-scene toggle
+
+`[Export] public bool Chunk_Manager.TerrainDestructible` (default true). Set it **false** on a
+scene's `Game` node and that world becomes indestructible. `Ship.tscn` uses it: the hub is a set,
+not a level, and a hole in the floor drops the player into an infinite void with no way back.
+
+- **Gated at `Chunk_Manager`, not by disabling player abilities.** Destruction arrives from the
+  jackhammer, the laser tunnel, ram-into-block, the explode key, Super Slam and Explosive Bounce;
+  turning off one ability leaves the rest working. Four gates cover every path:
+  `break_block` (the true choke point — every path ends there), plus `explode`, `damage_block`
+  and `damage_check` so blocks don't accumulate damage state and visible cracks while never
+  breaking. `set_blocks_batch` is only reachable via `explode`; `set_block(pos, 0)` only via
+  `break_block`.
+- **Destruction only.** `set_block`/`place_block` stay open — otherwise `Structure.Stamp`
+  couldn't build the ship in the first place.
+- **Watch out:** `interactions.gd` uses raw keycode 69 (**E**) as an alternate explode trigger,
+  the same key `interact` is bound to. In the hub that's harmless because destruction is off, but
+  the two do collide anywhere destructible.
+
+## Marker blocks — positions authored in the builder, not restated in script
+
+**Rule: a positional fact about a structure lives in the structure.** A script that stamps one
+should *look it up*, never restate it as an offset — two copies of the same fact drift silently,
+and the only symptom is that the game feels subtly wrong.
+
+- **Block ids 26–30 = `Marker1`..`Marker5`** (atlas indices 25–29, filling the atlas to 30/32).
+  Ordinary placeable blocks in the builder palette; `Block_Definition.IsMarker` is mirrored into
+  `Block_Registry.MarkerById[]` for the hot path, same convention as `TransparentById`.
+- **Both stamp paths skip markers**, so they exist while authoring and never in a live world.
+  `create_chunk_data` never emits them either — a gameplay world cannot contain one.
+- **Markers stay in the saved `Voxels`**; they are *not* stripped at capture. Baking them into
+  metadata at save time would mean Load → edit → Save silently destroys every marker in the
+  builder. Skipping at stamp time gets a clean world *and* an exact builder round-trip.
+- **Lookup:** `Structure_Registry.GetMarkers(name, number, worldPos)` → world positions for a
+  stamp that put `Anchor` on `worldPos`. Empty when the structure or marker is missing.
+- **Numbered, not named** — a structure's roles are its own business. `Ship.tscn` decides
+  Marker1 means mission control (`console_marker` export); a waystation can mean something else.
+- **No fallback position on a missing marker.** `Ship.gd` reports it on screen and leaves the
+  console disabled — silently interacting with a guessed empty spot is the exact failure markers
+  exist to prevent.
+- **Gotcha:** a marker replaces the block in its cell, and the stamp skips it, so a marker buried
+  in a wall leaves a hole. Place them in air.
 
 ## Hitstop — global, automatic for particles
 

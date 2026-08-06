@@ -1,0 +1,286 @@
+[gd_scene load_steps=10 format=3 uid="uid://80v2d4mbj7db"]
+
+[ext_resource type="Script" uid="uid://c27os7oiilw2c" path="res://Scripts/Handlers/StructureBuilder.gd" id="1_root"]
+[ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/The World/Chunk_Manager.cs" id="2_chunk"]
+[ext_resource type="Material" uid="uid://1mojk8f4wour" path="res://Materials/block_texture_atlas.tres" id="3_atlas"]
+[ext_resource type="Texture2D" uid="uid://dwam68po60hgu" path="res://Sprites/block breaking.png" id="4_damage"]
+[ext_resource type="Script" uid="uid://hokljincyuo8" path="res://Scripts/Handlers/BuilderCamera.gd" id="5_cam"]
+[ext_resource type="Material" path="res://Materials/block_texture_atlas_transparent.tres" id="6_atlast"]
+
+[sub_resource type="Environment" id="Environment_builder"]
+background_mode = 1
+background_color = Color(0.08627451, 0.09411765, 0.1137255, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.6039216, 0.6392157, 0.6862745, 1)
+ambient_light_energy = 0.8
+tonemap_mode = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+bg_color = Color(0.039215688, 0.047058824, 0.05882353, 0.9019608)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.23137255, 0.8627451, 0.9019608, 0.5019608)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_quit"]
+content_margin_left = 28.0
+content_margin_top = 22.0
+content_margin_right = 28.0
+content_margin_bottom = 22.0
+bg_color = Color(0.039215688, 0.047058824, 0.05882353, 0.9764706)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.23137255, 0.8627451, 0.9019608, 1)
+
+[node name="StructureBuilder" type="Node3D"]
+script = ExtResource("1_root")
+
+[node name="Game" type="Node3D" parent="."]
+script = ExtResource("2_chunk")
+Mat = ExtResource("3_atlas")
+TransparentMat = ExtResource("6_atlast")
+RenderDistance = 4
+DamageTexture = ExtResource("4_damage")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Game"]
+transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0.4330127, 0.75, 0, 0, 0)
+light_energy = 1.1
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Game"]
+environment = SubResource("Environment_builder")
+
+[node name="BuilderCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 512, 7, 538)
+far = 600.0
+script = ExtResource("5_cam")
+
+[node name="VolumeBox" type="MeshInstance3D" parent="."]
+cast_shadow = 0
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Crosshair" type="ColorRect" parent="UI"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -2.0
+offset_top = -2.0
+offset_right = 2.0
+offset_bottom = 2.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.23137255, 0.8627451, 0.9019608, 1)
+
+[node name="Readout" type="VBoxContainer" parent="UI"]
+offset_left = 20.0
+offset_top = 16.0
+offset_right = 620.0
+offset_bottom = 140.0
+mouse_filter = 2
+theme_override_constants/separation = 4
+
+[node name="BlockLabel" type="Label" parent="UI/Readout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.23137255, 0.8627451, 0.9019608, 1)
+theme_override_font_sizes/font_size = 26
+text = "[1] Grass"
+
+[node name="CoordLabel" type="Label" parent="UI/Readout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6666667, 0.7137255, 0.75686276, 1)
+theme_override_font_sizes/font_size = 15
+text = "x 0  y 0  z 0"
+
+[node name="HelpLabel" type="Label" parent="UI/Readout"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.49803922, 0.54509807, 0.5882353, 1)
+theme_override_font_sizes/font_size = 14
+text = "WASD fly flat  •  Space up, Shift down  •  Ctrl boost, Alt precision
+LMB break  •  RMB place  •  MMB pick  •  Wheel / 1-9 palette
+Tab panel  •  Esc back / quit"
+
+[node name="Panel" type="PanelContainer" parent="UI"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -232.0
+offset_right = 560.0
+offset_bottom = -20.0
+grow_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="VBox" type="VBoxContainer" parent="UI/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NameRow" type="HBoxContainer" parent="UI/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NameLabel" type="Label" parent="UI/Panel/VBox/NameRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6666667, 0.7137255, 0.75686276, 1)
+text = "Name"
+
+[node name="NameEdit" type="LineEdit" parent="UI/Panel/VBox/NameRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "watchtower"
+
+[node name="SizeRow" type="HBoxContainer" parent="UI/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SizeLabel" type="Label" parent="UI/Panel/VBox/SizeRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6666667, 0.7137255, 0.75686276, 1)
+text = "Volume"
+
+[node name="SizeX" type="SpinBox" parent="UI/Panel/VBox/SizeRow"]
+layout_mode = 2
+min_value = 1.0
+max_value = 128.0
+value = 32.0
+
+[node name="SizeY" type="SpinBox" parent="UI/Panel/VBox/SizeRow"]
+layout_mode = 2
+min_value = 1.0
+max_value = 128.0
+value = 32.0
+
+[node name="SizeZ" type="SpinBox" parent="UI/Panel/VBox/SizeRow"]
+layout_mode = 2
+min_value = 1.0
+max_value = 128.0
+value = 32.0
+
+[node name="ApplySize" type="Button" parent="UI/Panel/VBox/SizeRow"]
+layout_mode = 2
+text = "Resize"
+
+[node name="LoadRow" type="HBoxContainer" parent="UI/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="LoadLabel" type="Label" parent="UI/Panel/VBox/LoadRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6666667, 0.7137255, 0.75686276, 1)
+text = "Saved"
+
+[node name="LoadList" type="OptionButton" parent="UI/Panel/VBox/LoadRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LoadButton" type="Button" parent="UI/Panel/VBox/LoadRow"]
+layout_mode = 2
+text = "Load"
+
+[node name="RefreshButton" type="Button" parent="UI/Panel/VBox/LoadRow"]
+layout_mode = 2
+text = "Refresh"
+
+[node name="ActionRow" type="HBoxContainer" parent="UI/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SaveButton" type="Button" parent="UI/Panel/VBox/ActionRow"]
+custom_minimum_size = Vector2(140, 34)
+layout_mode = 2
+text = "Save Structure"
+
+[node name="ClearButton" type="Button" parent="UI/Panel/VBox/ActionRow"]
+custom_minimum_size = Vector2(120, 34)
+layout_mode = 2
+text = "Clear Volume"
+
+[node name="StatusLabel" type="Label" parent="UI/Panel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.23137255, 0.8627451, 0.9019608, 1)
+theme_override_font_sizes/font_size = 14
+text = "Ready."
+autowrap_mode = 3
+
+[node name="QuitConfirm" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Dim" type="ColorRect" parent="UI/QuitConfirm"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.6)
+
+[node name="Center" type="CenterContainer" parent="UI/QuitConfirm"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Box" type="PanelContainer" parent="UI/QuitConfirm/Center"]
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_quit")
+
+[node name="VBox" type="VBoxContainer" parent="UI/QuitConfirm/Center/Box"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="UI/QuitConfirm/Center/Box/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.23137255, 0.8627451, 0.9019608, 1)
+theme_override_font_sizes/font_size = 26
+text = "Quit to the main menu?"
+horizontal_alignment = 1
+
+[node name="Warning" type="Label" parent="UI/QuitConfirm/Center/Box/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6666667, 0.7137255, 0.75686276, 1)
+theme_override_font_sizes/font_size = 15
+text = "Blocks you haven't saved as a structure are discarded."
+horizontal_alignment = 1
+
+[node name="Buttons" type="HBoxContainer" parent="UI/QuitConfirm/Center/Box/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="QuitNo" type="Button" parent="UI/QuitConfirm/Center/Box/VBox/Buttons"]
+custom_minimum_size = Vector2(150, 40)
+layout_mode = 2
+text = "Keep Building"
+
+[node name="QuitYes" type="Button" parent="UI/QuitConfirm/Center/Box/VBox/Buttons"]
+custom_minimum_size = Vector2(150, 40)
+layout_mode = 2
+text = "Quit"
+
+[connection signal="pressed" from="UI/Panel/VBox/SizeRow/ApplySize" to="." method="_on_apply_size_pressed"]
+[connection signal="pressed" from="UI/Panel/VBox/LoadRow/LoadButton" to="." method="_on_load_pressed"]
+[connection signal="pressed" from="UI/Panel/VBox/LoadRow/RefreshButton" to="." method="_on_refresh_pressed"]
+[connection signal="pressed" from="UI/Panel/VBox/ActionRow/SaveButton" to="." method="_on_save_pressed"]
+[connection signal="pressed" from="UI/Panel/VBox/ActionRow/ClearButton" to="." method="_on_clear_pressed"]
+[connection signal="pressed" from="UI/QuitConfirm/Center/Box/VBox/Buttons/QuitNo" to="." method="_on_quit_no_pressed"]
+[connection signal="pressed" from="UI/QuitConfirm/Center/Box/VBox/Buttons/QuitYes" to="." method="_on_quit_yes_pressed"]

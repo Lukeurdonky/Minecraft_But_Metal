@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Minecraft"
-run/main_scene="res://Scenes/MainMenu.tscn"
+run/main_scene="uid://3w3c2trvluvg"
 config/features=PackedStringArray("4.5", "C#", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -23,6 +23,7 @@ Block_Registry="*res://Scripts/Datasets/Block_Registry.cs"
 PlanetConfigMenu="*res://Scripts/Handlers/PlanetConfigMenu.gd"
 RunManager="*res://Scripts/Handlers/RunManager.cs"
 _mcp_game_helper="*res://addons/godot_ai/runtime/game_helper.gd"
+Structure_Registry="*res://Scripts/Datasets/Structure_Registry.cs"
 
 [display]
 
@@ -40,6 +41,10 @@ project/assembly_name="Minecraft"
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/UniParticles3D/plugin.cfg", "res://addons/godot_ai/plugin.cfg")
+
+[gui]
+
+theme/custom="res://Fonts/UITheme.tres"
 
 [input]
 
@@ -130,6 +135,16 @@ dash={
 super_jump={
 "deadzone": 0.5,
 "events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":67,"physical_keycode":0,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+toggle_map={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":77,"physical_keycode":0,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}
+interact={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":69,"physical_keycode":0,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
 ]
 }
 

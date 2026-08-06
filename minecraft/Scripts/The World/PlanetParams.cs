@@ -4,6 +4,10 @@ public class PlanetParams
 	public string Biome           = "";
 
 	// Terrain
+	// Skips terrain entirely — every chunk generates as air. This is what a hub scene
+	// stands on: the only solid blocks in the world are the ones a Structure stamps in.
+	// Cheaper than any terrain, since an all-air chunk builds no mesh at all.
+	public bool   VoidWorld       = false;
 	public bool   FillSolid       = false;
 	public byte   SurfaceBlock    = 10;     // Crystal default
 	public float  NoiseScale      = 1.5f;

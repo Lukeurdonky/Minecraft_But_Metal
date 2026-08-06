@@ -1,0 +1,6 @@
+[gd_resource type="Theme" load_steps=2 format=3]
+
+[ext_resource type="FontFile" uid="uid://4d4a3mbeqm0v" path="res://Fonts/AniMeVision-MB_EN.ttf" id="1_font"]
+
+[resource]
+default_font = ExtResource("1_font")
