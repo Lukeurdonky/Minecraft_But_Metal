@@ -100,7 +100,19 @@ public partial class Player : Entity
 
     private GrappleHook _activeHook;
     private Entity      _grappledEntity = null;
-    public  Entity      GrappledEntity  => _grappledEntity;
+    // Validates on read, like Global.Player. ProcessGrapple already cancels the grapple when
+    // the entity dies, but that runs in _PhysicsProcess while HUD/UI read this from _Process —
+    // so there is a frame where the field still points at a freed object whose C# wrapper is
+    // non-null. Every member access on it throws ObjectDisposedException.
+    public Entity GrappledEntity
+    {
+        get
+        {
+            if (_grappledEntity != null && !GodotObject.IsInstanceValid(_grappledEntity))
+                _grappledEntity = null;
+            return _grappledEntity;
+        }
+    }
     private Vector3     _reelVelocity   = Vector3.Zero;
 
     private const float GrappleSpeed          = 300f;

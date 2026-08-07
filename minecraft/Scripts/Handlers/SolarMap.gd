@@ -17,15 +17,29 @@ extends Control
 # showing placeholder values — they are labelled RESERVED and nothing feeds them yet.
 
 const PLANET_ICON := preload("res://Sprites/planet icon.png")
+const PLANET_DESTROYED_ICON := preload("res://Sprites/planet destroyed icon.png")
 const SUN_ICON := preload("res://Sprites/sun icon.png")
 const SHOP_ICON := preload("res://Sprites/warp shop icon.png")
+# Marks where you are, hovering over the current node. Antithesis is the "you" on this map.
+const HERE_ICON := preload("res://Sprites/Antithesis Icon.png")
+const HERE_ICON_SIZE := 72.0
+const HERE_ICON_GAP := 14.0
+# How far a finished node fades back. Whole-cell alpha, so icon and labels dim together.
+const CLEARED_DIM := 0.4
+
+# Rail legs. Every leg is dashed; everything ahead of you shares one colour and alpha, so
+# progress is told by colour alone (dim green behind you, grey ahead).
+const LINK_WIDTH := 4.0
+const FUTURE_LINK_ALPHA := 0.6
+const DASH_LENGTH := 14.0
+const DASH_GAP := 10.0
 
 # Current and cleared are both green now that the accent moved off cyan, so they're
 # separated by brightness instead of hue: neon = happening now, muted = already done.
 # Don't flatten these back together — the map's whole job is showing which is which.
 const COL_CURRENT := Color(0, 1, 0)                          # #00FF00, the main-menu green
 const COL_CLEARED := Color(0.243137, 0.619608, 0.290196)     # #3E9E4A, muted
-const COL_WAYSTATION := Color(1.0, 0.713726, 0.282353)
+const COL_WARPSTATION := Color(1.0, 0.713726, 0.282353)
 const COL_SUN := Color(1.0, 0.352941, 0.156863)
 const COL_LOCKED := Color(0.607843, 0.619608, 0.658824)
 const COL_HIDDEN := Color(0.298039, 0.309804, 0.345098)
@@ -130,21 +144,55 @@ func _build_map() -> void:
 		_nodes_root.add_child(_make_node_cell(i, nodes[i]))
 
 
-func _make_link(i: int, nodes: Array) -> Line2D:
-	var line := Line2D.new()
-	line.points = PackedVector2Array([_node_positions[i - 1], _node_positions[i]])
-	line.width = 4.0
+func _make_link(i: int, nodes: Array) -> Node2D:
+	var from: Vector2 = _node_positions[i - 1]
+	var to: Vector2 = _node_positions[i]
 
-	# A leg reads as travelled once the node it arrives at has been reached.
+	# A leg reads as travelled once the node it arrives at has been reached. A travelled
+	# leg fades to the same CLEARED_DIM the node cells use, so the whole finished stretch
+	# of the rail recedes together instead of the line staying brighter than the planets
+	# it connects.
 	var prev_state: String = nodes[i - 1].get("state", "Locked")
+	var col: Color
 	if prev_state == "Cleared":
-		line.default_color = Color(COL_CLEARED, 0.85)
+		col = Color(COL_CLEARED, CLEARED_DIM)
 	elif i <= _current_index:
-		line.default_color = Color(COL_CURRENT, 0.7)
+		col = Color(COL_CURRENT, 0.7)
 	else:
-		var fog: String = nodes[i].get("fog", "Hidden")
-		line.default_color = Color(COL_HIDDEN, 0.55 if fog != "Hidden" else 0.25)
+		# Every leg still ahead of you looks the same — legs used to fade further the deeper
+		# into fog they went, which made the far end of a 20-node system almost invisible.
+		# Fog is a property of the node, not of the track between them.
+		col = Color(COL_LOCKED, FUTURE_LINK_ALPHA)
+
+	# Every leg is dashed, travelled or not — the rail reads as a plotted course throughout,
+	# and state is carried by colour alone.
+	return _make_dashed_link(from, to, col)
+
+
+func _make_segment(from: Vector2, to: Vector2, col: Color) -> Line2D:
+	var line := Line2D.new()
+	line.points = PackedVector2Array([from, to])
+	line.width = LINK_WIDTH
+	line.default_color = col
 	return line
+
+
+# Line2D has no dash support — its points are always joined — so a dashed leg is built as
+# a row of short segments under one holder node.
+func _make_dashed_link(from: Vector2, to: Vector2, col: Color) -> Node2D:
+	var root := Node2D.new()
+	var span := to - from
+	var length := span.length()
+	if length <= 0.0:
+		return root
+
+	var dir := span / length
+	var travelled := 0.0
+	while travelled < length:
+		var dash_end: float = min(travelled + DASH_LENGTH, length)
+		root.add_child(_make_segment(from + dir * travelled, from + dir * dash_end, col))
+		travelled += DASH_LENGTH + DASH_GAP
+	return root
 
 
 func _make_node_cell(i: int, data: Dictionary) -> Control:
@@ -161,51 +209,59 @@ func _make_node_cell(i: int, data: Dictionary) -> Control:
 	var accent := _accent_for(kind, state, fog)
 	var icon_size := 132.0 if kind == "Sun" else 96.0
 
-	# Ring — the state signifier. Cleared and current nodes get a solid ring; nodes
-	# ahead get a faint one, so progress is legible at a glance while scrolling.
-	var ring := Panel.new()
 	var ring_size: float = icon_size + 44.0
-	ring.position = Vector2((NODE_CELL.x - ring_size) * 0.5, (NODE_CELL.y - ring_size) * 0.5 - 24.0)
-	ring.size = Vector2(ring_size, ring_size)
-	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ring_pos := Vector2((NODE_CELL.x - ring_size) * 0.5, (NODE_CELL.y - ring_size) * 0.5 - 24.0)
 
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.039216, 0.047059, 0.058824, 0.55)
-	sb.border_color = accent
-	var border := 4 if (state == "Cleared" or state == "Current") else 2
-	sb.border_width_left = border
-	sb.border_width_right = border
-	sb.border_width_top = border
-	sb.border_width_bottom = border
-	var r := int(ring_size * 0.5)
-	sb.corner_radius_top_left = r
-	sb.corner_radius_top_right = r
-	sb.corner_radius_bottom_left = r
-	sb.corner_radius_bottom_right = r
-	ring.add_theme_stylebox_override("panel", sb)
-	cell.add_child(ring)
-
+	# Only the current node gets a ring, and it is a bare outline — no filled disc behind
+	# the icon. Nodes that aren't current build no Panel at all, so there is nothing there
+	# to tint the art or the background behind it.
 	if state == "Current":
+		var ring := Panel.new()
+		ring.position = ring_pos
+		ring.size = Vector2(ring_size, ring_size)
+		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0, 0, 0, 0)
+		sb.border_color = accent
+		sb.border_width_left = 4
+		sb.border_width_right = 4
+		sb.border_width_top = 4
+		sb.border_width_bottom = 4
+		var r := int(ring_size * 0.5)
+		sb.corner_radius_top_left = r
+		sb.corner_radius_top_right = r
+		sb.corner_radius_bottom_left = r
+		sb.corner_radius_bottom_right = r
+		ring.add_theme_stylebox_override("panel", sb)
+		cell.add_child(ring)
+
 		_pulse_targets.append(ring)
+		cell.add_child(_make_here_marker(ring_pos.y))
 
 	var icon := TextureRect.new()
-	icon.texture = _icon_for(kind)
+	icon.texture = _icon_for(kind, state)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.size = Vector2(icon_size, icon_size)
 	icon.position = Vector2((NODE_CELL.x - icon_size) * 0.5, (NODE_CELL.y - icon_size) * 0.5 - 24.0)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Local fog as brightness: fully known nodes are lit, the next is dim, the rest
-	# are barely there (Decision 03).
-	match fog:
-		"Known": icon.modulate = Color(1, 1, 1, 1)
-		"Rough": icon.modulate = Color(1, 1, 1, 0.5)
-		_: icon.modulate = Color(0.45, 0.47, 0.52, 0.32)
+	# Every planet draws at full brightness. Fog used to be shown by greying the art down
+	# (Decision 03), but a dark washed-out planet reads as a wrecked one — which is now a
+	# separate icon and has to stay the only thing that means "destroyed". Fog still shows
+	# in the title and subtitle ("- - -" / "UNKNOWN"), which say it outright.
+	icon.modulate = Color(1, 1, 1, 1)
 	cell.add_child(icon)
 
 	cell.add_child(_make_label(_title_for(i, kind, fog), 20, accent, 0.0, NODE_CELL.y - 96.0, true))
 	cell.add_child(_make_label(_subtitle_for(data, kind, fog), 15, COL_LOCKED, 0.0, NODE_CELL.y - 70.0, false))
 	cell.add_child(_make_label(_signifier_for(state, kind), 16, accent, 0.0, NODE_CELL.y - 44.0, true))
+
+	# A finished node recedes: icon and all three labels dim together. Applied to the whole
+	# cell rather than per-child so nothing added later can forget to dim with it. Cleared
+	# cells have no ring, so this only touches the art and the text.
+	if state == "Cleared":
+		cell.modulate = Color(1, 1, 1, CLEARED_DIM)
 	return cell
 
 
@@ -221,11 +277,30 @@ func _make_label(txt: String, size: int, col: Color, _x: float, y: float, bold: 
 	return l
 
 
-func _icon_for(kind: String) -> Texture2D:
+# Antithesis hovering over the node you're on. Positioned off the ring's top edge rather
+# than off the cell, so it clears the sun's larger ring without a second special case.
+func _make_here_marker(ring_top: float) -> TextureRect:
+	var marker := TextureRect.new()
+	marker.texture = HERE_ICON
+	marker.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	marker.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	marker.size = Vector2(HERE_ICON_SIZE, HERE_ICON_SIZE)
+	marker.position = Vector2(
+		(NODE_CELL.x - HERE_ICON_SIZE) * 0.5,
+		ring_top - HERE_ICON_SIZE - HERE_ICON_GAP,
+	)
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return marker
+
+
+func _icon_for(kind: String, state: String) -> Texture2D:
 	match kind:
 		"Sun": return SUN_ICON
-		"Waystation": return SHOP_ICON
-		_: return PLANET_ICON
+		"Warpstation": return SHOP_ICON
+		# A beaten planet is a destroyed one, so the map shows the wreck rather than the
+		# planet you were offered. Planets only: clearing the sun ends the run, and a
+		# warpstation is visited rather than destroyed.
+		_: return PLANET_DESTROYED_ICON if state == "Cleared" else PLANET_ICON
 
 
 func _accent_for(kind: String, state: String, fog: String) -> Color:
@@ -233,13 +308,13 @@ func _accent_for(kind: String, state: String, fog: String) -> Color:
 	if state == "Current": return COL_CURRENT
 	if fog == "Hidden": return COL_HIDDEN
 	if kind == "Sun": return COL_SUN
-	if kind == "Waystation": return COL_WAYSTATION
+	if kind == "Warpstation": return COL_WARPSTATION
 	return COL_LOCKED
 
 
 func _title_for(i: int, kind: String, fog: String) -> String:
 	if kind == "Sun": return "THE SUN"
-	if kind == "Waystation": return "WAYSTATION"
+	if kind == "Warpstation": return "WARPSTATION"
 	if fog == "Hidden": return "- - -"
 	return "PLANET %d" % (i + 1)
 
@@ -247,7 +322,7 @@ func _title_for(i: int, kind: String, fog: String) -> String:
 # Category, never contents — a rough node shows its terrain family and difficulty
 # band but not which biome it actually is (Decision 02 / Decision 03).
 func _subtitle_for(data: Dictionary, kind: String, fog: String) -> String:
-	if kind == "Waystation": return "SHOP"
+	if kind == "Warpstation": return "SHOP"
 	if kind == "Sun":
 		return "DESTROY TO CLEAR" if fog != "Hidden" else "UNKNOWN"
 	match fog:
@@ -264,7 +339,7 @@ func _subtitle_for(data: Dictionary, kind: String, fog: String) -> String:
 # The per-node progress signifier the map exists to show.
 func _signifier_for(state: String, kind: String) -> String:
 	match state:
-		"Cleared": return "CLEARED" if kind != "Waystation" else "VISITED"
+		"Cleared": return "CLEARED" if kind != "Warpstation" else "VISITED"
 		"Current": return "YOU ARE HERE"
 		_: return ""
 

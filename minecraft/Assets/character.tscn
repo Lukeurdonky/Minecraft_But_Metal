@@ -309,7 +309,7 @@ width = 0.9
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 follow_viewport_enabled = true
 
-[node name="Control Center" type="Control" parent="CanvasLayer" node_paths=PackedStringArray("JumpAnimPlayer", "EnemyIndicator", "Crosshair", "HpBarFg", "SpeedSection1", "SpeedSection2", "SpeedSection3", "HitFlash", "KillLabel", "TimerLabel")]
+[node name="Control Center" type="Control" parent="CanvasLayer" node_paths=PackedStringArray("JumpAnimPlayer", "EnemyIndicator", "Crosshair", "HpBarFg", "SpeedSection1", "SpeedSection2", "SpeedSection3", "HitFlash", "KillLabel", "TimerLabel", "WarpLabel")]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -326,8 +326,9 @@ SpeedSection1 = NodePath("../BarContainer/SpeedSection1")
 SpeedSection2 = NodePath("../BarContainer/SpeedSection2")
 SpeedSection3 = NodePath("../BarContainer/SpeedSection3")
 HitFlash = NodePath("../HitFlash")
-KillLabel = NodePath("RunUI/Label")
-TimerLabel = NodePath("RunUI/Label2")
+TimerLabel = NodePath("RunUI/Label")
+KillLabel = NodePath("RunUI/Label2")
+WarpLabel = NodePath("RunUI/WarpLabel")
 metadata/_edit_use_anchors_ = true
 
 [node name="Panel" type="Panel" parent="CanvasLayer/Control Center"]
@@ -417,6 +418,15 @@ offset_top = -1.0
 offset_right = 1540.0
 offset_bottom = 31.0
 theme_override_constants/separation = 6
+
+[node name="WarpLabel" type="Label" parent="CanvasLayer/Control Center/RunUI"]
+visible = false
+layout_mode = 0
+offset_left = 719.0
+offset_top = 68.0
+offset_right = 1192.0
+offset_bottom = 102.0
+horizontal_alignment = 1
 
 [node name="Control Debug" type="Control" parent="CanvasLayer"]
 layout_mode = 3

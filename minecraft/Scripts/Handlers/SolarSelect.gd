@@ -20,10 +20,13 @@ extends Control
 # One scene, used two ways — the same split SolarMap.gd makes:
 #
 #   full screen  — reached directly (F6, or the old MainMenu -> SolarSelect route). BACK
-#                  ends the attempt and returns to the main menu.
+#                  abandons the attempt and returns to the ship.
 #   MODE_OVERLAY — instanced over the ship hub from mission control. Pauses the tree,
 #                  and BACK closes the overlay to put you back on the ship. Committing to
 #                  a system still leaves for SolarMap, because that choice is final.
+#
+# The back button's label is whatever SolarSelect.tscn says in both modes — the overlay
+# deliberately does not relabel it.
 
 signal select_closed
 
@@ -37,6 +40,19 @@ signal select_closed
 # SolarSystemDescriptor.Tiers in declaration order.
 const TIER_NAMES := ["EASY", "MEDIUM", "HARD"]
 
+# Danger is the game-wide threat scale — 1..10, with PLANT-level above it (reserved
+# in SolarSystemDescriptor, not generated yet). The meter reads both `danger` and
+# `danger_max` off the offer, so widening the scale is a data change and this code
+# never learns the number 10. Segment count comes from the data; only the segments
+# themselves are built here, the container is a real node in the scene.
+const DANGER_SEG_MIN := Vector2(20, 0)
+const DANGER_EMPTY := Color(0.13, 0.14, 0.16, 1.0)
+# Banded to match SolarSystemDescriptor.LabelFor's Low/Moderate/Severe thirds, and
+# reusing colours already on this screen (designation green, modifier amber).
+const DANGER_LOW := Color(0.0, 1.0, 0.0, 1.0)
+const DANGER_MID := Color(1.0, 0.713726, 0.282353, 1.0)
+const DANGER_HIGH := Color(1.0, 0.290196, 0.239216, 1.0)
+
 var _panels: Array[TextureRect] = []
 var _hitboxes: Array[Button] = []
 var _tweens: Array = [null, null, null]
@@ -49,7 +65,6 @@ func _ready() -> void:
 	if overlay_mode:
 		process_mode = Node.PROCESS_MODE_ALWAYS
 		get_tree().paused = true
-		$Header/BackButton.text = "BACK TO SHIP"
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 	_panels = [$Systems/Easy, $Systems/Medium, $Systems/Hard]
@@ -73,7 +88,7 @@ func _ready() -> void:
 	_hitboxes[0].grab_focus()
 
 
-# Topology preview only: count, clock, waystations, flavour — never the actual
+# Topology preview only: count, clock, warpstations, flavour — never the actual
 # biomes or enemy composition (Decision 02).
 func _build_previews() -> void:
 	for i in _panels.size():
@@ -85,6 +100,7 @@ func _build_previews() -> void:
 			info.get_node("Designation").text = "—"
 			info.get_node("Stats").text = "no offer generated"
 			info.get_node("Modifiers").text = ""
+			_build_danger_meter(info, 0, 0)
 			continue
 
 		var o: Dictionary = _offers[i]
@@ -95,7 +111,7 @@ func _build_previews() -> void:
 		var secs := int(float(o["time_limit"])) % 60
 		var lines := [
 			"%d PLANETS" % int(o["planets"]),
-			"%d WAYSTATION%s" % [int(o["waystations"]), "" if int(o["waystations"]) == 1 else "S"],
+			"%d WARPSTATION%s" % [int(o["warpstations"]), "" if int(o["warpstations"]) == 1 else "S"],
 			"%d:%02d CLOCK" % [mins, secs],
 			"HOSTILITY x%.2f" % float(o["density"]),
 		]
@@ -103,6 +119,44 @@ func _build_previews() -> void:
 
 		var mods: Array = o["modifiers"]
 		info.get_node("Modifiers").text = " · ".join(mods) if not mods.is_empty() else "NO MODIFIERS"
+
+		_build_danger_meter(info, int(o["danger"]), int(o["danger_max"]))
+
+
+# One lit segment per danger level. The container (Danger/Meter) is authored in the
+# scene; only the segments — whose count is data, not layout — are made here.
+func _build_danger_meter(info: Control, level: int, level_max: int) -> void:
+	var meter := info.get_node_or_null("Danger/Meter") as HBoxContainer
+	var readout := info.get_node_or_null("Danger/Readout") as Label
+	if meter == null:
+		return
+
+	for child in meter.get_children():
+		meter.remove_child(child)
+		child.queue_free()
+
+	var fill := _danger_color(level, level_max)
+	for i in level_max:
+		var seg := ColorRect.new()
+		seg.custom_minimum_size = DANGER_SEG_MIN
+		# Expand so the row always spans the container regardless of level_max —
+		# a 10-segment and a 14-segment meter both fill the same width.
+		seg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		seg.color = fill if i < level else DANGER_EMPTY
+		meter.add_child(seg)
+
+	if readout != null:
+		readout.text = "LEVEL %d / %d" % [level, level_max] if level_max > 0 else "—"
+		readout.add_theme_color_override("font_color", fill)
+
+
+func _danger_color(level: int, level_max: int) -> Color:
+	if level_max <= 0 or level <= 0:
+		return DANGER_EMPTY
+	var t := float(level - 1) / float(max(level_max - 1, 1))
+	if t < 0.34:
+		return DANGER_LOW
+	return DANGER_MID if t < 0.67 else DANGER_HIGH
 
 
 func _on_hover(index: int) -> void:

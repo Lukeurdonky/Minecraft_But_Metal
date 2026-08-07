@@ -12,8 +12,8 @@ using System.Linq;
 //     -> LoadingScreen (accessory pick)
 //     -> CubeLand  (node 1) ... -> Sun -> run complete
 //
-// Waystation nodes are auto-skipped for now — the shop doesn't exist yet. When it
-// does, SkipWaystation() is the one place that has to change.
+// Warpstation nodes are auto-skipped for now — the shop doesn't exist yet. When it
+// does, SkipWarpstation() is the one place that has to change.
 //
 // The old fixed 3-stage demo (TotalStages, StageKillTargets, GoToRandomPlanet) is
 // gone: run length is now whatever the generated system's node list says. The
@@ -39,6 +39,19 @@ public partial class RunManager : Node
 	public List<SystemOffer> CurrentOffers { get; private set; } = new();
 	public List<string> CurrentAccessoryOptions { get; private set; } = new();
 
+	// ── warp-out ──────────────────────────────────────────────────────────────
+	// Hitting a node's kill target no longer teleports you off it. The exit opens and the
+	// player triggers it, so a cleared planet is somewhere you can keep moving through
+	// instead of a room the game yanks you out of mid-swing. The clock keeps draining
+	// through both the decision and the charge, so lingering is a real cost.
+	public const float  WarpChargeSeconds = 10f;
+	private const string WarpAction = "start_warp";
+	public const string WarpKeyName = "J"; // display only — keep in step with WarpAction's binding
+
+	public bool  WarpReady     { get; private set; } = false;
+	public bool  WarpCharging  { get; private set; } = false;
+	public float WarpRemaining { get; private set; } = 0f;
+
 	private bool _stageActive = false;
 	private int _stageKillTarget = 0;
 	private readonly Random _rng = new Random();
@@ -60,8 +73,41 @@ public partial class RunManager : Node
 			if (ClockRemaining <= 0f) ClockExpired = true;
 		}
 
-		if (Global.Instance.KillCount >= _stageKillTarget)
-			CompleteStage();
+		// Three-step exit: reach the target -> the warp offer appears -> the player starts it
+		// -> it charges for WarpChargeSeconds -> the stage completes. Once WarpReady latches,
+		// the kill count stops mattering; killing more can't un-clear the node.
+		if (WarpCharging)
+		{
+			WarpRemaining = Mathf.Max(0f, WarpRemaining - (float)delta);
+			if (WarpRemaining <= 0f) CompleteStage();
+			return;
+		}
+
+		if (!WarpReady)
+		{
+			if (Global.Instance.KillCount >= _stageKillTarget) WarpReady = true;
+			return;
+		}
+
+		// HasAction guard: IsActionJustPressed on a missing action errors every frame, and the
+		// binding lives in project.godot where it can be edited out from under this.
+		if (InputMap.HasAction(WarpAction) && Input.IsActionJustPressed(WarpAction))
+			StartWarp();
+	}
+
+	// Public so a UI button can trigger the same sequence the key does.
+	public void StartWarp()
+	{
+		if (!_stageActive || !WarpReady || WarpCharging) return;
+		WarpCharging  = true;
+		WarpRemaining = WarpChargeSeconds;
+	}
+
+	private void ResetWarpState()
+	{
+		WarpReady     = false;
+		WarpCharging  = false;
+		WarpRemaining = 0f;
 	}
 
 	// ───────────────────────────── run lifecycle ─────────────────────────────
@@ -74,6 +120,7 @@ public partial class RunManager : Node
 		ClockExpired = false;
 		ClockRemaining = 0f;
 		_stageActive = false;
+		ResetWarpState();
 		_usedBiomes.Clear();
 		Global.Instance.EquippedAccessoryIds.Clear();
 	}
@@ -134,7 +181,7 @@ public partial class RunManager : Node
 	}
 
 	// Topology preview only — category, never contents (Decision 02). Planet count,
-	// tier, clock, waystations and modifier flavour; no biome or enemy composition.
+	// tier, clock, warpstations and modifier flavour; no biome or enemy composition.
 	public Godot.Collections.Array<Godot.Collections.Dictionary> GetOffersForUI()
 	{
 		var arr = new Godot.Collections.Array<Godot.Collections.Dictionary>();
@@ -146,7 +193,11 @@ public partial class RunManager : Node
 				{ "tier", o.Tier },
 				{ "name", p.Name },
 				{ "planets", p.PlanetCount },
-				{ "waystations", p.WaystationCount },
+				{ "warpstations", p.WarpstationCount },
+				// The meter draws itself from these two — it never hardcodes 10, so raising
+				// MaxDanger (or the PLANT level landing above it) needs no UI change.
+				{ "danger", p.DangerLevel },
+				{ "danger_max", SolarSystemDescriptor.MaxDanger },
 				{ "time_limit", p.TimeLimitSeconds },
 				{ "density", p.EnemyDensityScale },
 				{ "modifiers", new Godot.Collections.Array<string>(p.Modifiers) },
@@ -181,11 +232,11 @@ public partial class RunManager : Node
 		var node = CurrentSystem.NodeAt(CurrentNodeIndex);
 		if (node == null) return;
 
-		// A waystation has nothing to launch into yet — step over it and land on
+		// A warpstation has nothing to launch into yet — step over it and land on
 		// whatever follows.
-		if (node.Kind == SystemNodeKind.Waystation)
+		if (node.Kind == SystemNodeKind.Warpstation)
 		{
-			SkipWaystation();
+			SkipWarpstation();
 			node = CurrentSystem.NodeAt(CurrentNodeIndex);
 			if (node == null) return;
 		}
@@ -200,6 +251,7 @@ public partial class RunManager : Node
 		Global.Instance.ApplyPlanetParams(descriptor.MakePlanetParams(node.Seed));
 		_stageKillTarget = node.KillTarget;
 		_stageActive = true;
+		ResetWarpState(); // every node starts un-cleared, including one re-entered mid-run
 		GetTree().ChangeSceneToFile("res://Scenes/CubeLand.tscn");
 	}
 
@@ -208,12 +260,12 @@ public partial class RunManager : Node
 	private BiomeDescriptor PickSunBiome() =>
 		Biome_Registry.Get("Lava Walls") ?? Biome_Registry.All[0];
 
-	// TODO(shop): a waystation should open the shop. Until that exists it's marked
+	// TODO(shop): a warpstation should open the shop. Until that exists it's marked
 	// cleared and stepped past so it still reads as a visited node on the map.
-	private void SkipWaystation()
+	private void SkipWarpstation()
 	{
 		var node = CurrentSystem.NodeAt(CurrentNodeIndex);
-		if (node == null || node.Kind != SystemNodeKind.Waystation) return;
+		if (node == null || node.Kind != SystemNodeKind.Warpstation) return;
 		node.State = SystemNodeState.Cleared;
 		CurrentNodeIndex++;
 		var next = CurrentSystem.NodeAt(CurrentNodeIndex);
@@ -223,6 +275,7 @@ public partial class RunManager : Node
 	private void CompleteStage()
 	{
 		_stageActive = false;
+		ResetWarpState();
 		if (CurrentSystem == null) return;
 
 		var cleared = CurrentSystem.NodeAt(CurrentNodeIndex);
@@ -231,8 +284,8 @@ public partial class RunManager : Node
 		bool wasSun = cleared != null && cleared.Kind == SystemNodeKind.Sun;
 		CurrentNodeIndex++;
 
-		// Step over any waystations sitting between here and the next combat node.
-		while (CurrentSystem.NodeAt(CurrentNodeIndex) is SystemNode w && w.Kind == SystemNodeKind.Waystation)
+		// Step over any warpstations sitting between here and the next combat node.
+		while (CurrentSystem.NodeAt(CurrentNodeIndex) is SystemNode w && w.Kind == SystemNodeKind.Warpstation)
 		{
 			w.State = SystemNodeState.Cleared;
 			CurrentNodeIndex++;
@@ -246,11 +299,16 @@ public partial class RunManager : Node
 		}
 		else next.State = SystemNodeState.Current;
 
-		// LoadingScreen reads RunComplete to decide between the accessory pick and the
-		// end-of-run panel, so options are generated unconditionally and go unused on
-		// the final clear.
+		// Warping out lands on the solar map, not the accessory pick — the map is where you
+		// see what the hop cost you and choose to launch again. The accessory options are
+		// still generated because LoadingScreen (and whatever replaces it) still reads them.
 		GenerateAccessoryOptions();
-		GetTree().ChangeSceneToFile("res://Scenes/LoadingScreen.tscn");
+
+		// The one case that still goes to LoadingScreen: it owns the end-of-run panel, and
+		// the map has no "you won" state to show. Swap this the moment a real one exists.
+		GetTree().ChangeSceneToFile(RunComplete
+			? "res://Scenes/LoadingScreen.tscn"
+			: "res://Scenes/SolarMap.tscn");
 	}
 
 	// ───────────────────────── GDScript-facing marshaling ─────────────────────────
@@ -258,6 +316,17 @@ public partial class RunManager : Node
 	// C# property reads from GDScript are unreliable in this project.
 
 	public bool HasActiveSystem() => CurrentSystem != null;
+	public bool IsStageActive() => _stageActive;
+	public int GetStageKillTarget() => _stageKillTarget;
+
+	// What the HUD shows: how many more you need, not how many you have.
+	public int GetKillsRemaining() =>
+		Math.Max(0, _stageKillTarget - (Global.Instance?.KillCount ?? 0));
+
+	public bool IsWarpReady() => WarpReady;
+	public bool IsWarpCharging() => WarpCharging;
+	public float GetWarpRemaining() => WarpRemaining;
+
 	public int GetCurrentNodeIndex() => CurrentNodeIndex;
 	public bool IsRunComplete() => RunComplete;
 	public bool IsClockExpired() => ClockExpired;
@@ -271,7 +340,7 @@ public partial class RunManager : Node
 			{ "name", CurrentSystem.Name },
 			{ "tier", CurrentSystem.Tier },
 			{ "planets", CurrentSystem.PlanetCount },
-			{ "waystations", CurrentSystem.WaystationCount },
+			{ "warpstations", CurrentSystem.WarpstationCount },
 			{ "cleared", CurrentSystem.ClearedCount },
 			{ "total_nodes", CurrentSystem.Nodes.Count },
 			{ "time_limit", CurrentSystem.TimeLimitSeconds },

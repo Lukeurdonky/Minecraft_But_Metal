@@ -30,6 +30,7 @@ public partial class PlayerHUD : Control
 
     [Export] public Label KillLabel  { get; set; }
     [Export] public Label TimerLabel { get; set; }
+    [Export] public Label WarpLabel  { get; set; }
 
     private float _hpBarLeft;
     private float _hpBarFullRight;
@@ -46,6 +47,7 @@ public partial class PlayerHUD : Control
         EnemyIndicator ??= GetNodeOrNull<Node2D>("Panel/Enemy");
         Crosshair      ??= GetNodeOrNull<CanvasItem>("Panel/Crosshair");
         AccessoryRow   ??= GetNodeOrNull<HBoxContainer>("RunUI/AccessoryRow");
+        WarpLabel      ??= GetNodeOrNull<Label>("RunUI/WarpLabel");
         HpBarFg        ??= GetNodeOrNull<ColorRect>("../BarContainer/HPBarFg");
         LaserBarFg     ??= GetNodeOrNull<ColorRect>("../BarContainer/LaserBarFg");
         SpeedSection1  ??= GetNodeOrNull<ColorRect>("../BarContainer/SpeedSection1");
@@ -251,15 +253,54 @@ public partial class PlayerHUD : Control
         Crosshair.Modulate = m;
     }
 
+    // The two run meters: the system clock on top, kills-to-go under it.
+    //
+    // Both fall back to the old per-planet readouts when no stage is active — CubeLand is
+    // still reachable without a run (F6 from the editor, the F3 debug menu), and a clock
+    // frozen at 00:00 there would read as a bug rather than as "no run".
     private void UpdateRunStats()
     {
         if (Global.Instance == null) return;
-        if (KillLabel  != null) KillLabel.Text  = $"{Global.Instance.KillCount}";
+        var  run     = RunManager.Instance;
+        bool inStage = run != null && run.IsStageActive();
+
         if (TimerLabel != null)
         {
-            float t = Global.Instance.RunTimer;
+            // Counts DOWN — this is the "time before it happens" meter, not a stopwatch.
+            float t = inStage ? run.ClockRemaining : Global.Instance.RunTimer;
             TimerLabel.Text = $"{(int)(t / 60f):D2}:{(int)(t % 60f):D2}";
         }
+
+        if (KillLabel != null)
+        {
+            if (!inStage)
+                KillLabel.Text = $"{Global.Instance.KillCount}";
+            else
+            {
+                int left = run.GetKillsRemaining();
+                KillLabel.Text = left > 0 ? $"{left} ENEMIES LEFT" : "AREA CLEAR";
+            }
+        }
+
+        UpdateWarpPrompt(inStage ? run : null);
+    }
+
+    // Hidden until the node is cleared, then the offer, then the countdown. Deliberately
+    // plain text — the meters and this prompt are placeholders for a real treatment.
+    private void UpdateWarpPrompt(RunManager run)
+    {
+        if (WarpLabel == null) return;
+
+        if (run == null || !run.IsWarpReady())
+        {
+            WarpLabel.Visible = false;
+            return;
+        }
+
+        WarpLabel.Visible = true;
+        WarpLabel.Text = run.IsWarpCharging()
+            ? $"WARPING IN {Mathf.CeilToInt(run.GetWarpRemaining())}"
+            : $"PRESS {RunManager.WarpKeyName} TO START WARP SEQUENCE";
     }
 
     // Same 12-col x 8-row / 16px-cell grid Item_Registry.cs used for this atlas.
@@ -314,13 +355,28 @@ public partial class PlayerHUD : Control
         var enemy         = _player.SelectedEnemy;
         var grappledEnemy = _player.GrappledEntity;
 
+        // trackTarget is bound in the same branch that validated it. It used to be
+        // `grappledEnemy ?? enemy` further down, which reintroduced the disposed reference:
+        // a freed entity leaves a NON-null C# wrapper, so `??` still picks it even though
+        // IsInstanceValid rejected it here and the animation fell through to the other one.
+        // GetCenter() on that wrapper then threw ObjectDisposedException every frame.
+        Entity trackTarget;
         string targetAnim;
         if (grappledEnemy != null && GodotObject.IsInstanceValid(grappledEnemy))
-            targetAnim = "EnemyUIGrappling";
+        {
+            targetAnim  = "EnemyUIGrappling";
+            trackTarget = grappledEnemy;
+        }
         else if (enemy != null && GodotObject.IsInstanceValid(enemy))
-            targetAnim = "EnemyUISpin";
+        {
+            targetAnim  = "EnemyUISpin";
+            trackTarget = enemy;
+        }
         else
-            targetAnim = "";
+        {
+            targetAnim  = "";
+            trackTarget = null;
+        }
 
         if (targetAnim == "")
         {
@@ -337,7 +393,6 @@ public partial class PlayerHUD : Control
             _lastEnemyAnim = targetAnim;
         }
 
-        var trackTarget = grappledEnemy ?? enemy;
         EnemyIndicator.GlobalPosition = _player.Camera.UnprojectPosition(trackTarget.GetCenter());
     }
 }

@@ -26,6 +26,10 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_script")
+overlay_mode = null
+idle_modulate = null
+hover_modulate = null
+hover_fade_time = null
 
 [node name="Bg" type="TextureRect" parent="."]
 layout_mode = 1
@@ -138,6 +142,36 @@ offset_bottom = 256.0
 theme_override_colors/font_color = Color(1, 0.713726, 0.282353, 1)
 theme_override_font_sizes/font_size = 17
 
+[node name="Danger" type="Control" parent="Info/EasyInfo"]
+anchors_preset = 0
+offset_left = 330.0
+offset_top = 122.0
+offset_right = 569.0
+offset_bottom = 226.0
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Info/EasyInfo/Danger"]
+layout_mode = 0
+offset_right = 239.0
+offset_bottom = 24.0
+theme_override_colors/font_color = Color(0.803922, 0.815686, 0.839216, 1)
+theme_override_font_sizes/font_size = 17
+text = "DANGER METER"
+
+[node name="Meter" type="HBoxContainer" parent="Info/EasyInfo/Danger"]
+layout_mode = 0
+offset_top = 32.0
+offset_right = 239.0
+offset_bottom = 62.0
+theme_override_constants/separation = 4
+
+[node name="Readout" type="Label" parent="Info/EasyInfo/Danger"]
+layout_mode = 0
+offset_top = 70.0
+offset_right = 239.0
+offset_bottom = 100.0
+theme_override_font_sizes/font_size = 20
+
 [node name="MediumInfo" type="Panel" parent="Info"]
 layout_mode = 0
 offset_left = 669.0
@@ -184,6 +218,36 @@ offset_bottom = 256.0
 theme_override_colors/font_color = Color(1, 0.713726, 0.282353, 1)
 theme_override_font_sizes/font_size = 17
 
+[node name="Danger" type="Control" parent="Info/MediumInfo"]
+anchors_preset = 0
+offset_left = 330.0
+offset_top = 122.0
+offset_right = 569.0
+offset_bottom = 226.0
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Info/MediumInfo/Danger"]
+layout_mode = 0
+offset_right = 239.0
+offset_bottom = 24.0
+theme_override_colors/font_color = Color(0.803922, 0.815686, 0.839216, 1)
+theme_override_font_sizes/font_size = 17
+text = "DANGER METER"
+
+[node name="Meter" type="HBoxContainer" parent="Info/MediumInfo/Danger"]
+layout_mode = 0
+offset_top = 32.0
+offset_right = 239.0
+offset_bottom = 62.0
+theme_override_constants/separation = 4
+
+[node name="Readout" type="Label" parent="Info/MediumInfo/Danger"]
+layout_mode = 0
+offset_top = 70.0
+offset_right = 239.0
+offset_bottom = 100.0
+theme_override_font_sizes/font_size = 20
+
 [node name="HardInfo" type="Panel" parent="Info"]
 layout_mode = 0
 offset_left = 1309.0
@@ -229,6 +293,36 @@ offset_right = 559.0
 offset_bottom = 256.0
 theme_override_colors/font_color = Color(1, 0.713726, 0.282353, 1)
 theme_override_font_sizes/font_size = 17
+
+[node name="Danger" type="Control" parent="Info/HardInfo"]
+anchors_preset = 0
+offset_left = 330.0
+offset_top = 122.0
+offset_right = 569.0
+offset_bottom = 226.0
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Info/HardInfo/Danger"]
+layout_mode = 0
+offset_right = 239.0
+offset_bottom = 24.0
+theme_override_colors/font_color = Color(0.803922, 0.815686, 0.839216, 1)
+theme_override_font_sizes/font_size = 17
+text = "DANGER METER"
+
+[node name="Meter" type="HBoxContainer" parent="Info/HardInfo/Danger"]
+layout_mode = 0
+offset_top = 32.0
+offset_right = 239.0
+offset_bottom = 62.0
+theme_override_constants/separation = 4
+
+[node name="Readout" type="Label" parent="Info/HardInfo/Danger"]
+layout_mode = 0
+offset_top = 70.0
+offset_right = 239.0
+offset_bottom = 100.0
+theme_override_font_sizes/font_size = 20
 
 [node name="Hitboxes" type="Control" parent="."]
 layout_mode = 1
@@ -279,15 +373,14 @@ mouse_filter = 2
 theme_override_styles/panel = SubResource("Style_header")
 
 [node name="Title" type="Label" parent="Header"]
-visible = false
 layout_mode = 0
-offset_left = 260.0
-offset_top = 20.0
-offset_right = 1660.0
-offset_bottom = 70.0
+offset_left = 261.0
+offset_top = 8.0
+offset_right = 1661.0
+offset_bottom = 58.0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 38
-text = "SELECT SOLAR SYSTEM"
+text = "SOLAR SELECT"
 horizontal_alignment = 1
 
 [node name="BackButton" type="Button" parent="Header"]
@@ -297,6 +390,6 @@ offset_top = 7.0
 offset_right = 175.0
 offset_bottom = 61.0
 theme_override_font_sizes/font_size = 20
-text = "BACK"
+text = "LEAVE"
 
 [connection signal="pressed" from="Header/BackButton" to="." method="_on_back_button_pressed"]

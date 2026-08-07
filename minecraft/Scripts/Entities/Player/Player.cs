@@ -67,7 +67,19 @@ public partial class Player : Entity
 	[Export] public float JumpRechargeRate { get; set; } = 0.5f;
 
 	public float JumpMeter => _jumpMeter;
-	public Entity SelectedEnemy     { get; private set; }
+	// Validates on read for the same reason GrappledEntity does — it is rescanned every
+	// physics tick, but an enemy freed between that scan and a _Process reader leaves a
+	// non-null wrapper around a disposed object.
+	private Entity _selectedEnemy;
+	public Entity SelectedEnemy
+	{
+		get
+		{
+			if (_selectedEnemy != null && !IsInstanceValid(_selectedEnemy)) _selectedEnemy = null;
+			return _selectedEnemy;
+		}
+		private set => _selectedEnemy = value;
+	}
 	public bool   HasGrappleTarget  { get; private set; }
 
 	private SphereShape3D _enemySelectShape;

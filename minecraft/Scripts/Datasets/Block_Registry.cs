@@ -75,7 +75,7 @@ public partial class Block_Registry : Node
 		// Markers (2026-08-06). Builder-only blocks: placeable and visible while authoring, and
 		// skipped by both Structure stamp paths so they never appear in a live world. Numbered
 		// rather than named because a structure's roles are its own business — Ship.tscn decides
-		// that marker 1 is mission control, and a future waystation can mean something else by it.
+		// that marker 1 is mission control, and a future warpstation can mean something else by it.
 		// Hardness is low so a misplaced one is a single quick break.
 		for (int n = 1; n <= MarkerCount; n++)
 		{

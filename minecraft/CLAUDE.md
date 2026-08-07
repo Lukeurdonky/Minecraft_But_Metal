@@ -175,6 +175,14 @@ Root cause history: raising the spawn cap to 50 enemies dropped fps to 25 identi
 - **Use `GpuParticles3D`, never the `UniParticles3D` addon, for new enemy effects.** Profiling found `UniParticles3D`'s per-particle update is plain GDScript (a script-object loop, not GPU-driven) — it was the dominant cost once animation/AI were LOD-gated, even with emission already Near-tier-only. `Creature.cs`'s ember effect (`Assets/creature.tscn` → `EmberParticles`) was rebuilt as native `GpuParticles3D` for this reason; `Enemy.cs` still recognizes `UniParticles3D` for backward compat but it must not be used going forward.
 - **Far-tier AI throttle**: `Creature.cs` re-evaluates state transitions/targeting only every 4th physics frame at `Far` tier, accumulating delta across the skipped frames so accel/lerp stay time-correct on the tick that runs. Velocity integration + world collision (in `Entity._PhysicsProcess`) are untouched by this and still run every frame. This pattern is safe as-is only for flying entities with no per-tick gravity (`Creature` is `Flying`); a ground enemy with manual `vel.Y -= Gravity * dt` needs gravity applied on every tick, not just the decision tick.
 
+**Imported clips do not loop by default.** `Creature.cs` re-`Play()`s on `AnimationFinished` to fake
+it; `MossCreature.cs` instead sets `animation.LoopMode = Linear` once in `ImHere()`, which is the
+better pattern for a single always-on clip. `MossCreature` also pins `animation.Length` (1.94s, the
+clip's own tail loops late) — Godot's scene importer can set an animation's loop mode but **not** its
+length, so a Blender re-export would silently restore the late loop if this lived in the `.import`.
+Mutating the imported `Animation` is shared across every instance of that scene, which is what you
+want here and is idempotent.
+
 Rules for any **new** `Enemy` subclass (see the doc for the full numbered list):
 - Extend `Enemy`, not `Entity` directly, for anything AI-driven/hostile — that's where the LOD cache lives.
 - Gate every expensive per-frame op (raycasts, `get_block()` loops, physics queries, more than one `Atan2`) behind `Lod` — full simulation at `Near`, approximate or skipped at `Far`.
@@ -197,6 +205,63 @@ Rules for any **new** `Enemy` subclass (see the doc for the full numbered list):
 - Stage-clear is currently a placeholder: `RunManager._Process` polls `Global.KillCount` against a per-stage constant. There is no `PlanetDescriptor` yet, so `DifficultyLabels` is cosmetic and currently unused.
 - `Player.Die()`'s jump-to-restart calls `RunManager.Instance.EndRun()` (resets stage index, `RunComplete`, used-biomes, `Global.EquippedAccessoryIds`) and goes to `MainMenu.tscn` — dying forfeits the whole run, not just the current planet. `LoadingScreen.gd`'s win-path "Return to Main Menu" button calls `EndRun()` too.
 - **Editing `project.godot` while the editor is open:** use the godot-ai MCP `project_manage(op="settings_set")` / `autoload_manage` ops, not a raw file edit — the editor's live in-memory settings will silently re-clobber a manual text edit (`run/main_scene`, `[autoload]`) the next time any MCP call re-serializes the file.
+
+## Warping out — how a node is actually left
+
+Reaching a node's kill target does **not** end the stage. `RunManager` runs a three-step exit and
+`CompleteStage()` fires only at the end of it:
+
+1. `KillCount >= _stageKillTarget` → `WarpReady` latches true. Nothing else happens; you keep
+   playing a cleared planet. Once latched the kill count stops mattering.
+2. The player presses the `start_warp` action (**J**) → `StartWarp()` → `WarpCharging`, with
+   `WarpRemaining` counting down from `WarpChargeSeconds` (10).
+3. It hits zero → `CompleteStage()`.
+
+- **The clock keeps draining through both steps**, so deciding and charging cost real time. That
+  is the point — the exit is a choice with a price, not a cutscene.
+- `StartWarp()` is public so a UI button can drive the same sequence as the key.
+- **`CompleteStage()` goes to `SolarMap.tscn`, not `LoadingScreen.tscn`** — the map is where you
+  see what the hop cost and launch again. The single exception is `RunComplete` (sun cleared),
+  which still routes to `LoadingScreen` because that scene owns the end-of-run panel and the map
+  has no "you won" state. The accessory pick is currently **not** in the loop; options are still
+  generated, so re-inserting a pick screen is a routing change only.
+- `ResetWarpState()` is called from `ResetRunState()`, `LaunchCurrentNode()` and `CompleteStage()`.
+  Launch is the one that matters — every node must start un-cleared, including a re-entered one.
+
+### The two run meters
+
+`PlayerHUD` drives them from `RunManager`, both in `RunUI` on `character.tscn`:
+
+- **`RunUI/Label` → `TimerLabel`** — the system clock, counting **down** (`ClockRemaining`). This is
+  the "time before it happens" meter, not a stopwatch.
+- **`RunUI/Label2` → `KillLabel`** — kills **remaining** (`GetKillsRemaining()`), then `AREA CLEAR`.
+- **`RunUI/WarpLabel`** — hidden until `WarpReady`, then the prompt, then the countdown.
+
+Both meters fall back to the old per-planet readouts (`Global.RunTimer` / `KillCount`) when
+`IsStageActive()` is false, because CubeLand is still reachable without a run (F6, the F3 debug
+menu) and a clock frozen at 00:00 there reads as a bug rather than as "no run".
+
+Text and layout here are deliberately plain placeholders — the treatment is the user's call.
+
+## Danger level — the game-wide threat scale
+
+**1–10, then PLANT above it.** Danger is a property of the *thing*, not of the screen showing
+it, so a solar system, a planet and (later) an enemy all report on one scale and a "danger 4"
+means the same everywhere. Constants live on `SolarSystemDescriptor`: `MinDanger` (1),
+`MaxDanger` (10), `PlantDanger` (11).
+
+- **`PlantDanger` is reserved and never generated.** THE PLANT is the only thing that will ever
+  carry it. Nothing renders it specially yet — that's deliberate, not an oversight.
+- **All three SolarSelect tiers are `DangerLevel = 1`.** Danger is its own axis, not a
+  restatement of the tier: Hard is a *longer* system (18 planets, more warpstations, a bigger
+  clock), not currently a nastier one. Change it in `SolarSystemDescriptor.Tiers`, never in UI.
+- **The Danger Meter reads `danger` *and* `danger_max` off the offer dictionary**
+  (`RunManager.GetOffersForUI`), so it never learns the number 10 — widening the scale is a data
+  change with no UI edit. `SolarSelect.tscn` owns the container (`Info/*Info/Danger` — Title,
+  Meter, Readout); `SolarSelect.gd` builds only the segments, whose count is data. Same
+  container-in-scene / leaves-in-code split as `PlayerHUD`'s `RunUI/AccessoryRow`.
+- Fill colour bands Low/Moderate/Severe on the same thirds as
+  `SolarSystemDescriptor.LabelFor`, reusing this screen's existing green and amber.
 
 ## Accessories — PlayerAccessories.cs + Accessory.cs
 
@@ -323,8 +388,9 @@ returns you to the ship instead of the main menu.
   and it can't sit glowing in the wrong place when there's no marker. Optional; empty = no visual.
   Typed `Node3D` rather than `NodePath` specifically because that's what gives the Inspector a
   drag-and-drop slot.
-- **`SolarSelect.gd` has an `overlay_mode`**, mirroring `SolarMap.gd`'s: pauses the tree, relabels
-  BACK to "BACK TO SHIP", closes on Esc, emits `select_closed`. Committing to a system must
+- **`SolarSelect.gd` has an `overlay_mode`**, mirroring `SolarMap.gd`'s: pauses the tree, closes on
+  Esc, emits `select_closed`. The back button keeps whatever label the `.tscn` carries in both
+  modes — the overlay deliberately does not relabel it. Committing to a system must
   **unpause before `ChooseSystem`** — `paused` is a tree flag, not a scene one, and it would
   otherwise carry into `SolarMap` and freeze its buttons.
 
@@ -346,7 +412,13 @@ starting a run and ending one are the same event: "be on the ship with fresh off
   the builder is a dev tool, not a run.
 - **`Global.Player` validates on read.** A freed Player leaves a NON-null C# wrapper around a
   disposed object, so `Player != null` passes and the next member access throws
-  `ObjectDisposedException`. The getter nulls it via `IsInstanceValid`. This only started
+  `ObjectDisposedException`. The getter nulls it via `IsInstanceValid`. `Player.SelectedEnemy`
+  and `PlayerAbilities.GrappledEntity` do the same, for the same reason — **`??` is not a
+  safe fallback between two entity references**, since the disposed wrapper wins the coalesce
+  even when `IsInstanceValid` already rejected it (this was a real per-frame crash in
+  `PlayerHUD.UpdateEnemyIndicator`). Note the guards in `ProcessGrapple` are not enough on
+  their own: abilities run in `_PhysicsProcess` and the HUD reads in `_Process`, so there is
+  always a frame where a just-freed entity is still referenced. This only started
   mattering when two `Chunk_Manager` scenes could run back-to-back (ship → planet → ship):
   chunk streaming calls `GetPlayerPos()` on the new scene's first frames while the field still
   points at the previous scene's corpse, which silently broke streaming and stopped the ship
@@ -388,7 +460,7 @@ and the only symptom is that the game feels subtly wrong.
 - **Lookup:** `Structure_Registry.GetMarkers(name, number, worldPos)` → world positions for a
   stamp that put `Anchor` on `worldPos`. Empty when the structure or marker is missing.
 - **Numbered, not named** — a structure's roles are its own business. `Ship.tscn` decides
-  Marker1 means mission control (`console_marker` export); a waystation can mean something else.
+  Marker1 means mission control (`console_marker` export); a warpstation can mean something else.
 - **No fallback position on a missing marker.** `Ship.gd` reports it on screen and leaves the
   console disabled — silently interacting with a guessed empty spot is the exact failure markers
   exist to prevent.

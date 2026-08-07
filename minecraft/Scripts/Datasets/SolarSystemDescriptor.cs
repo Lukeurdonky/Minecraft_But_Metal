@@ -23,7 +23,7 @@ using System.Linq;
 public enum SystemNodeKind
 {
 	Planet,
-	Waystation, // hosts the shop; not built yet, currently auto-skipped
+	Warpstation, // hosts the shop; not built yet, currently auto-skipped
 	Sun,        // the capstone — destroying it clears the system
 }
 
@@ -50,7 +50,7 @@ public class SystemNode
 	public SystemNodeKind Kind;
 	public SystemNodeState State = SystemNodeState.Locked;
 
-	// Empty for Waystation/Sun nodes.
+	// Empty for Warpstation/Sun nodes.
 	public string Biome = "";
 	public string Template = "";
 	public int Seed;
@@ -70,19 +70,25 @@ public class SolarSystemDescriptor
 	{
 		public string Tier;
 		public int PlanetMin, PlanetMax;
-		public int Waystations;
+		public int Warpstations;
 		public float EnemyDensityScale;
 		public float TimeLimitSeconds;
 		public int ModifierCount;
+		public int DangerLevel;
 	}
 
 	// UNTUNED. Planet counts are the spec; densities, clocks and modifier counts
 	// are first guesses so the fields exist and show up in the preview.
+	//
+	// All three tiers are DangerLevel 1 on purpose — danger is its own axis, not a
+	// restatement of the tier, and nothing above 1 has been designed yet. A tier
+	// staying at 1 while its planet count grows is the intended reading: a longer
+	// system, not a nastier one.
 	public static readonly TierConfig[] Tiers =
 	{
-		new TierConfig { Tier = "Easy",   PlanetMin = 5,  PlanetMax = 7,  Waystations = 1, EnemyDensityScale = 1.00f, TimeLimitSeconds = 480f,  ModifierCount = 0 },
-		new TierConfig { Tier = "Medium", PlanetMin = 10, PlanetMax = 12, Waystations = 2, EnemyDensityScale = 1.35f, TimeLimitSeconds = 780f,  ModifierCount = 1 },
-		new TierConfig { Tier = "Hard",   PlanetMin = 16, PlanetMax = 20, Waystations = 3, EnemyDensityScale = 1.80f, TimeLimitSeconds = 1080f, ModifierCount = 2 },
+		new TierConfig { Tier = "Easy",   PlanetMin = 5,  PlanetMax = 7,  Warpstations = 1, EnemyDensityScale = 1.00f, TimeLimitSeconds = 480f,  ModifierCount = 0, DangerLevel = 1 },
+		new TierConfig { Tier = "Medium", PlanetMin = 10, PlanetMax = 12, Warpstations = 2, EnemyDensityScale = 1.35f, TimeLimitSeconds = 780f,  ModifierCount = 1, DangerLevel = 1 },
+		new TierConfig { Tier = "Hard",   PlanetMin = 16, PlanetMax = 20, Warpstations = 3, EnemyDensityScale = 1.80f, TimeLimitSeconds = 1080f, ModifierCount = 2, DangerLevel = 1 },
 	};
 
 	// The framework already scoped in the engineering docs (Decision 17) — nothing
@@ -97,16 +103,26 @@ public class SolarSystemDescriptor
 		"PIANI", "SHOMAK", "THORIUM", "NECESSITY", "PROTO", "COSMOS", "DEEP SPACE", "LERP", "ARBOR", "CHIME",
 	};
 
+	// Danger is the game-wide threat scale: 1..10, then PLANT above it. It is a
+	// property of the thing, not of the screen showing it — a system, a planet and
+	// (later) an enemy all report on the same scale, so a "danger 4" reads the same
+	// everywhere. PlantDanger is reserved and deliberately NOT generated yet: the
+	// final boss is the only thing that will ever carry it.
+	public const int MinDanger = 1;
+	public const int MaxDanger = 10;
+	public const int PlantDanger = 11;
+
 	public string Tier = "Easy";
 	public string Name = "";
 	public int Seed;
+	public int DangerLevel = MinDanger;
 	public float EnemyDensityScale = 1f;
 	public float TimeLimitSeconds = 480f;
 	public List<string> Modifiers = new();
 	public List<SystemNode> Nodes = new();
 
 	public int PlanetCount => Nodes.Count(n => n.Kind == SystemNodeKind.Planet);
-	public int WaystationCount => Nodes.Count(n => n.Kind == SystemNodeKind.Waystation);
+	public int WarpstationCount => Nodes.Count(n => n.Kind == SystemNodeKind.Warpstation);
 	public int ClearedCount => Nodes.Count(n => n.State == SystemNodeState.Cleared);
 
 	public SystemNode NodeAt(int i) => (i >= 0 && i < Nodes.Count) ? Nodes[i] : null;
@@ -125,6 +141,7 @@ public class SolarSystemDescriptor
 		{
 			Tier = cfg.Tier,
 			Seed = seed,
+			DangerLevel = Math.Clamp(cfg.DangerLevel, MinDanger, MaxDanger),
 			EnemyDensityScale = cfg.EnemyDensityScale,
 			TimeLimitSeconds = cfg.TimeLimitSeconds,
 			Name = $"{Designations[rng.Next(Designations.Length)]}-{rng.Next(100, 1000)}",
@@ -135,16 +152,16 @@ public class SolarSystemDescriptor
 
 		int planetCount = rng.Next(cfg.PlanetMin, cfg.PlanetMax + 1);
 
-		// Waystation slots, expressed as "after this many planets". Spaced evenly through
-		// the planet sequence so a single waystation lands mid-system (the shop-in-the-
+		// Warpstation slots, expressed as "after this many planets". Spaced evenly through
+		// the planet sequence so a single warpstation lands mid-system (the shop-in-the-
 		// middle case) and multiples split it into even legs. Detour cost isn't modelled
 		// yet — on this linear rail every node is on the path.
-		var waystationAfter = new HashSet<int>();
-		for (int w = 1; w <= cfg.Waystations; w++)
+		var warpstationAfter = new HashSet<int>();
+		for (int w = 1; w <= cfg.Warpstations; w++)
 		{
-			int after = (int)Math.Round(planetCount * (w / (float)(cfg.Waystations + 1)));
+			int after = (int)Math.Round(planetCount * (w / (float)(cfg.Warpstations + 1)));
 			after = Math.Clamp(after, 1, planetCount - 1);
-			waystationAfter.Add(after);
+			warpstationAfter.Add(after);
 		}
 
 		// Biomes are drawn without replacement and the bag refills when it empties —
@@ -171,12 +188,12 @@ public class SolarSystemDescriptor
 				DifficultyLabel = LabelFor(t),
 			});
 
-			if (waystationAfter.Contains(p + 1))
+			if (warpstationAfter.Contains(p + 1))
 				sys.Nodes.Add(new SystemNode
 				{
 					Index = sys.Nodes.Count,
-					Kind = SystemNodeKind.Waystation,
-					DifficultyLabel = "Waystation",
+					Kind = SystemNodeKind.Warpstation,
+					DifficultyLabel = "Warpstation",
 				});
 		}
 
