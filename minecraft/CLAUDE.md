@@ -213,7 +213,8 @@ Reaching a node's kill target does **not** end the stage. `RunManager` runs a th
 
 1. `KillCount >= _stageKillTarget` → `WarpReady` latches true. Nothing else happens; you keep
    playing a cleared planet. Once latched the kill count stops mattering.
-2. The player presses the `start_warp` action (**J**) → `StartWarp()` → `WarpCharging`, with
+2. A **warp point falls out of the sky and lands** near the player (below). Walking up to its
+   console and pressing `interact` (**E**) → `StartWarp()` → `WarpCharging`, with
    `WarpRemaining` counting down from `WarpChargeSeconds` (10).
 3. It hits zero → `CompleteStage()`.
 
@@ -228,6 +229,54 @@ Reaching a node's kill target does **not** end the stage. `RunManager` runs a th
 - `ResetWarpState()` is called from `ResetRunState()`, `LaunchCurrentNode()` and `CompleteStage()`.
   Launch is the one that matters — every node must start un-cleared, including a re-entered one.
 
+### The warp point — Scripts/Handlers/WarpPoint.gd
+
+**The exit is a place, not a keypress.** `RunManager` owns the countdown and the stage
+transition; `WarpPoint.gd` (a node under `CubeLand.tscn`'s `Game`) owns the object in the
+world and is the only thing that calls `StartWarp()`.
+
+- **It's the `"Warp Point"` structure**, authored in the builder like the ship. Nothing in
+  code knows its shape — rebuild the pillar in the builder and press Save.
+- **You interact with any block of it**, not with a marker console. Deliberately *not* the
+  ship's Marker1 pattern: markers are skipped at stamp time, so on a solid pillar one would
+  leave a one-block hole in the middle of the thing. `_tick_landed` tests the crosshair's
+  target block (`Global.HasSelectedBlock()` / `GetSelectedBlock()`, wrapping the DDA
+  targeting `interactions.gd` already runs) against the stamped box from
+  `Structure_Registry.GetStampBounds`. That reuses one raycast instead of adding a second,
+  and inherits its 5-block reach, so there's no separate interaction radius to keep in step.
+- **Name gotcha:** `CaptureAndSave` maps every non-alphanumeric character to `_`, so typing
+  "Warp Point" in the builder files it as `Warp_Point.tres` under the registry key
+  `Warp_Point`. `_resolve_structure()` tries both spellings so neither is a silent miss.
+- **Landing site** is `land_distance` (20) ahead of where the **camera** is looking, so the
+  fall happens on screen, then straight down to the first solid block. The scan starts from
+  the *player's own altitude*, not from the sky: on a Cave planet the real surface is far
+  overhead and a warp point up there is unreachable, so it punches down through the cave
+  roof instead. `is_chunk_ready` gates the scan — `get_block` returns 0 for "air" and "no
+  chunk" alike and would happily land it on nothing.
+- **Voxels can't move, so the falling thing is a proxy mesh.** It's freed on impact and the
+  real structure is stamped in its place on the same frame. Impact order is
+  **explode, then stamp** — the crater makes room for the pillar; the other way round would
+  blow up what was just placed. Stamped with `clearAir = true` so an interior doesn't fill
+  with the hillside it landed in.
+- **The see-through cage** around the cleared volume is a translucent box plus 12 edge lines
+  (`ImmediateMesh`, `PRIMITIVE_LINES` — `StandardMaterial3D` has no per-object wireframe
+  mode). The fill is depth-tested normally so terrain occludes it; the **edges set
+  `no_depth_test`** so the warp point stays findable once you've wandered off behind a hill.
+- **A missing structure re-arms the J key.** This is the one authoring mistake in the
+  system that can strand a run — with no warp point there's no way off the
+  planet — so `_fail()` is loud on screen *and* calls
+  `RunManager.ReportWarpPointUnavailable()`. `RunManager._Process` only accepts `start_warp`
+  when the phase is `Missing` or `None`, so the key is dead on the normal path.
+- **Phase constants never cross to GDScript.** `WarpPointInbound`/`Landed`/`Missing` and
+  `WarpKeyName` are C# `const`s, and statics never appear in the per-instance member switch
+  Godot generates — `RunManager.WarpPointInbound` from a `.gd` reads as null and silently
+  sets phase 0. Hence `ReportWarpPointInbound()` / `ReportWarpPointLanded()` /
+  `ReportWarpPointUnavailable()` / `GetWarpKeyName()`: name the event, not the value.
+- **`interactions.gd` no longer explodes on raw keycode 69 (E).** That second trigger sat on
+  the same key as `interact`, which was harmless while the only interactable was in the
+  indestructible ship — but on a destructible planet every warp interaction also blew a
+  crater. `explode` (**F**) still covers it.
+
 ### The two run meters
 
 `PlayerHUD` drives them from `RunManager`, both in `RunUI` on `character.tscn`:
@@ -235,7 +284,10 @@ Reaching a node's kill target does **not** end the stage. `RunManager` runs a th
 - **`RunUI/Label` → `TimerLabel`** — the system clock, counting **down** (`ClockRemaining`). This is
   the "time before it happens" meter, not a stopwatch.
 - **`RunUI/Label2` → `KillLabel`** — kills **remaining** (`GetKillsRemaining()`), then `AREA CLEAR`.
-- **`RunUI/WarpLabel`** — hidden until `WarpReady`, then the prompt, then the countdown.
+- **`RunUI/WarpLabel`** — hidden until `WarpReady`, then the warp point's status
+  (`WARP POINT INBOUND` → `WARP POINT STANDING BY`), then the countdown. This is the
+  run-wide status line only; the "press E" prompt belongs to `WarpPoint.gd`, which is the
+  only thing that knows you're standing next to the console.
 
 Both meters fall back to the old per-planet readouts (`Global.RunTimer` / `KillCount`) when
 `IsStageActive()` is false, because CubeLand is still reachable without a run (F6, the F3 debug
@@ -439,9 +491,10 @@ not a level, and a hole in the floor drops the player into an infinite void with
   `break_block`.
 - **Destruction only.** `set_block`/`place_block` stay open — otherwise `Structure.Stamp`
   couldn't build the ship in the first place.
-- **Watch out:** `interactions.gd` uses raw keycode 69 (**E**) as an alternate explode trigger,
-  the same key `interact` is bound to. In the hub that's harmless because destruction is off, but
-  the two do collide anywhere destructible.
+- **Fixed 2026-08-07:** `interactions.gd` used to fire an explosion on raw keycode 69 (**E**),
+  the same key `interact` is bound to. Harmless in the hub (destruction off), but it collided
+  everywhere destructible — and became a real bug the moment E meant "use the warp point" on a
+  planet. The raw branch is gone; `explode` (**F**) is the only trigger.
 
 ## Marker blocks — positions authored in the builder, not restated in script
 

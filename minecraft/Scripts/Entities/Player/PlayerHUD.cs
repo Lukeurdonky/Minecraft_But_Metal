@@ -285,8 +285,12 @@ public partial class PlayerHUD : Control
         UpdateWarpPrompt(inStage ? run : null);
     }
 
-    // Hidden until the node is cleared, then the offer, then the countdown. Deliberately
-    // plain text — the meters and this prompt are placeholders for a real treatment.
+    // Hidden until the node is cleared, then the state of the warp point, then the countdown.
+    // Deliberately plain text — the meters and this prompt are placeholders for a real
+    // treatment.
+    //
+    // This is the run-wide status line only. The "press E" prompt belongs to WarpPoint.gd,
+    // which is the only thing that knows you are standing next to the console.
     private void UpdateWarpPrompt(RunManager run)
     {
         if (WarpLabel == null) return;
@@ -298,9 +302,21 @@ public partial class PlayerHUD : Control
         }
 
         WarpLabel.Visible = true;
-        WarpLabel.Text = run.IsWarpCharging()
-            ? $"WARPING IN {Mathf.CeilToInt(run.GetWarpRemaining())}"
-            : $"PRESS {RunManager.WarpKeyName} TO START WARP SEQUENCE";
+
+        if (run.IsWarpCharging())
+        {
+            WarpLabel.Text = $"WARPING IN {Mathf.CeilToInt(run.GetWarpRemaining())}";
+            return;
+        }
+
+        WarpLabel.Text = run.WarpPointPhase switch
+        {
+            RunManager.WarpPointInbound => "WARP POINT INBOUND",
+            RunManager.WarpPointLanded  => "WARP POINT STANDING BY",
+            // No warp point is coming — RunManager keeps the key armed for exactly these
+            // cases, so naming it here is the truth rather than a leftover.
+            _ => $"PRESS {RunManager.WarpKeyName} TO START WARP SEQUENCE",
+        };
     }
 
     // Same 12-col x 8-row / 16px-cell grid Item_Registry.cs used for this atlas.

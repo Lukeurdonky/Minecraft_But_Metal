@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://dsq2766vhek4b"]
+[gd_scene load_steps=13 format=3 uid="uid://dsq2766vhek4b"]
 
 [ext_resource type="Script" uid="uid://cdiksh4gbjy6j" path="res://Scripts/Handlers/level.gd" id="1_a802x"]
 [ext_resource type="Script" uid="uid://bo28s6okbkdpl" path="res://Scripts/The World/Chunk_Manager.cs" id="2_tia5y"]
@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" uid="uid://dh54rqsul1tlt" path="res://Assets/ground_robot_shooter.tscn" id="6_4vfp7"]
 [ext_resource type="PackedScene" uid="uid://ddghs13iu0otv" path="res://Assets/creature.tscn" id="7_creature"]
 [ext_resource type="PackedScene" uid="uid://8u08djfq236w" path="res://Assets/moss_creature.tscn" id="10_moss"]
+[ext_resource type="Script" path="res://Scripts/Handlers/WarpPoint.gd" id="11_warp"]
 
 [sub_resource type="Environment" id="Environment_akwl5"]
 background_mode = 1
@@ -56,6 +57,54 @@ EnemyScenes = [ExtResource("6_4vfp7"), ExtResource("7_creature"), ExtResource("1
 SpawnWeights = PackedFloat32Array(0.4, 0.6, 0.5)
 MaxEnemies = 20
 SpawnRadiusMax = 140.0
+
+[node name="WarpPoint" type="Node3D" parent="Game"]
+script = ExtResource("11_warp")
+
+[node name="UI" type="CanvasLayer" parent="Game/WarpPoint"]
+layer = 2
+
+[node name="Prompt" type="Label" parent="Game/WarpPoint/UI"]
+visible = false
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -220.0
+offset_bottom = -166.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_colors/font_color = Color(0, 1, 0, 1)
+theme_override_font_sizes/font_size = 28
+text = "[E]   BEGIN WARP SEQUENCE"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Banner" type="Label" parent="Game/WarpPoint/UI"]
+visible = false
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 120.0
+offset_bottom = 174.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.23137255, 0.8627451, 0.9019608, 1)
+theme_override_font_sizes/font_size = 34
+text = "WARP POINT LANDED"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Status" type="Label" parent="Game/WarpPoint/UI"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.3529412, 0.15686275, 1)
+theme_override_font_sizes/font_size = 22
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="."]
 _spawnable_scenes = PackedStringArray("uid://du771gwxm45or")

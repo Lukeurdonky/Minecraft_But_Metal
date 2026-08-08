@@ -256,6 +256,14 @@ public partial class Global : Node
 		return Player?.GetNode<Camera3D>("camera");
 	}
 
+	// The block the player's crosshair is on, as set by interactions.gd's DDA targeting.
+	// Wrapped here rather than read as Global.Player.SelectedCubePosition from GDScript so
+	// callers don't hop through two marshaled property reads and a possibly-freed Player —
+	// same reasoning as GetPlayerPos(). SelectedCube is 0 when nothing is targeted, which is
+	// also Air, so "is anything selected" and "which block" are two separate questions.
+	public bool HasSelectedBlock() => Player != null && Player.SelectedCube != 0;
+	public Vector3I GetSelectedBlock() => Player?.SelectedCubePosition ?? Vector3I.Zero;
+
 	// public Variant GetBlockStat(string blockType, string stat)
 	// {
 	//     if (BlockData.ContainsKey(blockType))

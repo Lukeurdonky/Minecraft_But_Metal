@@ -7,7 +7,6 @@ var sprintFOVAdd = 15
 var max_distance = 5
 @export var explode_radius = 4
 @export var explode_damage = 1.0
-var _explode_prev = false
 var shader_material
 var selected_normal
 
@@ -33,16 +32,14 @@ func _process(delta):
 
 	selection()
 
-	# Explosion trigger
-	var e_now = false
+	# Explosion trigger (F, the "explode" action).
+	#
+	# There was a second trigger here on raw keycode 69 — E — which is the same key the
+	# "interact" action is bound to. Harmless while the only interactable was in the ship,
+	# where terrain is indestructible; the moment E also means "use the warp point" on a
+	# destructible planet, every warp interaction blew a crater at the same time. The raw
+	# branch is gone rather than rebound: "explode" already covers it.
 	if Input.is_action_just_pressed("explode"):
-		e_now = true
-	elif Input.is_key_pressed(69) and not _explode_prev:
-		e_now = true
-
-	_explode_prev = Input.is_key_pressed(69)
-
-	if e_now:
 		var target = pd.SelectedCubePosition
 		if target != null:
 			Global.CubeManager.explode(target, explode_radius, explode_damage)

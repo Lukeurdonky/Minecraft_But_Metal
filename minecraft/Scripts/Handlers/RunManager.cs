@@ -44,13 +44,27 @@ public partial class RunManager : Node
 	// player triggers it, so a cleared planet is somewhere you can keep moving through
 	// instead of a room the game yanks you out of mid-swing. The clock keeps draining
 	// through both the decision and the charge, so lingering is a real cost.
+	//
+	// The exit is a PLACE, not a keypress: clearing the target calls down a warp point
+	// structure, and interacting with it is what starts the charge. RunManager owns the
+	// state machine and nothing else — WarpPoint.gd owns the object in the world and is
+	// the only thing that calls StartWarp(). See "Warping out" in CLAUDE.md.
 	public const float  WarpChargeSeconds = 10f;
 	private const string WarpAction = "start_warp";
 	public const string WarpKeyName = "J"; // display only — keep in step with WarpAction's binding
 
+	// Where the warp point itself is in its arrival. Set by WarpPoint.gd; read by the HUD so
+	// the prompt can say "inbound" rather than naming a key. Ints rather than a C# enum
+	// because this crosses to GDScript.
+	public const int WarpPointNone     = 0; // node not cleared yet, or no warp point in this scene
+	public const int WarpPointInbound  = 1; // called down, still falling
+	public const int WarpPointLanded   = 2; // on the ground and interactable
+	public const int WarpPointMissing  = 3; // no such structure authored — key fallback is live
+
 	public bool  WarpReady     { get; private set; } = false;
 	public bool  WarpCharging  { get; private set; } = false;
 	public float WarpRemaining { get; private set; } = 0f;
+	public int   WarpPointPhase { get; private set; } = WarpPointNone;
 
 	private bool _stageActive = false;
 	private int _stageKillTarget = 0;
@@ -89,6 +103,18 @@ public partial class RunManager : Node
 			return;
 		}
 
+		// Normally nothing happens here: the warp point is the trigger, and WarpPoint.gd calls
+		// StartWarp() when the player interacts with it.
+		//
+		// The key stays armed in the two cases where no warp point can be reached, because
+		// both would otherwise strand the run on a planet with no way off it:
+		//   Missing — the "Warp Point" structure isn't authored, or has no console marker.
+		//             WarpPoint.gd says so on screen and sets this.
+		//   None    — no WarpPoint node in the scene at all (a hand-built or debug CubeLand).
+		//             Also covers the single frame between WarpReady latching and the node
+		//             reacting to it, which is harmless.
+		if (WarpPointPhase == WarpPointInbound || WarpPointPhase == WarpPointLanded) return;
+
 		// HasAction guard: IsActionJustPressed on a missing action errors every frame, and the
 		// binding lives in project.godot where it can be edited out from under this.
 		if (InputMap.HasAction(WarpAction) && Input.IsActionJustPressed(WarpAction))
@@ -108,7 +134,28 @@ public partial class RunManager : Node
 		WarpReady     = false;
 		WarpCharging  = false;
 		WarpRemaining = 0f;
+		WarpPointPhase = WarpPointNone;
 	}
+
+	// WarpPoint.gd reporting where its structure is in arriving. One writer by design — the
+	// node that owns the object in the world is the only thing that knows.
+	//
+	// Deliberately three named events rather than a SetWarpPointPhase(int): the phase
+	// constants above are C# `const`s, and statics never appear in the per-instance member
+	// switch Godot generates for GDScript, so `RunManager.WarpPointInbound` from a .gd file
+	// reads as null and silently sets phase 0. Naming the event instead of the value keeps
+	// the constants on this side of the boundary, where they work.
+	public void ReportWarpPointInbound() => WarpPointPhase = WarpPointInbound;
+	public void ReportWarpPointLanded() => WarpPointPhase = WarpPointLanded;
+
+	// "There is no warp point coming" — no structure authored, no console marker, or the
+	// stamp failed. Re-arms the key fallback so the run isn't stranded.
+	public void ReportWarpPointUnavailable() => WarpPointPhase = WarpPointMissing;
+
+	public int GetWarpPointPhase() => WarpPointPhase;
+
+	// Same reason: WarpKeyName is a const, so GDScript has to be handed it by a method.
+	public string GetWarpKeyName() => WarpKeyName;
 
 	// ───────────────────────────── run lifecycle ─────────────────────────────
 

@@ -326,8 +326,8 @@ SpeedSection1 = NodePath("../BarContainer/SpeedSection1")
 SpeedSection2 = NodePath("../BarContainer/SpeedSection2")
 SpeedSection3 = NodePath("../BarContainer/SpeedSection3")
 HitFlash = NodePath("../HitFlash")
-TimerLabel = NodePath("RunUI/Label")
 KillLabel = NodePath("RunUI/Label2")
+TimerLabel = NodePath("RunUI/Label")
 WarpLabel = NodePath("RunUI/WarpLabel")
 metadata/_edit_use_anchors_ = true
 
