@@ -216,6 +216,7 @@ public partial class Global : Node
 		// Autoloads enter the tree before the main scene, so this catches every particle
 		// node the game ever creates — scene-authored or instantiated from code.
 		GetTree().NodeAdded += _OnNodeAdded;
+		RegisterCurveGlobals();
 	}
 
 	public override void _Process(double delta)
@@ -228,6 +229,218 @@ public partial class Global : Node
 		}
 		if (_shakeTimer   > 0f) _shakeTimer   = Mathf.Max(_shakeTimer   - dt, 0f);
 		if (Player != null)     RunTimer      += dt;
+		UpdateCurveOrigin();
+	}
+
+	// --------------------- planet curvature (render-only) ---------------------------
+	//
+	// See Materials/WorldCurve.gdshaderinc for what this does and why it's safe. These
+	// two values are GLOBAL shader parameters, so any material that wants to bend with
+	// the world opts in by including that file — no per-material plumbing, and no
+	// exported field to forget to wire on a new scene.
+	//
+	// Registered at runtime rather than in project.godot's [shader_globals] because the
+	// live editor re-serializes that section from its own stale in-memory copy the next
+	// time anything touches project settings, which silently reverts a hand-written
+	// entry. Adding them here is also idempotent-checked, so it survives a reload.
+
+	public const string CurveStrengthParam   = "world_curve_strength";
+	public const string CurveFlatRadiusParam = "world_curve_flat_radius";
+	public const string CurveOriginParam     = "world_curve_origin";
+
+	// CURVATURE IS A PROPERTY OF THE PLANET, DERIVED FROM WORLD SIZE.
+	//
+	// Not from RenderDistance. Render distance is a viewer preference — someone on a
+	// weaker machine turns it down — and deriving the world's shape from it would mean
+	// two players standing on the same planet see two differently-shaped worlds. Same
+	// principle as the danger scale: it belongs to the thing, not to the screen showing it.
+	//
+	// World size is the physically correct source anyway. Treat the wrap distance as a
+	// planet's circumference; then radius R = width / 2*PI, and the drop of a sphere's
+	// surface at horizontal distance d is the standard d^2 / 2R — which rearranges to
+	//
+	//     strength = PI / world_width
+	//
+	// so a smaller planet curves harder, for free and for the right reason. That is
+	// exactly the illusion a small world needs, and it now costs nothing to maintain:
+	// change the planet size and the horizon tightens by itself.
+	//
+	// PARKED AT 0 ON PURPOSE (2026-08-10). This is not a placeholder to fill in — the
+	// whole curvature system is deliberately switched off, and the reason is worth
+	// keeping so nobody "fixes" it by turning it up.
+	//
+	// It worked, and it looked like a planet. What killed it is that curvature compresses
+	// APPARENT DISTANCE past the point where the bend starts: on a 1536-block world a
+	// target 450 blocks out was drawn at the screen position a target 82 blocks out would
+	// occupy, and one at the render edge read as ~15. That is what a horizon IS, so it
+	// isn't a bug and can't be tuned away — but this game's core loop is a continuous
+	// judgement of "can I reach that?" with a 220-unit grapple. Making that judgement
+	// unreliable attacks the primary verb. Confirmed empirically: raising GrappleRange to
+	// 620 made things that looked ~80 blocks away suddenly grabbable.
+	//
+	// The secondary cost was breadth. Nothing renders through one chokepoint, so every
+	// future visual — boss VFX, THE PLANT, the warpstation — would have to remember to
+	// opt into the bend or visibly detach from the ground.
+	//
+	// Kept rather than deleted because it is genuinely good for anything where distance
+	// judgement doesn't matter: the ship hub backdrop, SolarSelect art, or the
+	// crashlanding entry sequence. Set this above 0 (or drag the F3 slider) and the whole
+	// system comes back live — no other wiring needed.
+	public const float DefaultCurveExaggeration = 0f;
+
+	// The flat zone, as a fraction of the wrap width. Inside this radius the displacement
+	// is exactly zero, so aiming and every other cross-distance operation is exact there.
+	//
+	// Expressed against WORLD SIZE rather than as a fixed block count on purpose. A fixed
+	// 300 (to clear LaserRange) would be larger than the entire render edge of a small
+	// planet — a 624-block world at RD 6 only draws 288 blocks — and would silently flatten
+	// small planets completely, which is exactly where the curve matters most.
+	//
+	// At 0.25 a 1536-block world flattens out to 384, clearing both LaserRange (300) and
+	// GrappleRange (220) entirely — aiming is exact everywhere you can reach.
+	//
+	// SMALL WORLDS ARE NOT COVERED BY THIS DEFAULT. Both terms scale with world size and
+	// they compound the wrong way: a smaller planet gets a steeper curve (strength is
+	// PI/width) AND a smaller safe radius. Measured on a 624-block world at exaggeration
+	// 1.0: flat to 156, and a target at grapple range is still drawn ~21 blocks below its
+	// hitbox. Raising the fraction to ~0.35 puts 218 blocks inside the safe zone and takes
+	// that back to nothing.
+	//
+	// The underlying tension is a design one, not a rendering one: GrappleRange 220 is 35%
+	// of a 624-block world. Abilities that reach a third of the way across the planet will
+	// always fight a curve meant to hide the far side of it.
+	public const float DefaultCurveFlatFraction = 0.25f;
+
+	// Fallback wrap width when PlanetChunks hasn't been set yet (menus, first frames).
+	private const float FallbackWorldWidth = 1536f;
+
+	// Guarded by a plain static rather than by checking GlobalShaderParameterGetList():
+	// that getter is editor-only and warns "should never be used outside the editor, it
+	// can severely damage performance" on every call in a running game. A static is
+	// enough — Global is an autoload, so this runs once per process, and the statics
+	// reset with it.
+	private static bool _curveGlobalsRegistered;
+	private static float _curveExaggeration = DefaultCurveExaggeration;
+	private static float _curveFlatFraction = DefaultCurveFlatFraction;
+
+	private static void RegisterCurveGlobals()
+	{
+		if (_curveGlobalsRegistered) return;
+		_curveGlobalsRegistered = true;
+
+		RenderingServer.GlobalShaderParameterAdd(
+			CurveStrengthParam, RenderingServer.GlobalShaderParameterType.Float, 0f);
+		RenderingServer.GlobalShaderParameterAdd(
+			CurveFlatRadiusParam, RenderingServer.GlobalShaderParameterType.Float, 0f);
+		RenderingServer.GlobalShaderParameterAdd(
+			CurveOriginParam, RenderingServer.GlobalShaderParameterType.Vec3, Vector3.Zero);
+	}
+
+	// The bend is measured from the camera, not the player: the two differ during camera
+	// shake and any future cutscene, and a mismatch would make the whole world visibly
+	// slosh. GetCamera3D() on the root viewport is the main-scene camera — the arms live
+	// in their own SubViewport with a separate camera and are deliberately not curved
+	// (they're viewmodel space, and bending them would bow the laser arm on screen).
+	//
+	// Strength is re-derived every frame rather than only on assignment because the planet
+	// size isn't known when Global._Ready runs and changes with every planet load — this
+	// way a new world curves correctly with nothing having to remember to recompute it.
+	// Two float ops per frame.
+	private void UpdateCurveOrigin()
+	{
+		RenderingServer.GlobalShaderParameterSet(CurveStrengthParam, GetCurveStrength());
+		RenderingServer.GlobalShaderParameterSet(CurveFlatRadiusParam, GetCurveFlatRadius());
+
+		var cam = GetViewport()?.GetCamera3D();
+		if (cam == null) return;
+		RenderingServer.GlobalShaderParameterSet(CurveOriginParam, cam.GlobalPosition);
+	}
+
+	// Tuning/debug seam — the F3 menu drives this, and a BiomeDescriptor or the eventual
+	// PlanetDescriptor could own it per-planet. 0 is a flat world. The structure builder
+	// and the ship don't need that: both keep the old flat StandardMaterial3D, so neither
+	// reads this at all.
+	//
+	// Mirrored in a field rather than read back from the RenderingServer because
+	// GlobalShaderParameterGet, like GlobalShaderParameterGetList, is editor-only —
+	// in a running game it returns null AND logs "should never be used outside the
+	// editor". Write-only to the RenderingServer, read from here.
+	public void SetCurveExaggeration(float exaggeration) =>
+		_curveExaggeration = Mathf.Max(exaggeration, 0f);
+
+	public float GetCurveExaggeration() => _curveExaggeration;
+
+	// Clamped below 0.5 because the flat zone is a radius, and at half the wrap width it
+	// would already cover everything a legal render distance can draw — leaving a world
+	// that is flat everywhere and only pretending to have the setting.
+	public void SetCurveFlatFraction(float fraction) =>
+		_curveFlatFraction = Mathf.Clamp(fraction, 0f, 0.49f);
+
+	public float GetCurveFlatFraction() => _curveFlatFraction;
+
+	// Radius, in blocks, inside which there is no displacement at all.
+	public float GetCurveFlatRadius() => _curveFlatFraction * GetWorldWrapWidth();
+
+	// The wrap distance, in blocks — the smaller of the two axes, since that's the one
+	// that repeats soonest and therefore sets the tightest honest horizon.
+	public float GetWorldWrapWidth()
+	{
+		int chunks = Mathf.Min(PlanetChunksX, PlanetChunksZ);
+		return chunks > 0 ? chunks * CHUNK_SIZE : FallbackWorldWidth;
+	}
+
+	// drop = strength * distance^2. See the block comment above for the derivation.
+	public float GetCurveStrength() => _curveExaggeration * Mathf.Pi / GetWorldWrapWidth();
+
+	// CPU-side twin of world_curve_drop() in WorldCurve.gdshaderinc. Anything that can't
+	// go through a curved shader — an entity's imported .glb materials, a node positioned
+	// in script — uses this so it lands on the same surface the terrain shader drew.
+	// The two must stay in step; if the shader's formula changes, change this with it.
+	//
+	// Measured from the camera, matching the shader's world_curve_origin exactly. Falls
+	// back to no drop when there's no camera, which is the correct answer for a frame
+	// where nothing is being rendered anyway.
+	public float CurveDropAt(Vector3 worldPos)
+	{
+		var cam = GetViewport()?.GetCamera3D();
+		if (cam == null) return 0f;
+
+		Vector3 camPos = cam.GlobalPosition;
+		float dx = worldPos.X - camPos.X;
+		float dz = worldPos.Z - camPos.Z;
+
+		float past = Mathf.Sqrt(dx * dx + dz * dz) - GetCurveFlatRadius();
+		if (past <= 0f) return 0f;
+		return past * past * GetCurveStrength();
+	}
+
+	// Standing eye height in blocks, for the horizon estimate below. Approximate on
+	// purpose — this feeds a debug readout, not anything the player collides with.
+	private const float EyeHeight = 2f;
+
+	// Where the ground falls to eye level, i.e. the visible horizon this curve implies.
+	// Solving drop == EyeHeight for distance. This is the number that says whether the
+	// curve is fighting the player's ability to see enemies, so it's what F3 shows.
+	//
+	// Deliberately takes no arguments: a C# method with a DEFAULT PARAMETER does not
+	// reliably appear in the member list Godot generates for GDScript, and calling it
+	// from a .gd fails with "Nonexistent function" even though the build is current.
+	public float GetHorizonDistance()
+	{
+		float s = GetCurveStrength();
+		// The bend only starts at the flat radius, so the horizon is pushed out by it.
+		return s <= 0f ? 99999f : GetCurveFlatRadius() + Mathf.Sqrt(EyeHeight / s);
+	}
+
+	// Largest drop the curve can apply to anything still being drawn — the displacement at
+	// the far edge of the render volume. This is the frustum-cull slack chunks need, since
+	// culling tests the un-displaced AABB on the CPU and knows nothing about the vertex
+	// stage. Takes the render edge as an argument because Chunk_Manager owns RenderDistance.
+	public float GetCurveDropAtEdge(float renderEdgeDistance)
+	{
+		float past = renderEdgeDistance - GetCurveFlatRadius();
+		if (past <= 0f) return 0f;
+		return past * past * GetCurveStrength();
 	}
 
 	// Chunk streaming only ever needs "where is the camera", not a Player. The structure

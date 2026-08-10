@@ -36,6 +36,68 @@ public partial class Entity : CharacterBody3D
 	{
 		Global = GetNode<Global>("/root/Global");
 		ImHere();
+		CacheCurveVisuals();
+	}
+
+	// --------------------- planet curvature (visual only) ---------------------------
+	//
+	// The terrain bends in a vertex shader; an entity's imported .glb materials know
+	// nothing about it, so without this every enemy hovers above — or sinks into — ground
+	// that has curved away beneath it.
+	//
+	// Handled on the CPU by dropping the entity's VISUAL children rather than by giving
+	// every model a curved shader, for three reasons: it works with any material including
+	// the ones the .glb importer generates, an entity is small enough relative to the curve
+	// that bending it internally would be invisible anyway, and — most importantly — the
+	// entity's own transform stays flat, so collision, AI and every get_block consumer are
+	// untouched. Same render-only guarantee the shader makes.
+	//
+	// Deliberately NOT done by reparenting the visuals under an offset pivot: AnimationPlayer
+	// tracks address their targets by NodePath, and inserting a node would break every
+	// animation on every imported enemy.
+	private Node3D[] _curveVisuals;
+	private float[]  _curveVisualBaseY;
+
+	private void CacheCurveVisuals()
+	{
+		var visuals = new List<Node3D>();
+		foreach (var child in GetChildren())
+		{
+			// Only things that draw. CollisionShape3D/Area3D must stay put — moving them
+			// would turn this into a physics change, which is exactly what it must not be.
+			if (child is Node3D n3d && !(child is CollisionShape3D) && !(child is Area3D) && HasVisuals(n3d))
+				visuals.Add(n3d);
+		}
+
+		_curveVisuals     = visuals.ToArray();
+		_curveVisualBaseY = new float[_curveVisuals.Length];
+		for (int i = 0; i < _curveVisuals.Length; i++)
+			_curveVisualBaseY[i] = _curveVisuals[i].Position.Y;
+	}
+
+	private static bool HasVisuals(Node node)
+	{
+		if (node is VisualInstance3D) return true;
+		foreach (var child in node.GetChildren())
+			if (HasVisuals(child)) return true;
+		return false;
+	}
+
+	// Called from _PhysicsProcess so it stays in step with the movement that produced the
+	// position — running it in _Process would read a position one tick stale and make fast
+	// entities visibly swim against the ground.
+	protected void ApplyCurveToVisuals()
+	{
+		if (_curveVisuals == null || _curveVisuals.Length == 0 || Global == null) return;
+
+		float drop = Global.CurveDropAt(GlobalPosition);
+		for (int i = 0; i < _curveVisuals.Length; i++)
+		{
+			var v = _curveVisuals[i];
+			if (v == null || !IsInstanceValid(v)) continue;
+			var p = v.Position;
+			v.Position = new Vector3(p.X, _curveVisualBaseY[i] - drop, p.Z);
+		}
 	}
 
 	// Override to false on entities that should keep processing inputs during hitstop (i.e. Player).
@@ -69,6 +131,9 @@ public partial class Entity : CharacterBody3D
 
 		HandleWorldCollisions(Velocity * (float)delta);
 		MoveAndSlide();
+
+		// After MoveAndSlide, so the visual drop matches the position actually arrived at.
+		ApplyCurveToVisuals();
 		
 		// _frameTimer.Stop();
 		// double elapsedMs = _frameTimer.Elapsed.TotalMilliseconds;

@@ -6,6 +6,7 @@ var _panel: PanelContainer
 var _fields := {}                          # key -> Control (SpinBox or CheckButton)
 var _selected_biome_name: String = ""      # tracks the OptionButton selection
 var _accessory_checks := {}                # accessory name -> CheckButton
+var _curve_readout_label: Label            # re-synced on open; world width is per-planet
 
 # Per-biome presets. Selecting a biome pre-fills all param spinboxes.
 # Values are midpoints of each biome's valid range.
@@ -105,6 +106,7 @@ func _input(event: InputEvent) -> void:
 			if _panel.visible:
 				Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 				_refresh_accessory_checks()
+				_refresh_curve_readout()
 			else:
 				Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 			get_viewport().set_input_as_handled()
@@ -115,6 +117,14 @@ func _input(event: InputEvent) -> void:
 func _refresh_accessory_checks() -> void:
 	for accessory_name in _accessory_checks:
 		_accessory_checks[accessory_name].set_pressed_no_signal(Global.IsAccessoryEquipped(accessory_name))
+
+# Same reasoning as the accessory checkboxes: the curve readout reports world width, the
+# aim-safe radius and the horizon, all of which are derived from the CURRENT planet. Load
+# a new planet and the numbers on screen are describing the old one until something
+# redraws them, which is a debug panel lying about the thing you opened it to inspect.
+func _refresh_curve_readout() -> void:
+	if _curve_readout_label != null:
+		_curve_readout_label.text = _curve_readout(Global.GetCurveExaggeration())
 
 func _build_ui() -> void:
 	_panel = PanelContainer.new()
@@ -181,6 +191,9 @@ func _build_ui() -> void:
 	vbox.add_child(gen_btn)
 
 	vbox.add_child(HSeparator.new())
+	_build_curve_row(vbox)
+
+	vbox.add_child(HSeparator.new())
 	_build_accessory_rows(vbox)
 
 	# Pre-fill with first biome
@@ -219,6 +232,66 @@ func _add_bool_row(parent: Control, key: String, label: String, default_val: boo
 	row.add_child(check)
 	parent.add_child(row)
 	_fields[key] = check
+
+# Planet curvature. Deliberately NOT in the _fields/"Generate" flow: the bend is a global
+# shader parameter read by the chunk materials' vertex stage, so changing it repaints the
+# existing meshes on the next frame. Nothing regenerates, nothing re-meshes — which is
+# exactly what makes it tunable by eye, and is the whole reason to put a live slider here
+# rather than a SpinBox you have to press Generate to see.
+func _build_curve_row(parent: Control) -> void:
+	var lbl := Label.new(); lbl.text = "— Planet Curvature —"; parent.add_child(lbl)
+
+	var readout := Label.new()
+	readout.text = _curve_readout(Global.GetCurveExaggeration())
+	readout.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(readout)
+	# Held so the readout can be re-synced when the menu opens — world width changes with
+	# every planet load, and the readout is otherwise only rewritten on a slider drag.
+	_curve_readout_label = readout
+
+	# Curvature RATE past the flat zone. The cap is well above 1.0 because the flat zone
+	# eats most of the visible range — the bend has to be steeper over what's left to read
+	# as the same horizon it did before the flat zone existed.
+	var strength_lbl := Label.new(); strength_lbl.text = "Curve strength"; parent.add_child(strength_lbl)
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 4.0
+	slider.step = 0.05
+	slider.value = Global.GetCurveExaggeration()
+	slider.value_changed.connect(_on_curve_changed.bind(readout))
+	parent.add_child(slider)
+
+	# Flat zone, as a fraction of world width. This is the aim-safety knob: everything
+	# inside it is displacement-free, so raising it protects longer-range abilities at the
+	# cost of how much of the view actually bends.
+	var flat_lbl := Label.new(); flat_lbl.text = "Flat zone (aim-safe radius)"; parent.add_child(flat_lbl)
+	var flat := HSlider.new()
+	flat.min_value = 0.0
+	flat.max_value = 0.49
+	flat.step = 0.01
+	flat.value = Global.GetCurveFlatFraction()
+	flat.value_changed.connect(_on_flat_changed.bind(readout))
+	parent.add_child(flat)
+
+func _on_curve_changed(value: float, readout: Label) -> void:
+	Global.SetCurveExaggeration(value)
+	readout.text = _curve_readout(value)
+
+func _on_flat_changed(value: float, readout: Label) -> void:
+	Global.SetCurveFlatFraction(value)
+	readout.text = _curve_readout(Global.GetCurveExaggeration())
+
+# The two sliders are meaningless on their own, so show what they produce: the aim-safe
+# radius in blocks (compare it against LaserRange 300 / GrappleRange 220) and the horizon
+# the curve implies. World width is shown too, since it's what both are derived from.
+func _curve_readout(value: float) -> String:
+	if value <= 0.0:
+		# Parked state — see Global.DefaultCurveExaggeration for why it ships at 0. The
+		# other three numbers are meaningless with no bend, so don't print them.
+		return "OFF (flat world) — world %.0f wide" % Global.GetWorldWrapWidth()
+	return "x%.2f  |  world %.0f wide  |  aim-safe to %.0f  |  horizon ~%.0f" % [
+		value, Global.GetWorldWrapWidth(),
+		Global.GetCurveFlatRadius(), Global.GetHorizonDistance()]
 
 # Accessories apply instantly (Global.SetAccessoryEquipped equips/unequips on the live
 # Player right away) — independent of the biome _fields/"Generate" flow above.

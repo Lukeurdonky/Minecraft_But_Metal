@@ -198,6 +198,36 @@ Above 30 u/s, spherical radius-2.5 check around the player each tick:
 - Explosion system wired to E key in interactions.gd
 - `PlayerHUD.cs`: jump indicator, enemy soft-aim indicator, crosshair color, player health bar (red, bottom-left), laser charge bar (blue when ready/firing, gray while recharging), speed tier indicator (3 segments, temp), red full-screen flash on player hit (fades over 0.4s)
 
+### Planet curvature — built 2026-08-10, deliberately parked at 0
+
+A curved-world vertex displacement (terrain bends down away from the viewer so the far edge
+falls below a horizon instead of ending at a chunk boundary). **Fully working and switched
+off on purpose** — `Global.DefaultCurveExaggeration = 0`. Raise it or drag the F3 slider and
+the whole system comes back; nothing else needs rewiring.
+
+It was parked because curvature compresses *apparent distance* past where the bend begins: on
+a 1536-block world a target 450 out was drawn at the screen position a target 82 out would
+occupy, and one at the render edge read as ~15. That IS a horizon — not a bug, not tunable
+away — but this game's core loop is a continuous "can I reach that?" judgement with a
+220-unit grapple, so it attacks the primary verb. Proven by raising `GrappleRange` to 620 and
+watching apparently-close things become grabbable.
+
+Still a good fit anywhere distance judgement doesn't matter: ship hub backdrop, SolarSelect
+art, the crashlanding entry sequence. Full technical detail in `../../CLAUDE.md`.
+
+### Two findings that outlived the curve
+
+- **Ability range is capped by loaded terrain.** `get_block` returns 0 for "air" and "chunk
+  not loaded" alike, so the grapple's and laser's voxel marches stop silently at the edge of
+  loaded terrain. Combined with the one-node guarantee (render distance ≤ half the world),
+  nothing can reach past half the wrap width — so ability ranges set a **minimum planet
+  size**: GrappleRange 220 needs ≥ 11 chunks (528 blocks), LaserRange 300 needs ≥ 15 chunks
+  (720). Below that they fail by finding air, with no error. No startup check warns yet.
+- **The one-node clamp was inverted.** `Chunk_Manager._Ready` now clamps *RenderDistance*
+  down to fit the planet, where it used to grow the *planet* to fit RenderDistance. World
+  size is a property of the planet; render distance is a viewer preference that must stay
+  tunable on weaker hardware, and a graphics setting must never silently reshape the world.
+
 ### Archived (do not restore)
 - Minecraft inventory (36-slot), item registry, item behaviors, placeable/consumable/tool system, world-dropped items. See `../../CLAUDE.md` for file list.
 

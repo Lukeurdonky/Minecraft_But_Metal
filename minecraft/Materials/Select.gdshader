@@ -1,7 +1,14 @@
 shader_type spatial;
 
+// The block-highlight box has to sit EXACTLY on the face it's outlining, so it takes the
+// identical vertex displacement the chunk shaders do rather than an approximation. Without
+// this it stays on the flat world and slides off the block as soon as you look at anything
+// more than a few metres away.
+#include "res://Materials/WorldCurve.gdshaderinc"
+
 void vertex() {
-	// Called for every vertex the material is visible on.
+	vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	VERTEX.y -= world_curve_drop(world_pos);
 }
 
 float gap(float s)
@@ -33,4 +40,3 @@ void fragment() {
 	// Called for every pixel for every light affecting the material.
 	// Uncomment to replace the default light processing function with this one.
 //}
-

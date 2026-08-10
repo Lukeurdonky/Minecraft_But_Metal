@@ -481,20 +481,34 @@ public partial class Chunk_Manager : Node
 		Simplex4D.Reseed(noiseSeed);
 
 		InitializeDamageSystem();
-		RecalculateChunkOffsets();
 
-		// Enforce one-node guarantee: planet must be wider than render window
-		int minChunks = RenderDistance * 2 + 1;
-		if (Global.PlanetChunksX <= RenderDistance * 2)
+		// One-node guarantee: you must never be able to see two copies of the same terrain
+		// at once. A physical chunk takes its voxel array from the canonical store BY
+		// REFERENCE (see generate_data), so two visible chunks resolving to one canonical
+		// entry wouldn't merely look identical — they'd BE identical, and a hole blown in
+		// one would appear instantly in its twin.
+		//
+		// This clamps the RENDER DISTANCE to fit the planet. It used to do the opposite,
+		// growing the planet to fit the render distance, which is backwards now that the
+		// two mean different things: world size is a property of the PLANET (it sets the
+		// curvature, the lap time, the whole feel of the place), while render distance is
+		// a VIEWER preference that has to stay tunable for a weaker machine. A graphics
+		// setting must never silently reshape the world.
+		//
+		// Consequence worth knowing: on a small planet, render distance has a low ceiling
+		// — a 13-chunk world caps it at 6. That's not a limitation so much as the correct
+		// physics; a small planet has a near horizon.
+		//
+		// Must run BEFORE RecalculateChunkOffsets(), which builds its offset volume from
+		// RenderDistance and would otherwise cache a volume bigger than the planet.
+		int maxRender = Mathf.Max((Mathf.Min(Global.PlanetChunksX, Global.PlanetChunksZ) - 1) / 2, 1);
+		if (RenderDistance > maxRender)
 		{
-			GD.PrintErr($"[ChunkManager] PlanetChunksX ({Global.PlanetChunksX}) too small for RenderDistance ({RenderDistance}). Clamping to {minChunks}.");
-			Global.PlanetChunksX = minChunks;
+			GD.PrintErr($"[ChunkManager] RenderDistance ({RenderDistance}) too large for a {Global.PlanetChunksX}x{Global.PlanetChunksZ}-chunk planet — you would see the world repeat. Clamping to {maxRender}.");
+			RenderDistance = maxRender;
 		}
-		if (Global.PlanetChunksZ <= RenderDistance * 2)
-		{
-			GD.PrintErr($"[ChunkManager] PlanetChunksZ ({Global.PlanetChunksZ}) too small for RenderDistance ({RenderDistance}). Clamping to {minChunks}.");
-			Global.PlanetChunksZ = minChunks;
-		}
+
+		RecalculateChunkOffsets();
 
 		// Size both worker pools to the machine. Generation (heavy 4D-simplex terrain +
 		// cave density) and meshing run as parallel stages on different chunks, so each
@@ -1159,6 +1173,16 @@ public partial class Chunk_Manager : Node
 		Mesh newMesh = build_chunk_mesh(buffers);
 		_meshRebuildsThisSecond++;
 
+		// Frustum-cull slack for every chunk: the largest downward displacement the curve
+		// shader can apply to anything still being drawn. Global owns the formula (it has
+		// to match the shader's, flat zone included); this only supplies the render edge,
+		// which is the one part Chunk_Manager knows and Global doesn't.
+		float CurveCullMargin()
+		{
+			if (Global.Instance == null) return 0f;
+			return Global.Instance.GetCurveDropAtEdge(RenderDistance * Global.CHUNK_SIZE);
+		}
+
 		if (chunk.MeshInstance != null && GodotObject.IsInstanceValid(chunk.MeshInstance))
 		{
 			chunk.MeshInstance.Mesh = newMesh;
@@ -1168,6 +1192,14 @@ public partial class Chunk_Manager : Node
 			chunk.MeshInstance = new MeshInstance3D();
 			// No MaterialOverride: it would win over the per-surface materials that
 			// build_chunk_mesh assigns, collapsing opaque and transparent back into one look.
+			//
+			// Frustum culling runs on the CPU against the mesh's ORIGINAL AABB, which knows
+			// nothing about the curvature applied in the vertex stage. Without a margin,
+			// Godot culls a chunk whose flat AABB has left the frustum even though the
+			// curve has bent its geometry back into view — chunks blink out along the
+			// bottom and edges of the screen, which looks exactly like frustum culling
+			// suddenly being switched on. The margin restores the slack the shader needs.
+			chunk.MeshInstance.ExtraCullMargin = CurveCullMargin();
 			chunk.MeshInstance.Transform = new Transform3D(chunk.MeshInstance.Transform.Basis, position * new Vector3(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE));
 			chunk.MeshInstance.Mesh = newMesh;
 			AddChild(chunk.MeshInstance);

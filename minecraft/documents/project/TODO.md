@@ -219,7 +219,7 @@
 - [x] See-through cage around the cleared volume — translucent box + 12 `ImmediateMesh` edge lines, edges on `no_depth_test` so it stays findable through terrain. `WARP POINT LANDED` banner for `banner_seconds` (4).
 - [x] Ground scan starts at the **player's** altitude, not the sky — a Cave planet's real surface is far overhead and a warp point up there is unreachable. Gated on `is_chunk_ready`, since `get_block` can't distinguish air from an unloaded chunk.
 - [x] `interactions.gd`'s raw-keycode-69 (E) explode trigger **removed** — it shared a key with `interact`, so every warp interaction would also have blown a crater. `explode` (F) is the only trigger now.
-- [ ] **The structure itself is not authored yet.** Build a pillar in the Builder (no marker needed) and save it as **Warp Point** — saved as `Warp_Point.tres`, since `CaptureAndSave` maps spaces to `_`; the code tries both spellings. Until it exists, every planet shows the on-screen error and falls back to the J key.
+- [x] **Structure authored** (2026-08-08) — `Structures/Warp_point.tres`, 4×8×4. `WarpPoint.gd`'s `STRUCTURE_NAME` is `"Warp_point"` to match the saved name exactly (`CaptureAndSave` maps spaces to `_` but does not re-case, so `Warp_Point` would have been a silent miss).
 - [ ] **Nothing here is live-verified** — the godot-ai MCP wasn't reachable this session. C# builds clean and the GDScript is unrun. Needs: the fall reading right at `fall_speed` 55, the cage looking like an outline rather than a fogged box, the crater being big enough that the pillar isn't half-buried, and the E prompt actually firing when the crosshair is on the structure.
 - [ ] The **fall is silent and unaccompanied** — no impact particles, no audio, no dust. The camera shake on landing (1.2 / 0.5s) is the only feedback beyond the banner.
 - [ ] Landing spot is a single ray down one column. A pillar landing on a steep slope or a 1-block ledge will float or clip; a footprint-wide scan taking the highest hit would fix it if it shows up.
@@ -316,6 +316,58 @@ Remaining:
 - [ ] **Enemy spawn pooling** — reuse instances instead of instantiating the GLB per spawn (kills the 3–9 fps spawn hitch)
 - [ ] Greedy meshing — cuts destroyed-terrain triangle count (GPU-bound view-dependent dips); requires texture array / custom-UV shader to tile the atlas across merged quads
 - [ ] Incremental unload sweep — only scan the trailing-edge shell on crossing instead of all loaded chunks (reduces remaining moving spikes)
+
+---
+
+## Planet curvature (2026-08-10) — built, parked at 0
+
+- [x] Curved-world vertex displacement: `Materials/WorldCurve.gdshaderinc` (3 global shader
+      uniforms + `world_curve_drop()`), included by `ChunkCurved.gdshader`,
+      `ChunkCurvedTransparent.gdshader`, `BlockDamage.gdshader` and `Select.gdshader`.
+      `CubeLand.tscn`'s `Mat`/`TransparentMat` point at the curved materials.
+- [x] Derived from **world size**, not render distance (`strength = exaggeration * PI / wrap_width`),
+      so a smaller planet curves harder for the physically right reason and a viewer's graphics
+      setting never reshapes the world.
+- [x] Flat zone (`drop = strength * max(0, d - flat_radius)^2`, radius 0.25 × wrap width) so
+      aiming, grappling and the laser are displacement-free at the ranges they operate.
+- [x] `Entity.ApplyCurveToVisuals` — CPU-side drop of visual children only; entity transforms,
+      collision and AI stay flat. Verified live against bullets (mesh Y matched expected drop
+      to the centimetre across 0.49 / 2.87 / 4.89).
+- [x] `ExtraCullMargin` on chunk meshes — frustum culling tests the un-displaced AABB, so
+      without it chunks blink out at the screen edges and it looks like culling was switched on.
+- [x] F3 debug: "Curve strength" + "Flat zone" sliders, live (no regeneration), readout
+      re-synced on panel open since world width is per-planet.
+- [x] **PARKED at `DefaultCurveExaggeration = 0`.** Curvature compresses apparent distance past
+      the flat radius (a target 450 out drew where one 82 out would sit), which makes "can I
+      reach that?" unjudgeable — and that judgement is this game's core loop. Confirmed by
+      raising `GrappleRange` to 620 and watching apparently-close things become grabbable.
+      Not deleted: it's good for the ship hub backdrop, SolarSelect art, or the crashlanding
+      sequence. Raise the constant or drag the slider to bring it back.
+- [ ] If it ever returns: particles already in flight, the warp point cage, the grapple hook
+      mesh and the laser beam are still uncurved, and entity **hitboxes** stay at the true
+      position while models draw low past the flat radius (aim diverges from visuals there).
+
+### Ability range vs loaded terrain (2026-08-10)
+
+- [x] Found: `get_block` returns 0 for **"air" and "not loaded" alike**, so the grapple's and
+      laser's voxel marches silently stop at the edge of loaded terrain instead of erroring.
+- [ ] **Ability ranges impose a minimum planet size.** Loaded radius is `RenderDistance × 48`,
+      and the one-node guarantee caps render distance at half the world — so nothing can reach
+      past half the wrap width. GrappleRange 220 needs ≥ 11 chunks (528 blocks); LaserRange 300
+      needs ≥ 15 chunks (720). Below that they fail by finding air. Decide whether to floor
+      planet size at 15 chunks, shorten the abilities, or scale range with planet size.
+- [ ] No startup check warns about this — it fails silently, which is why it took a while to
+      find. A comparison of the longest ability range against `RenderDistance * CHUNK_SIZE` at
+      `_Ready` would surface it immediately.
+
+### One-node guarantee clamp inverted (2026-08-10)
+
+- [x] `Chunk_Manager._Ready` now clamps **RenderDistance down to fit the planet**, instead of
+      growing the planet to fit RenderDistance. World size belongs to the planet; render
+      distance is a viewer preference that must stay tunable on weaker hardware. Moved above
+      `RecalculateChunkOffsets()`, which caches its offset volume from RenderDistance.
+- [x] Verified live: a 13-chunk world kept its 624-block size and clamped RD 12 → 6, where the
+      old code would have inflated the planet to 25 chunks.
 
 ---
 

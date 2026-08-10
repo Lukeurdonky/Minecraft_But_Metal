@@ -325,6 +325,92 @@ Full design list and win-condition tie-in: `documents/design/NEW_VISION.md`. Liv
 - Equipped state lives in `Global.EquippedAccessoryIds` (persists across planet loads within a run; cleared by `RunManager.ResetRunState()`). GDScript (F3 menu, HUD) must go through `Global.GetAllAccessoryNames()`/`IsAccessoryEquipped()`/`SetAccessoryEquipped()` — **GDScript can call methods on a C# autoload but cannot read its plain public properties**, confirmed empirically.
 - `PlayerHUD.cs` renders equipped accessories as atlas icons in `RunUI/AccessoryRow`, a real scene node in `character.tscn` (not runtime-only) — rebuilds children only when the equipped set changes.
 
+## Planet curvature — BUILT, DELIBERATELY PARKED AT 0
+
+A curved-world vertex displacement that bends terrain down away from the viewer so the far
+edge falls below a horizon instead of ending at a visible chunk boundary. **It works. It is
+switched off on purpose** (`Global.DefaultCurveExaggeration = 0`, 2026-08-10). Do not "fix"
+it by turning it up without reading why it's off.
+
+- **Why it's off:** curvature compresses *apparent distance* past where the bend starts. On
+  a 1536-block world a target 450 out was drawn where one 82 out would sit; at the render
+  edge, ~15. That is what a horizon is — not a bug, not tunable away. But this game's core
+  loop is a continuous "can I reach that?" judgement with a 220-unit grapple, so it attacks
+  the primary verb. Confirmed empirically: raising `GrappleRange` to 620 made things that
+  looked ~80 blocks away suddenly grabbable.
+- **Secondary cost:** nothing renders through one chokepoint, so every future visual (boss
+  VFX, THE PLANT, the warpstation) would have to opt in or visibly detach from the ground.
+- **Where it's still a good idea:** anywhere distance judgement doesn't matter — the ship
+  hub backdrop, SolarSelect art, the crashlanding entry sequence.
+- **To re-enable:** raise `DefaultCurveExaggeration` or drag the F3 slider. Everything else
+  is already wired; no other change needed.
+
+How it's built, if it comes back:
+
+- **`Materials/WorldCurve.gdshaderinc`** — three global shader uniforms (`world_curve_strength`,
+  `world_curve_flat_radius`, `world_curve_origin`) plus `world_curve_drop()`. A material opts
+  in by `#include`-ing it and subtracting the result from `VERTEX.y`. Currently included by
+  `ChunkCurved`, `ChunkCurvedTransparent`, `BlockDamage` and `Select`.
+- **Globals are registered at runtime** in `Global.RegisterCurveGlobals()`, not in
+  project.godot's `[shader_globals]` — the live editor re-serializes that section from its
+  stale in-memory copy and silently reverts hand-written entries.
+- **`RenderingServer.GlobalShaderParameterGet`/`GetList` are EDITOR-ONLY.** In a running game
+  they return null *and* log "should never be used outside the editor". Values are mirrored
+  in C# fields and written one-way to the RenderingServer.
+- **The origin is the camera's world position, passed explicitly** rather than derived from
+  view space: the shadow pass runs the same vertex code with the *light's* matrices, so a
+  view-space formulation slides shadows off the geometry casting them.
+- **Curvature is derived from WORLD SIZE, never render distance** (`strength = exaggeration *
+  PI / wrap_width`). Render distance is a viewer preference; deriving world shape from it
+  would mean two players on one planet see differently-shaped worlds.
+- **The flat zone** (`drop = strength * max(0, d - flat_radius)^2`, radius = 0.25 × wrap
+  width) exists because everything at the same XZ gets the same drop — so local relationships
+  (bullet vs block, enemy vs ground) stay exact, but anything comparing *across* distances
+  breaks, and aiming is exactly that. Inside the radius there is no displacement to disagree
+  about.
+- **Frustum culling must be compensated.** Culling tests the un-displaced AABB on the CPU and
+  knows nothing about the vertex stage, so chunks blink out along the screen edges. Fixed via
+  `MeshInstance3D.ExtraCullMargin = Global.GetCurveDropAtEdge(...)`.
+- **Entities curve on the CPU, not in a shader** (`Entity.ApplyCurveToVisuals`): it drops the
+  entity's *visual children* only, leaving its own transform — and therefore collision, AI and
+  every `get_block` consumer — flat. Deliberately not done by reparenting under an offset
+  pivot, because `AnimationPlayer` tracks address targets by NodePath and inserting a node
+  breaks every animation on every imported enemy. `CollisionShape3D`/`Area3D` children are
+  excluded, which is also why enemy hitboxes stay at the true position while models are drawn
+  low past the flat radius.
+- **Never curved:** anything in the arms' SubViewport (viewmodel space — bending it bows the
+  laser arm on screen). Still uncurved when parked: particles already in flight, the warp
+  point cage, the grapple hook mesh, the laser beam.
+
+## Ability range is capped by loaded terrain — a real trap on small planets
+
+`get_block` returns 0 for **"air" and "chunk not loaded" alike**, so any ability that marches
+through voxels silently stops at the edge of loaded terrain rather than erroring. The grapple
+(`PlayerAbilities` line ~898) and the laser both do this.
+
+Loaded radius is `RenderDistance × CHUNK_SIZE`. Combined with the one-node guarantee below,
+this produces a hard law: **no ability can reach more than half the wrap width**, because the
+terrain it would need is terrain you are forbidden to have loaded. Ability ranges therefore
+set a *minimum planet size*: GrappleRange 220 needs ≥ 11 chunks (528 blocks), LaserRange 300
+needs ≥ 15 chunks (720). Below that they fail by finding air, with no error.
+
+## One-node guarantee — the clamp runs on RENDER DISTANCE, not world size
+
+`Chunk_Manager._Ready` clamps `RenderDistance` down to fit the planet. **It used to do the
+opposite** (grow the planet to fit render distance), which was backwards: world size is a
+property of the planet, render distance is a viewer preference that must stay tunable for a
+weaker machine, and a graphics setting must never silently reshape the world.
+
+- The rule is `PlanetChunks > RenderDistance * 2`. Violate it and two *visible* chunks resolve
+  to one canonical entry — and since a physical chunk takes its voxel array from the canonical
+  store **by reference** (`generate_data`), they wouldn't merely look identical, they'd BE
+  identical: a hole blown in one appears instantly in its twin.
+- Must run **before** `RecalculateChunkOffsets()`, which caches its offset volume from
+  `RenderDistance`.
+- Consequence: on a small planet render distance has a low ceiling (a 13-chunk world caps it
+  at 6). That's correct physics — a small planet has a near horizon — but see the ability-range
+  trap above before shrinking a world.
+
 ## Block transparency
 
 Transparency is a **render concern only**. A glass block is fully solid to collision, grapple,

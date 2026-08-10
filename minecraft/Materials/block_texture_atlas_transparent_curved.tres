@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://Materials/ChunkCurvedTransparent.gdshader" id="1_curveshadertr"]
+[ext_resource type="Texture2D" uid="uid://c4bke1gt3o73e" path="res://Sprites/Textures/block_texture_atlas.png" id="2_atlas"]
+
+[resource]
+resource_name = "block_texture_atlas_transparent_curved"
+shader = ExtResource("1_curveshadertr")
+shader_parameter/albedo_texture = ExtResource("2_atlas")
