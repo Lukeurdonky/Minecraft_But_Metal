@@ -1,0 +1,121 @@
+[gd_scene load_steps=22 format=3 uid="uid://depfb8cavg4wf"]
+
+[ext_resource type="Curve" uid="uid://b5mn2v41v5ida" path="res://Materials/DebrisTrailTaper.tres" id="1_4u404"]
+[ext_resource type="Material" uid="uid://dqmmyusccdyr4" path="res://Materials/Debris.tres" id="2_ge00w"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_d8uuh"]
+transparency = 1
+vertex_color_use_as_albedo = true
+
+[sub_resource type="Curve" id="Curve_cmoy2"]
+_data = [Vector2(0, 0.7045455), 0.0, -2.0821993, 0, 0, Vector2(1, 0), -0.017798001, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_4u404"]
+curve = SubResource("Curve_cmoy2")
+
+[sub_resource type="Curve" id="Curve_ge00w"]
+_data = [Vector2(0, 0), 0.0, 2.6493506, 0, 0, Vector2(1, 1), -0.00944267, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_vaxtn"]
+curve = SubResource("Curve_ge00w")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_04drv"]
+gravity = Vector3(0, 0, 0)
+scale_min = 5.0
+scale_max = 5.0
+scale_curve = SubResource("CurveTexture_vaxtn")
+alpha_curve = SubResource("CurveTexture_4u404")
+
+[sub_resource type="SphereMesh" id="SphereMesh_v662m"]
+radial_segments = 40
+rings = 20
+
+[sub_resource type="Curve" id="Curve_vaxtn"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_qlf2g"]
+curve = SubResource("Curve_vaxtn")
+
+[sub_resource type="Curve" id="Curve_04drv"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.7478991, 0.89285713), 0.0, 0.0, 0, 0, Vector2(1, 0), -3.0544016, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_4a2sn"]
+curve = SubResource("Curve_04drv")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_v662m"]
+direction = Vector3(0, 0, 1)
+spread = 180.0
+initial_velocity_min = 45.0
+initial_velocity_max = 60.0
+gravity = Vector3(0, 0, 0)
+scale_curve = SubResource("CurveTexture_4a2sn")
+alpha_curve = SubResource("CurveTexture_qlf2g")
+
+[sub_resource type="RibbonTrailMesh" id="RibbonTrailMesh_7f3sw"]
+material = ExtResource("2_ge00w")
+size = 0.5
+sections = 10
+section_length = 0.15
+curve = ExtResource("1_4u404")
+
+[sub_resource type="Curve" id="Curve_4u404"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_nx8tc"]
+curve = SubResource("Curve_4u404")
+
+[sub_resource type="Curve" id="Curve_v662m"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.7478991, 0.89285713), 0.0, 0.0, 0, 0, Vector2(1, 0), -3.0544016, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_kvbdj"]
+curve = SubResource("Curve_v662m")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_7f3sw"]
+direction = Vector3(0, 0, 1)
+spread = 180.0
+initial_velocity_min = 5.0
+initial_velocity_max = 40.0
+scale_curve = SubResource("CurveTexture_kvbdj")
+alpha_curve = SubResource("CurveTexture_nx8tc")
+
+[sub_resource type="BoxMesh" id="BoxMesh_14e3x"]
+size = Vector3(0.25, 0.25, 0.25)
+
+[node name="medium_explosion" type="GPUParticles3D"]
+material_override = SubResource("StandardMaterial3D_d8uuh")
+emitting = false
+amount = 1
+lifetime = 0.35000000000000003
+one_shot = true
+fixed_fps = 60
+process_material = SubResource("ParticleProcessMaterial_04drv")
+draw_pass_1 = SubResource("SphereMesh_v662m")
+
+[node name="Debris" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 16
+lifetime = 0.3
+one_shot = true
+explosiveness = 1.0
+transform_align = 2
+trail_enabled = true
+trail_lifetime = 0.1
+process_material = SubResource("ParticleProcessMaterial_v662m")
+draw_pass_1 = SubResource("RibbonTrailMesh_7f3sw")
+
+[node name="Debris two" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 16
+lifetime = 1.5
+one_shot = true
+explosiveness = 1.0
+collision_base_size = 1.0
+trail_lifetime = 0.1
+process_material = SubResource("ParticleProcessMaterial_7f3sw")
+draw_pass_1 = SubResource("BoxMesh_14e3x")

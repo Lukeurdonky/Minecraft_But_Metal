@@ -338,7 +338,7 @@ public partial class Player : Entity
     // on the root and the Debris child, so both get kicked on here.
     private void SpawnSmallExplosion(Vector3 pos)
     {
-        SmallExplosionScene ??= GD.Load<PackedScene>("res://Assets/small_explosion.tscn");
+        SmallExplosionScene ??= GD.Load<PackedScene>("res://Assets/medium_explosion.tscn");
         if (SmallExplosionScene == null) return;
 
         var fx = SmallExplosionScene.Instantiate<GpuParticles3D>();
@@ -350,10 +350,10 @@ public partial class Player : Entity
             if (child is GpuParticles3D p)
                 p.Emitting = true;
 
-        GetTree().CreateTimer(2f).Timeout += () =>
-        {
-            if (IsInstanceValid(fx)) fx.QueueFree();
-        };
+        // GetTree().CreateTimer(2f).Timeout += () =>
+        // {
+        //     if (IsInstanceValid(fx)) fx.QueueFree();
+        // };
     }
 
     // Additive FOV kick in degrees, consumed by interactions.gd. That script owns the camera's

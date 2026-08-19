@@ -1,8 +1,7 @@
-[gd_scene load_steps=23 format=3 uid="uid://dpjhbytcxw671"]
+[gd_scene load_steps=20 format=3 uid="uid://dpjhbytcxw671"]
 
 [ext_resource type="Material" uid="uid://dwqmqssbjvp" path="res://Materials/explosion.tres" id="1_rpkh5"]
 [ext_resource type="Curve" uid="uid://b5mn2v41v5ida" path="res://Materials/DebrisTrailTaper.tres" id="2_c2ek5"]
-[ext_resource type="Material" uid="uid://bqh5fwhjcingf" path="res://Materials/Shock.tres" id="2_nx8tc"]
 [ext_resource type="Material" uid="uid://dqmmyusccdyr4" path="res://Materials/Debris.tres" id="2_yd4x4"]
 
 [sub_resource type="Curve" id="Curve_73l6m"]
@@ -21,41 +20,6 @@ material = ExtResource("1_rpkh5")
 height = 1.0
 radial_segments = 16
 rings = 4
-
-[sub_resource type="Curve" id="Curve_4a2sn"]
-_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
-point_count = 2
-
-[sub_resource type="CurveTexture" id="CurveTexture_qlf2g"]
-curve = SubResource("Curve_4a2sn")
-
-[sub_resource type="Curve" id="Curve_nx8tc"]
-_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.7478991, 0.89285713), 0.0, 0.0, 0, 0, Vector2(1, 0), -3.0544016, 0.0, 0, 0]
-point_count = 3
-
-[sub_resource type="CurveTexture" id="CurveTexture_4a2sn"]
-curve = SubResource("Curve_nx8tc")
-
-[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_4a2sn"]
-emission_shape_offset = Vector3(0, 0, -2.429)
-emission_shape_scale = Vector3(1, 1, 1.685)
-emission_shape = 6
-emission_ring_axis = Vector3(0, 0, 1)
-emission_ring_height = 1.0
-emission_ring_radius = 1.0
-emission_ring_inner_radius = 0.8
-emission_ring_cone_angle = 90.0
-direction = Vector3(0, 0, 1)
-spread = 0.0
-initial_velocity_min = 20.0
-initial_velocity_max = 40.0
-gravity = Vector3(0, 0, 0)
-scale_curve = SubResource("CurveTexture_4a2sn")
-alpha_curve = SubResource("CurveTexture_qlf2g")
-
-[sub_resource type="SphereMesh" id="SphereMesh_kvbdj"]
-radial_segments = 32
-rings = 16
 
 [sub_resource type="Curve" id="Curve_c2ek5"]
 _data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
@@ -82,6 +46,20 @@ alpha_curve = SubResource("CurveTexture_nx8tc")
 [sub_resource type="BoxMesh" id="BoxMesh_c2ek5"]
 size = Vector3(0.25, 0.25, 0.25)
 
+[sub_resource type="Curve" id="Curve_4a2sn"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_qlf2g"]
+curve = SubResource("Curve_4a2sn")
+
+[sub_resource type="Curve" id="Curve_nx8tc"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.7478991, 0.89285713), 0.0, 0.0, 0, 0, Vector2(1, 0), -3.0544016, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_4a2sn"]
+curve = SubResource("Curve_nx8tc")
+
 [sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_nx8tc"]
 direction = Vector3(0, 0, 1)
 spread = 180.0
@@ -101,23 +79,10 @@ curve = ExtResource("2_c2ek5")
 [node name="Small Explosion" type="GPUParticles3D"]
 emitting = false
 amount = 1
-lifetime = 0.25
+lifetime = 3.0
 one_shot = true
 process_material = SubResource("ParticleProcessMaterial_c2ek5")
 draw_pass_1 = SubResource("CapsuleMesh_nx8tc")
-
-[node name="Shockwave" type="GPUParticles3D" parent="."]
-visible = false
-material_override = ExtResource("2_nx8tc")
-emitting = false
-amount = 1
-lifetime = 0.3
-one_shot = true
-explosiveness = 1.0
-transform_align = 2
-trail_lifetime = 0.35
-process_material = SubResource("ParticleProcessMaterial_4a2sn")
-draw_pass_1 = SubResource("SphereMesh_kvbdj")
 
 [node name="Debris two" type="GPUParticles3D" parent="."]
 emitting = false
@@ -126,7 +91,7 @@ lifetime = 1.5
 one_shot = true
 explosiveness = 1.0
 collision_base_size = 1.0
-trail_lifetime = 0.09999999999999999
+trail_lifetime = 0.1
 process_material = SubResource("ParticleProcessMaterial_8nh5r")
 draw_pass_1 = SubResource("BoxMesh_c2ek5")
 
@@ -138,6 +103,8 @@ one_shot = true
 explosiveness = 1.0
 transform_align = 2
 trail_enabled = true
-trail_lifetime = 0.09999999999999999
+trail_lifetime = 0.1
 process_material = SubResource("ParticleProcessMaterial_nx8tc")
 draw_pass_1 = SubResource("RibbonTrailMesh_8nh5r")
+
+[connection signal="finished" from="." to="." method="queue_free"]

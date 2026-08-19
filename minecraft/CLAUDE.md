@@ -17,6 +17,32 @@ The `godot-ai` MCP server is always available when Godot is open. Use it without
 
 ---
 
+## Working discipline — read this before doing anything
+
+These docs describe what exists. They don't by themselves limit what you're
+allowed to decide on your own — assume narrow scope unless told otherwise.
+
+- Implement exactly what was asked. Do not add error handling, polish, extra
+  UI, alternate paths, or generalized abstractions that weren't requested,
+  even if they seem obviously good.
+- If a task leaves a design/UX/architecture question unanswered, don't pick
+  "the sensible default" — stop and ask. Silence in the instructions is not
+  a green light to improvise.
+- Never restructure, rename, or clean up code you weren't asked to touch,
+  even inside a file you're already editing for something else.
+- Live scene/editor mutations via godot-ai (node_create, script_attach,
+  node_set_property, project_manage, autoload_manage) apply immediately
+  with no diff to review. For anything beyond a single obvious value tweak,
+  state what you're about to do and wait for a go-ahead before calling it.
+- Placeholder / "not yet decided" markers in these docs (plain UI text,
+  curvature parked at 0, SHELVED/superseded systems) are load-bearing.
+  Don't "helpfully" finish, polish, or clean them up.
+- For anything bigger than one clearly-scoped change: state a short plan
+  first — what gets touched, and just as importantly what doesn't — before
+  writing or mutating anything.
+
+---
+
 ## What this project is
 
 A voxel-based action roguelike built in **Godot 4** (C# + GDScript). NOT a Minecraft clone. Game loop: choose a planet → fight → collect upgrades → next planet → boss. All combat, no crafting, no inventory. See `documents/design/NEW_VISION.md` for full design doc, `documents/project/PROGRESS.md` for current state, `documents/project/TODO.md` for next steps, and `documents/README.md` for the full documentation index (design, engineering specs, performance history, project tracking).

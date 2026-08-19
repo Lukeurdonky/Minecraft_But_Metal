@@ -336,11 +336,11 @@ func _subtitle_for(data: Dictionary, kind: String, fog: String) -> String:
 			return "UNSCANNED"
 
 
-# The per-node progress signifier the map exists to show.
+# The per-node progress signifier the map exists to show. The current node says nothing —
+# the pulsing green ring already marks where you are, and the text just restated it.
 func _signifier_for(state: String, kind: String) -> String:
 	match state:
 		"Cleared": return "CLEARED" if kind != "Warpstation" else "VISITED"
-		"Current": return "YOU ARE HERE"
 		_: return ""
 
 
